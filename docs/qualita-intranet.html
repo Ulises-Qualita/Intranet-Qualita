@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qualita · Intranet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f1eff5;--surface:#ffffff;--surface-2:#f7f6fa;--sidebar:#ffffff;
+    --navy:#252851;--ink:#252851;--muted:#6f6e88;--muted-2:#9b9ab0;
+    --line:rgba(37,40,81,.09);--line-strong:rgba(37,40,81,.16);
+    --magenta:#B50CC5;--coral:#FE6F61;--cream:#FFF4EC;
+    --grad:linear-gradient(120deg,#B50CC5 0%,#FE6F61 100%);
+    --grad-soft:linear-gradient(120deg,rgba(181,12,197,.12),rgba(254,111,97,.12));
+    --ok:#12a36b;--warn:#d68a00;--down:#e0554a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;display:flex;min-height:100vh}
+  ::selection{background:rgba(181,12,197,.22)}
+
+  .sidebar{width:272px;flex-shrink:0;background:var(--sidebar);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:22px 16px;position:sticky;top:0;height:100vh;overflow-y:auto}
+  .brand{display:flex;align-items:center;gap:11px;padding:4px 8px 22px}
+  .brand .mark{width:34px;height:34px;flex-shrink:0}
+  .brand .name{font-family:'Unbounded';font-weight:700;font-size:18px;letter-spacing:-.5px;color:var(--navy)}
+  .brand .tag{font-size:10px;letter-spacing:3px;color:var(--muted-2);font-weight:600}
+
+  .nav-title{font-size:11px;color:var(--muted-2);font-weight:700;letter-spacing:.6px;padding:16px 8px 7px;text-transform:uppercase}
+  .nav-btn{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:11px;cursor:pointer;color:var(--muted);font-family:inherit;font-size:14px;font-weight:500;background:none;border:none;width:100%;text-align:left;transition:.14s;position:relative}
+  .nav-btn svg{width:19px;height:19px;flex-shrink:0}
+  .nav-btn:hover{color:var(--ink);background:var(--surface-2)}
+  .nav-btn.active{color:var(--navy);background:var(--grad-soft);font-weight:600}
+  .nav-btn.active::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--grad)}
+
+  .client-btn{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:11px;cursor:pointer;width:100%;border:none;background:none;font-family:inherit;text-align:left;transition:.14s}
+  .client-btn:hover{background:var(--surface-2)}
+  .client-btn.sel{background:var(--surface-2)}
+  .client-btn .cn{flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .client-btn .chev{color:var(--muted-2);transition:transform .2s;flex-shrink:0}
+  .client-btn.sel .chev{transform:rotate(90deg)}
+  .subnav{overflow:hidden;max-height:0;transition:max-height .25s ease;padding-left:12px}
+  .subnav.open{max-height:240px}
+  .subnav .sb{display:flex;align-items:center;gap:10px;width:100%;border:none;background:none;font-family:inherit;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;padding:8px 12px;border-radius:9px;text-align:left;margin:2px 0;transition:.12s}
+  .subnav .sb:hover{color:var(--ink);background:var(--surface-2)}
+  .subnav .sb.active{color:var(--magenta);font-weight:600}
+  .subnav .sb .ln{width:14px;flex-shrink:0;display:flex;justify-content:center;color:var(--line-strong)}
+  .subnav .sb.active .ln{color:var(--magenta)}
+  .sb-badge{margin-left:auto;font-size:11px;font-weight:700;background:var(--coral);color:#fff;border-radius:20px;padding:0 7px;min-width:20px;text-align:center}
+
+  /* avatar with favicon */
+  .av{display:grid;place-items:center;font-family:'Unbounded';font-weight:700;color:#fff;flex-shrink:0}
+  .client-btn .av{width:30px;height:30px;border-radius:9px;font-size:12px}
+  .ctable .av{width:34px;height:34px;border-radius:9px;font-size:12px}
+  .av.logo{background:#fff;border:1px solid var(--line);color:var(--navy);position:relative;overflow:hidden}
+  .av.logo img{position:absolute;inset:0;margin:auto;width:74%;height:74%;object-fit:contain}
+
+  .side-bottom{margin-top:auto}
+  .side-foot{padding:14px 8px 4px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .side-foot .fav{width:34px;height:34px;border-radius:50%;background:var(--grad);display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff}
+  .side-foot .who b{display:block;font-size:13px;color:var(--ink)}
+  .side-foot .who span{font-size:11px;color:var(--muted)}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;gap:16px;padding:20px 32px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;background:rgba(241,239,245,.82);backdrop-filter:blur(14px)}
+  .crumb{font-size:12.5px;color:var(--muted);margin-bottom:3px;display:flex;align-items:center;gap:7px}
+  .crumb b{color:var(--magenta);font-weight:600}
+  .topbar h1{font-family:'Unbounded';font-weight:600;font-size:22px;letter-spacing:-.6px;color:var(--navy)}
+  .topbar .spacer{flex:1}
+  .range{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:3px}
+  .range button{background:none;border:none;color:var(--muted);font-family:inherit;font-size:13px;font-weight:500;padding:6px 13px;border-radius:8px;cursor:pointer;transition:.12s}
+  .range button.on{background:var(--navy);color:#fff}
+  .icon-btn{width:40px;height:40px;border-radius:11px;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;cursor:pointer;color:var(--muted)}
+  .icon-btn:hover{color:var(--ink);border-color:var(--line-strong)}
+
+  .view{padding:28px 32px 48px;flex:1}
+  .grid{display:grid;gap:16px}
+  .g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:repeat(2,1fr)}.g-2-1{grid-template-columns:2fr 1fr}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px}
+  .card.pad-lg{padding:24px 26px}
+
+  .kpi .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .kpi .label{font-size:13px;color:var(--muted);font-weight:500}
+  .kpi .ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--surface-2);color:var(--magenta)}
+  .kpi .ico svg{width:18px;height:18px}
+  .kpi .val{font-family:'Unbounded';font-weight:700;font-size:30px;letter-spacing:-1px;line-height:1;color:var(--navy)}
+  .kpi .delta{margin-top:10px;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:5px}
+  .delta.up{color:var(--ok)}.delta.down{color:var(--down)}.delta.flat{color:var(--muted)}
+  .delta .arrow{font-size:11px}.kpi .delta small{color:var(--muted-2);font-weight:400}
+  .kpi.hero{background:var(--grad);border:none;position:relative;overflow:hidden}
+  .kpi.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(120% 120% at 82% 8%,rgba(255,255,255,.28),transparent 55%);pointer-events:none}
+  .kpi.hero .label{color:rgba(255,255,255,.9)}.kpi.hero .ico{background:rgba(255,255,255,.2);color:#fff}
+  .kpi.hero .val{color:#fff;font-size:34px}.kpi.hero .delta{color:#fff}.kpi.hero .delta small{color:rgba(255,255,255,.75)}
+
+  .card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .card-h h3{font-family:'Unbounded';font-weight:500;font-size:16px;letter-spacing:-.3px;color:var(--navy)}
+  .card-h .hint{font-size:12px;color:var(--muted)}
+
+  .chart{width:100%;height:230px}.chart .grid-line{stroke:var(--line);stroke-width:1}
+  .legend{display:flex;gap:18px;margin-top:6px}
+  .legend span{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
+  .legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+  .funnel{display:flex;flex-direction:column;gap:10px}
+  .stage{display:flex;align-items:center;gap:14px}
+  .stage .name{width:120px;flex-shrink:0;font-size:13.5px;color:var(--muted);font-weight:500}
+  .stage .track{flex:1;height:38px;background:var(--surface-2);border-radius:9px;overflow:hidden}
+  .stage .fill{height:100%;border-radius:9px;background:var(--grad);display:flex;align-items:center;padding:0 14px;min-width:52px}
+  .stage .fill b{font-family:'Unbounded';font-size:14px;font-weight:600;color:#fff}
+  .stage .pct{width:48px;flex-shrink:0;text-align:right;font-size:13px;color:var(--muted);font-weight:600}
+
+  .lead-row{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+  .lead-row:last-child{border-bottom:none}
+  .lead-row .info{flex:1;min-width:0}
+  .lead-row .info b{font-size:14px;font-weight:600;display:block;color:var(--ink)}
+  .lead-row .info span{font-size:12.5px;color:var(--muted)}
+  .lead-row .amount{font-family:'Unbounded';font-size:14px;font-weight:600;color:var(--navy)}
+  .pill{font-size:11.5px;font-weight:600;padding:4px 11px;border-radius:20px;white-space:nowrap}
+  .pill.new{background:rgba(18,163,107,.13);color:var(--ok)}
+  .pill.hot{background:rgba(254,111,97,.16);color:var(--down)}
+  .pill.neg{background:rgba(181,12,197,.13);color:var(--magenta)}
+  .pill.warm{background:rgba(214,138,0,.14);color:var(--warn)}
+  .pill.al-dia{background:rgba(18,163,107,.13);color:var(--ok)}
+  .pill.atencion{background:rgba(254,111,97,.16);color:var(--down)}
+  .pill.activo{background:rgba(18,163,107,.13);color:var(--ok)}
+  .pill.pausado{background:var(--surface-2);color:var(--muted);border:1px solid var(--line-strong)}
+
+  .ctable{width:100%;border-collapse:collapse}
+  .ctable th{text-align:left;font-size:11.5px;font-weight:600;color:var(--muted-2);text-transform:uppercase;letter-spacing:.4px;padding:0 10px 12px}
+  .ctable td{padding:14px 10px;border-top:1px solid var(--line);font-size:14px}
+  .ctable tbody tr{cursor:pointer;transition:background .12s}
+  .ctable tbody tr:hover{background:var(--surface-2)}
+  .ctable .cl-cell{display:flex;align-items:center;gap:11px}
+  .ctable .cl-cell b{font-weight:600;color:var(--ink)}
+  .ctable .cl-cell span{display:block;font-size:12px;color:var(--muted)}
+  .ctable .num{font-family:'Unbounded';font-weight:600;color:var(--navy)}
+  .ctable .go{color:var(--muted-2);text-align:right}
+  .thumb-sm{width:34px;height:34px;border-radius:9px;background:var(--grad-soft);display:grid;place-items:center;color:var(--magenta);flex-shrink:0}
+  .thumb-sm svg{width:16px;height:16px}
+
+  .member{display:flex;flex-direction:column;gap:14px}
+  .member .head{display:flex;align-items:center;gap:13px}
+  .member .head .fav{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-family:'Unbounded';font-weight:700;font-size:16px;color:#fff}
+  .member .head b{font-size:15px;font-weight:600;color:var(--ink);display:block}
+  .member .head span{font-size:12.5px;color:var(--muted)}
+  .member .row{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+  .member .row b{color:var(--ink);font-weight:600}
+  .barwrap{height:7px;background:var(--surface-2);border-radius:20px;overflow:hidden}
+  .barwrap i{display:block;height:100%;border-radius:20px;background:var(--grad)}
+  .tags{display:flex;flex-wrap:wrap;gap:6px}
+  .tag{font-size:11.5px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:3px 10px}
+
+  .integ{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid var(--line)}
+  .integ:last-child{border-bottom:none}
+  .integ .logo{width:42px;height:42px;border-radius:12px;background:var(--surface-2);display:grid;place-items:center;color:var(--navy);flex-shrink:0;font-family:'Unbounded';font-weight:700;font-size:15px}
+  .integ .txt{flex:1}
+  .integ .txt b{font-size:14px;font-weight:600;color:var(--ink);display:block}
+  .integ .txt span{font-size:12.5px;color:var(--muted)}
+  .status{font-size:12px;font-weight:600;padding:5px 12px;border-radius:20px}
+  .status.on{background:rgba(18,163,107,.13);color:var(--ok)}
+  .status.off{background:var(--surface-2);color:var(--muted);border:1px solid var(--line-strong);cursor:pointer}
+  .pref{display:flex;align-items:center;justify-content:space-between;padding:15px 0;border-bottom:1px solid var(--line)}
+  .pref:last-child{border-bottom:none}
+  .pref .txt b{font-size:14px;font-weight:600;color:var(--ink);display:block}
+  .pref .txt span{font-size:12.5px;color:var(--muted)}
+  .toggle{width:44px;height:25px;border-radius:20px;background:var(--line-strong);position:relative;cursor:pointer;transition:.18s;flex-shrink:0}
+  .toggle::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .toggle.on{background:var(--magenta)}.toggle.on::after{left:22px}
+
+  .task-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start}
+  .task-col{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px}
+  .task-col-h{display:flex;align-items:center;gap:9px;margin-bottom:14px;padding:0 4px}
+  .task-col-h .dot{width:10px;height:10px;border-radius:3px}
+  .task-col-h b{font-size:14px;font-weight:600;color:var(--ink)}
+  .task-col-h .count{margin-left:auto;font-size:12px;color:var(--muted);background:var(--surface-2);border-radius:20px;padding:1px 9px;font-weight:600}
+  .task{background:var(--surface-2);border:1px solid var(--line);border-radius:13px;padding:14px;margin-bottom:10px;transition:border-color .14s}
+  .task:hover{border-color:var(--line-strong)}.task:last-child{margin-bottom:0}
+  .task .prio{font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin-bottom:8px;display:inline-block}
+  .prio.alta{color:var(--down)}.prio.media{color:var(--warn)}.prio.baja{color:var(--muted)}
+  .task p{font-size:13.5px;line-height:1.45;font-weight:500;margin-bottom:12px;color:var(--ink)}
+  .task .foot{display:flex;align-items:center;justify-content:space-between}
+  .task .due{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+  .task .due.late{color:var(--down)}
+  .task .who{width:26px;height:26px;border-radius:50%;background:var(--navy);display:grid;place-items:center;font-size:11px;font-weight:600;color:#fff}
+  .empty{color:var(--muted);font-size:13px;text-align:center;padding:24px}
+
+  .connect-state{display:flex;flex-direction:column;align-items:center;text-align:center;padding:52px 26px}
+  .connect-state .cs-ico{width:56px;height:56px;border-radius:16px;background:var(--grad-soft);display:grid;place-items:center;color:var(--magenta);margin-bottom:16px}
+  .connect-state .cs-ico svg{width:26px;height:26px}
+  .connect-state h3{font-family:'Unbounded';font-weight:600;font-size:18px;color:var(--navy);margin-bottom:8px}
+  .connect-state p{font-size:14px;color:var(--muted);max-width:430px;line-height:1.5;margin-bottom:20px}
+  .connect-btn{font-family:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--grad);border:none;border-radius:11px;padding:11px 22px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:opacity .14s}
+  .connect-btn:hover{opacity:.92}
+  .kpi.locked{border-style:dashed}
+  .kpi.locked .ico{color:var(--muted-2)}
+  .link-connect{margin-top:10px;background:none;border:none;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--magenta);cursor:pointer;padding:0}
+  .link-connect:hover{text-decoration:underline}
+  .pill.onboarding{background:rgba(214,138,0,.14);color:var(--warn)}
+  .status.off{font-family:inherit}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-family:inherit;font-size:11.5px;font-weight:600;padding:4px 11px;border-radius:20px;border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);cursor:pointer;transition:.12s}
+  .chip.on{background:var(--grad);color:#fff;border-color:transparent}
+  .chip:disabled{opacity:.55;cursor:not-allowed}
+  .role-sel{font-family:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;padding:6px 10px;cursor:pointer}
+  .invite-row{display:flex;gap:10px}
+  .invite-row input{flex:1;font-family:inherit;font-size:14px;padding:11px 14px;border:1px solid var(--line-strong);border-radius:11px;background:var(--surface);color:var(--ink)}
+  .invite-row input:focus{outline:none;border-color:var(--magenta)}
+  .admin-table td{vertical-align:middle}
+  .admin-table .fav{display:grid;place-items:center;color:#fff;font-family:'Unbounded';font-weight:700}
+
+  @media(max-width:1150px){.g4{grid-template-columns:repeat(2,1fr)}.g-2-1,.g2,.g3{grid-template-columns:1fr}.task-cols{grid-template-columns:1fr}}
+  @media(max-width:820px){.sidebar{display:none}.g4{grid-template-columns:1fr}.view{padding:20px 18px 40px}.topbar{padding:16px 18px}}
+
+  /* login */
+  #login{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;
+    background:radial-gradient(1100px 800px at 82% -12%,rgba(181,12,197,.55),transparent 55%),radial-gradient(900px 700px at -5% 112%,rgba(254,111,97,.5),transparent 55%),#0a0912}
+  .login-card{width:100%;max-width:404px;background:#fff;border-radius:22px;padding:36px 32px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+  .login-logo{display:flex;align-items:center;gap:10px;margin-bottom:26px}
+  .login-logo svg{width:34px;height:34px}
+  .login-logo b{font-family:'Unbounded';font-weight:700;font-size:19px;color:var(--navy)}
+  .login-card h1{font-family:'Unbounded';font-weight:600;font-size:22px;color:var(--navy);letter-spacing:-.5px;margin-bottom:8px}
+  .login-card .sub{font-size:14px;color:var(--muted);margin-bottom:24px;line-height:1.5}
+  .google-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;border:1px solid var(--line-strong);border-radius:12px;padding:12px;font-family:inherit;font-size:14.5px;font-weight:600;color:var(--ink);cursor:pointer;transition:.14s}
+  .google-btn:hover{background:var(--surface-2)}
+  .login-div{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--muted-2);font-size:12px}
+  .login-div::before,.login-div::after{content:"";flex:1;height:1px;background:var(--line)}
+  .login-field{width:100%;font-family:inherit;font-size:14px;padding:12px 14px;border:1px solid var(--line-strong);border-radius:12px;background:#fff;color:var(--ink);margin-bottom:10px}
+  .login-field:focus{outline:none;border-color:var(--magenta)}
+  .login-err{color:var(--down);font-size:13px;font-weight:500;min-height:18px;margin:2px 0 6px}
+  .login-submit{width:100%;background:var(--grad);color:#fff;border:none;border-radius:12px;padding:12px;font-family:inherit;font-size:14.5px;font-weight:600;cursor:pointer;transition:opacity .14s}
+  .login-submit:hover{opacity:.92}
+  .login-note{font-size:12px;color:var(--muted-2);margin-top:16px;text-align:center;line-height:1.4}
+  .logout{margin-left:auto;width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;color:var(--muted);cursor:pointer;flex-shrink:0}
+  .logout:hover{color:var(--down);border-color:var(--line-strong)}
+
+  /* modo oscuro */
+  body.dark{--bg:#0d0b18;--surface:#16142a;--surface-2:#1e1b38;--sidebar:#100e1f;--navy:#ecebf9;--ink:#e8e7f2;--muted:#a3a2bd;--muted-2:#7d7c98;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.17)}
+  body.dark .topbar{background:rgba(13,11,24,.82)}
+  body.dark .range button.on{background:var(--magenta);color:#fff}
+  body.dark .task .who{background:var(--magenta)}
+  body.dark .av.logo{color:#252851}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg viewBox="0 0 40 40" fill="none"><defs><linearGradient id="lgL" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#B50CC5"/><stop offset="1" stop-color="#FE6F61"/></linearGradient></defs>
+        <path d="M20 4C11.2 4 4 11.2 4 20s7.2 16 16 16c2.4 0 4-1.6 4-4s-1.6-4-4-4a8 8 0 118-8c0 2.4 1.6 4 4 4s4-1.6 4-4C36 11.2 28.8 4 20 4z" fill="url(#lgL)"/><circle cx="20" cy="20" r="5" fill="url(#lgL)"/></svg>
+      <b>qualita</b>
+    </div>
+    <h1>Intranet del equipo</h1>
+    <div class="sub">Ingresá con tu cuenta corporativa <b>@qualita.studio</b></div>
+    <button class="google-btn" id="googleBtn">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.3 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.1 5.3-4.6 7l7.1 5.5c4.1-3.8 6.2-9.4 6.2-17z"/><path fill="#FBBC05" d="M10.5 28.3c-.5-1.4-.7-2.9-.7-4.3s.3-2.9.7-4.3l-7.9-6.1C1 16.7 0 20.2 0 24s1 7.3 2.6 10.4l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.1-5.5c-2 1.3-4.5 2.1-8.8 2.1-6.3 0-11.6-3.8-13.5-9.3l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
+      Continuar con Google
+    </button>
+    <div class="login-div"><span>o acceso de prueba</span></div>
+    <input class="login-field" id="loginEmail" type="email" placeholder="tu@qualita.studio" autocomplete="username">
+    <input class="login-field" id="loginPass" type="password" placeholder="Contraseña" autocomplete="current-password">
+    <div class="login-err" id="loginErr"></div>
+    <button class="login-submit" id="loginBtn">Ingresar</button>
+    <div class="login-note">El ingreso con Google se habilita al conectar Supabase.<br>Solo se permiten cuentas @qualita.studio.</div>
+  </div>
+</div>
+
+<aside class="sidebar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 40 40" fill="none">
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#B50CC5"/><stop offset="1" stop-color="#FE6F61"/></linearGradient></defs>
+      <path d="M20 4C11.2 4 4 11.2 4 20s7.2 16 16 16c2.4 0 4-1.6 4-4s-1.6-4-4-4a8 8 0 118-8c0 2.4 1.6 4 4 4s4-1.6 4-4C36 11.2 28.8 4 20 4z" fill="url(#lg)"/>
+      <circle cx="20" cy="20" r="5" fill="url(#lg)"/>
+    </svg>
+    <div><div class="name">qualita</div><div class="tag">INTRANET</div></div>
+  </div>
+
+  <div class="nav-title">Qualita</div>
+  <button class="nav-btn active" data-studio="inicio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>Inicio</button>
+  <button class="nav-btn" data-studio="equipo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0112 0"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16 14.5a5 5 0 015 5"/></svg>Equipo</button>
+  <button class="nav-btn" data-studio="config">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V21a2 2 0 11-4 0v-.1a1.6 1.6 0 00-2.7-1.1l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00-1.1-2.7H3a2 2 0 110-4h.1A1.6 1.6 0 004.2 5.4l-.1-.1A2 2 0 116.9 2.5l.1.1a1.6 1.6 0 002.7-1.1V1a2 2 0 114 0v.1a1.6 1.6 0 002.7 1.1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 001.1 2.7H21a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>Configuración</button>
+  <button class="nav-btn" data-studio="admin">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Administración</button>
+
+  <div class="nav-title">Clientes</div>
+  <div id="clientNav"></div>
+
+  <div class="side-bottom">
+    <button class="nav-btn" id="themeBtn">
+      <svg id="themeIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+      <span id="themeLabel">Modo oscuro</span>
+    </button>
+    <div class="side-foot"><div class="fav" id="meAv">U</div><div class="who"><b id="meName">Usuario</b><span id="meMail">—</span></div>
+      <button class="logout" id="logoutBtn" title="Salir"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div><div class="crumb" id="crumb"></div><h1 id="tbTitle"></h1></div>
+    <div class="spacer"></div>
+    <div class="range" id="range"><button data-r="7">7d</button><button data-r="30" class="on">30d</button><button data-r="90">90d</button></div>
+    <div class="icon-btn" title="Actualizar"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 11A8 8 0 006 5.3L4 7"/><path d="M4 4v3h3"/><path d="M4 13a8 8 0 0014 5.7l2-1.7"/><path d="M20 20v-3h-3"/></svg></div>
+  </div>
+  <section class="view" id="viewHost"></section>
+</div>
+
+<script>
+const FAV=d=>`https://www.google.com/s2/favicons?domain=${d}&sz=128`;
+const clients = {
+  svn:{
+    name:"SVN Designs", sub:"Señalética premium · E-commerce + Meta Ads",
+    domain:"svn-designs.com", initials:"SV", conn:{meta:true,crm:true,whatsapp:true},
+    meta:{followers:{v:"29.4K",d:11.2},reach:{v:"196K",d:31.0},series:{reach:[80,95,110,130,150,175,196],eng:[30,36,42,48,55,60,68]},
+      ads:{spend:{v:"$920",d:0.0},cpl:{v:"$2.10",d:-12.0},leads:{v:"438",d:21.0},roas:{v:"5.9x",d:1.1},impressions:{v:"240K",d:18.5},ctr:{v:"2.9%",d:0.6},cpm:{v:"$3.83",d:-4.2},conversions:{v:"156",d:19.0},
+        spendSeries:[110,120,130,135,140,142,143],
+        items:[{name:"Acrylic Signs · Reel",status:"activo",spend:"$410",leads:"218",cpl:"$1.88",ctr:"3.6%",impr:"112K"},{name:"Neon LED · Carrusel",status:"activo",spend:"$290",leads:"142",cpl:"$2.04",ctr:"2.8%",impr:"78K"},{name:"Custom Awards · Video",status:"pausado",spend:"$220",leads:"78",cpl:"$2.82",ctr:"2.1%",impr:"50K"}]}},
+    crm:{pipeline:{v:"$5.100",d:22},leads:{v:"52",d:19},conv:{v:"18%",d:-1},chats:{v:"23",d:6},
+      funnel:[["Nuevos",52,100],["Contactados",34,65],["Propuesta",18,35],["Negociación",10,19],["Cerrados",7,13]],
+      leads:[{n:"Barbershop Miami",s:"Instagram · hace 30m",a:"$1.800",t:"new"},{n:"Auto Detailing Co.",s:"TikTok · hace 3h",a:"$740",t:"hot"},{n:"Fitness Center DTX",s:"WhatsApp · hace 6h",a:"$520",t:"warm"},{n:"Contractor LLC",s:"Formulario web · ayer",a:"$1.150",t:"neg"}]},
+    tasks:{todo:[{p:"alta",t:"Aprobar guión del próximo reel de señalética",due:"Vence hoy",late:true,w:"JS"},{p:"baja",t:"Actualizar bio y links de Instagram",due:"20 nov",w:"ML"}],doing:[{p:"media",t:"Optimizar campaña de retargeting",due:"17 nov",w:"NR"}],done:[{p:"alta",t:"Setup de catálogo en Instagram Shop",due:"29 oct",w:"NR"}]}
+  },
+  disegno:{
+    name:"Disegno Milano", sub:"Cocinas premium a medida · Web + Meta Ads",
+    domain:"disegnomilano.com.ar", initials:"DM", conn:{meta:true,crm:true,whatsapp:true},
+    meta:{followers:{v:"14.8K",d:5.2},reach:{v:"132K",d:16.5},series:{reach:[70,82,90,104,112,124,132],eng:[16,19,21,24,26,28,30]},
+      ads:{spend:{v:"$1.850",d:6.0},cpl:{v:"$12.40",d:-4.0},leads:{v:"149",d:12.0},roas:{v:"6.8x",d:0.9},impressions:{v:"210K",d:11.0},ctr:{v:"1.6%",d:0.2},cpm:{v:"$8.81",d:-1.4},conversions:{v:"22",d:10.0},
+        spendSeries:[240,260,255,280,290,270,275],
+        items:[{name:"Cocinas a medida · Reel",status:"activo",spend:"$780",leads:"74",cpl:"$10.54",ctr:"2.0%",impr:"96K"},{name:"Vestidores premium · Carrusel",status:"activo",spend:"$620",leads:"48",cpl:"$12.92",ctr:"1.5%",impr:"72K"},{name:"Showroom Haedo · Lead form",status:"pausado",spend:"$450",leads:"27",cpl:"$16.67",ctr:"1.1%",impr:"42K"}]}},
+    crm:{pipeline:{v:"$86.000",d:14},leads:{v:"41",d:8},conv:{v:"22%",d:3},chats:{v:"12",d:2},
+      funnel:[["Nuevos",41,100],["Contactados",30,73],["Propuesta",18,44],["Negociación",11,27],["Cerrados",6,15]],
+      leads:[{n:"Reforma Recoleta",s:"Web · hace 1h",a:"$9.400",t:"new"},{n:"Cocina Canning",s:"WhatsApp · hace 4h",a:"$12.800",t:"hot"},{n:"Vestidor San Isidro",s:"Instagram · ayer",a:"$6.200",t:"warm"},{n:"Depto Puerto Madero",s:"Meta Ads · ayer",a:"$15.100",t:"neg"}]},
+    tasks:{todo:[{p:"alta",t:"Enviar render final cocina Recoleta",due:"Vence hoy",late:true,w:"JS"},{p:"media",t:"Coordinar visita de medición en Canning",due:"15 nov",w:"NR"}],doing:[{p:"alta",t:"Optimizar campaña de leads por WhatsApp",due:"16 nov",w:"NR"}],done:[{p:"baja",t:"Reporte de octubre enviado",due:"31 oct",w:"ML"},{p:"media",t:"Setup catálogo del showroom en Instagram",due:"28 oct",w:"ML"}]}
+  },
+  arteplac:{
+    name:"Arteplac", sub:"Revestimientos decorativos · Redes + Meta Ads",
+    domain:"arteplac.com", initials:"AR", conn:{meta:true,crm:true,whatsapp:true},
+    meta:{followers:{v:"21.6K",d:6.4},reach:{v:"158K",d:14.2},series:{reach:[95,105,112,128,138,150,158],eng:[24,27,30,33,36,40,43]},
+      ads:{spend:{v:"$1.320",d:5.0},cpl:{v:"$3.60",d:-6.0},leads:{v:"366",d:15.0},roas:{v:"4.4x",d:0.5},impressions:{v:"158K",d:9.5},ctr:{v:"2.1%",d:0.4},cpm:{v:"$8.35",d:-2.0},conversions:{v:"74",d:12.0},
+        spendSeries:[180,195,190,210,205,220,220],
+        items:[{name:"Nueva colección melamina · Reel",status:"activo",spend:"$560",leads:"178",cpl:"$3.15",ctr:"2.6%",impr:"74K"},{name:"Placas decorativas · Carrusel",status:"activo",spend:"$470",leads:"122",cpl:"$3.85",ctr:"1.9%",impr:"54K"},{name:"Distribuidores · Imagen",status:"pausado",spend:"$290",leads:"66",cpl:"$4.39",ctr:"1.4%",impr:"30K"}]}},
+    crm:{pipeline:{v:"$28.400",d:9},leads:{v:"44",d:11},conv:{v:"26%",d:4},chats:{v:"16",d:3},
+      funnel:[["Nuevos",44,100],["Contactados",33,75],["Propuesta",20,45],["Negociación",12,27],["Cerrados",8,18]],
+      leads:[{n:"Mueblería del Centro",s:"Web · hace 1h",a:"$4.200",t:"new"},{n:"Corralón Sur",s:"WhatsApp · hace 4h",a:"$6.800",t:"hot"},{n:"Estudio de Arquitectura MB",s:"Email · ayer",a:"$3.500",t:"warm"},{n:"Distribuidora Cuyo",s:"Meta Ads · ayer",a:"$5.900",t:"neg"}]},
+    tasks:{todo:[{p:"media",t:"Actualizar catálogo de texturas 2026",due:"18 nov",w:"ML"}],doing:[{p:"alta",t:"Campaña de lanzamiento nueva línea",due:"16 nov",w:"JS"},{p:"media",t:"Integrar formularios al CRM",due:"18 nov",w:"NR"}],done:[{p:"baja",t:"Auditoría de la cuenta de Meta",due:"25 oct",w:"NR"}]}
+  },
+  nuevo:{
+    name:"Nuevo Cliente", sub:"En onboarding · sin conectar",
+    domain:"", initials:"NC", conn:{meta:false,crm:false,whatsapp:false},
+    meta:{followers:{v:"2.4K",d:0},reach:{v:"9.1K",d:0},series:{reach:[4,5,5,6,7,7,8],eng:[2,2,3,3,3,4,4]},
+      ads:{spend:{v:"$180",d:0},cpl:{v:"$5.40",d:0},leads:{v:"33",d:0},roas:{v:"2.1x",d:0},impressions:{v:"14K",d:0},ctr:{v:"1.2%",d:0},cpm:{v:"$12.90",d:0},conversions:{v:"6",d:0},
+        spendSeries:[20,24,26,25,28,28,29],
+        items:[{name:"Campaña inicial · Imagen",status:"activo",spend:"$180",leads:"33",cpl:"$5.40",ctr:"1.2%",impr:"14K"}]}},
+    crm:{pipeline:{v:"$1.900",d:0},leads:{v:"8",d:0},conv:{v:"12%",d:0},chats:{v:"3",d:0},
+      funnel:[["Nuevos",8,100],["Contactados",5,63],["Propuesta",2,25],["Negociación",1,13],["Cerrados",0,0]],
+      leads:[{n:"Consulta web #1",s:"Formulario web · hace 2h",a:"$700",t:"new"},{n:"Consulta por IG",s:"Instagram · ayer",a:"$450",t:"warm"}]},
+    tasks:{todo:[{p:"alta",t:"Solicitar acceso a la cuenta de Meta Business",due:"Vence hoy",late:true,w:"NR"},{p:"alta",t:"Conectar el CRM del cliente",due:"14 nov",w:"NR"},{p:"media",t:"Cargar identidad de marca y accesos",due:"16 nov",w:"ML"}],doing:[],done:[{p:"baja",t:"Reunión de kickoff realizada",due:"08 nov",w:"JS"}]}
+  }
+};
+
+const studio={
+  kpis:{ingresos:{v:"$14.8K",d:9},clientes:{v:"4",d:0},alcance:{v:"486K",d:16},pipeline:{v:"$119.5K",d:12}},
+  team:[
+    {n:"Martín López",i:"ML",role:"Diseño & Social",color:"linear-gradient(135deg,#B50CC5,#7d1cc9)",load:72,tasks:4,clients:["SVN","Arteplac"]},
+    {n:"Julieta Sosa",i:"JS",role:"Estrategia & Cuentas",color:"linear-gradient(135deg,#FE6F61,#e0554a)",load:64,tasks:3,clients:["Disegno Milano","SVN"]},
+    {n:"Nicolás Rivas",i:"NR",role:"Web & Ads",color:"linear-gradient(135deg,#252851,#3a3f7a)",load:84,tasks:5,clients:["Disegno Milano","Arteplac"]}
+  ],
+  integraciones:[
+    {ini:"M",name:"Meta Graph API",desc:"Instagram + Facebook Ads",status:"on"},
+    {ini:"H",name:"HubSpot CRM",desc:"Pipeline, contactos y etapas",status:"on"},
+    {ini:"W",name:"WhatsApp Business",desc:"Conversaciones de clientes",status:"on"},
+    {ini:"G",name:"Google Analytics 4",desc:"Tráfico y conversiones web",status:"off"},
+    {ini:"T",name:"TikTok Business",desc:"Métricas orgánicas",status:"off"}
+  ],
+  prefs:[
+    {b:"Notificaciones por email",s:"Resumen diario de métricas y tareas",on:true},
+    {b:"Alertas de vencimientos",s:"Avisar cuando una tarea vence en 24h",on:true},
+    {b:"Reportes automáticos",s:"Generar reporte mensual por cliente",on:false}
+  ]
+};
+
+const $=s=>document.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const delta=d=>d>0?`<span class="delta up"><span class="arrow">▲</span> +${d}% <small>vs. período ant.</small></span>`:d<0?`<span class="delta down"><span class="arrow">▼</span> ${d}% <small>vs. período ant.</small></span>`:`<span class="delta flat">→ estable <small>vs. período ant.</small></span>`;
+const avatarHTML=c=> c.domain ? `<div class="av logo"><img src="https://logo.clearbit.com/${c.domain}" alt="${c.name}" referrerpolicy="no-referrer" onerror="var n=(this.dataset.s|0)+1;this.dataset.s=n;if(n===1){this.src='https://icons.duckduckgo.com/ip3/${c.domain}.ico'}else if(n===2){this.src='https://www.google.com/s2/favicons?domain=${c.domain}&sz=128'}else{this.remove()}">${c.initials}</div>` : `<div class="av" style="background:var(--grad)">${c.initials}</div>`;
+const ICON={
+  users:'<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.9"/><path d="M16 3.1a4 4 0 010 7.8"/>',
+  reach:'<circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/>',
+  eye:'<circle cx="12" cy="12" r="2.5"/><path d="M12 5c5 0 9 4.5 9 7s-4 7-9 7-9-4.5-9-7 4-7 9-7z"/>',
+  money:'<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 100 7h5a3.5 3.5 0 110 7H6"/>',
+  bolt:'<path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"/>',
+  funnel:'<path d="M3 4h18l-7 8v6l-4 2v-8L3 4z"/>',
+  chat:'<path d="M21 11.5a8.4 8.4 0 01-9 8.4 9 9 0 01-4-1L3 20l1.1-3.9a8.4 8.4 0 01-1-4A8.5 8.5 0 0112 3a8.4 8.4 0 019 8.5z"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>',
+  media:'<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+  check:'<path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/>',
+  briefcase:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/>'
+};
+const svgIco=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+const kpi=(label,ico,val,d,hero)=>`<div class="card kpi ${hero?'hero':''}"><div class="top"><span class="label">${label}</span><span class="ico">${svgIco(ico)}</span></div><div class="val">${val}</div>${delta(d)}</div>`;
+const kpiInfo=(label,ico,val,sub,hero)=>`<div class="card kpi ${hero?'hero':''}"><div class="top"><span class="label">${label}</span><span class="ico">${svgIco(ico)}</span></div><div class="val">${val}</div><div class="delta flat" style="font-weight:500">${sub}</div></div>`;
+function lineChart(reach,eng){
+  const W=640,H=210,pad=8,max=Math.max(...reach,...eng)*1.15;
+  const x=i=>pad+i*((W-pad*2)/(reach.length-1)), y=v=>H-pad-(v/max)*(H-pad*2);
+  const line=a=>a.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
+  const area=a=>line(a)+` L ${x(a.length-1)} ${H-pad} L ${x(0)} ${H-pad} Z`;
+  let g='';for(let i=0;i<=3;i++){const gy=pad+i*((H-pad*2)/3);g+=`<line class="grid-line" x1="${pad}" y1="${gy}" x2="${W-pad}" y2="${gy}"/>`;}
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs>
+    <linearGradient id="ar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B50CC5" stop-opacity=".2"/><stop offset="1" stop-color="#B50CC5" stop-opacity="0"/></linearGradient>
+    <linearGradient id="ae" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FE6F61" stop-opacity=".16"/><stop offset="1" stop-color="#FE6F61" stop-opacity="0"/></linearGradient></defs>
+    ${g}<path d="${area(reach)}" fill="url(#ar)"/><path d="${area(eng)}" fill="url(#ae)"/>
+    <path d="${line(reach)}" fill="none" stroke="#B50CC5" stroke-width="2.5"/><path d="${line(eng)}" fill="none" stroke="#FE6F61" stroke-width="2.5"/>
+    ${reach.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="#B50CC5"/>`).join('')}${eng.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="#FE6F61"/>`).join('')}</svg>`;
+}
+function spendChart(data){
+  const W=640,H=180,pad=8,max=Math.max(...data)*1.2;
+  const x=i=>pad+i*((W-pad*2)/(data.length-1)), y=v=>H-pad-(v/max)*(H-pad*2);
+  const line=data.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
+  const area=line+` L ${x(data.length-1)} ${H-pad} L ${x(0)} ${H-pad} Z`;
+  let g='';for(let i=0;i<=3;i++){const gy=pad+i*((H-pad*2)/3);g+=`<line class="grid-line" x1="${pad}" y1="${gy}" x2="${W-pad}" y2="${gy}"/>`;}
+  return `<svg class="chart" style="height:180px" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs>
+    <linearGradient id="asx" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FE6F61" stop-opacity=".22"/><stop offset="1" stop-color="#FE6F61" stop-opacity="0"/></linearGradient></defs>
+    ${g}<path d="${area}" fill="url(#asx)"/><path d="${line}" fill="none" stroke="#FE6F61" stroke-width="2.5"/>
+    ${data.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="#FE6F61"/>`).join('')}</svg>`;
+}
+const pending=c=>c.tasks.todo.length+c.tasks.doing.length;
+function connectState(kind){
+  const map={
+    meta:{ico:'bolt',t:"Conectá la cuenta de Meta",d:"Vinculá la cuenta de Meta Business de este cliente para traer las métricas de anuncios: gasto, CPL, leads y rendimiento por anuncio.",b:"Conectar cuenta de Meta"},
+    crm:{ico:'funnel',t:"Conectá el CRM",d:"Vinculá el CRM de este cliente para ver el pipeline, las etapas, los leads y las conversaciones.",b:"Conectar CRM"}
+  };
+  const m=map[kind];
+  return `<div class="card connect-state"><div class="cs-ico">${svgIco(m.ico)}</div><h3>${m.t}</h3><p>${m.d}</p><button class="connect-btn" data-connect="${kind}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6"/><path d="M12 9v6"/><circle cx="12" cy="12" r="9"/></svg>${m.b}</button></div>`;
+}
+const kpiLocked=(label,ico,kind)=>`<div class="card kpi locked"><div class="top"><span class="label">${label}</span><span class="ico">${svgIco(ico)}</span></div><div class="val" style="color:var(--muted-2)">—</div><button class="link-connect" data-connect="${kind}">Conectar</button></div>`;
+const funnelHTML=f=>`<div class="funnel">${f.map(([n,v,p])=>`<div class="stage"><div class="name">${n}</div><div class="track"><div class="fill" style="width:${p}%"><b>${v}</b></div></div><div class="pct">${p}%</div></div>`).join('')}</div>`;
+
+function studioInicio(){
+  const rows=Object.entries(clients).map(([id,c])=>{
+    const pend=pending(c), late=[...c.tasks.todo,...c.tasks.doing].some(t=>t.late);
+    const onboarding=!c.conn.meta||!c.conn.crm;
+    const estado=onboarding?'<span class="pill onboarding">Onboarding</span>':(late?'<span class="pill atencion">Atención</span>':'<span class="pill al-dia">Al día</span>');
+    return `<tr data-open="${id}"><td><div class="cl-cell">${avatarHTML(c)}<div><b>${c.name}</b><span>${c.sub.split('·')[0].trim()}</span></div></div></td>
+      <td class="num">${pend}</td>
+      <td>${estado}</td>
+      <td class="go"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></td></tr>`;}).join('');
+  const cs=Object.values(clients);
+  const activos=cs.filter(c=>c.conn.meta&&c.conn.crm).length;
+  const onboarding=cs.length-activos;
+  const tareasPend=cs.reduce((a,c)=>a+pending(c),0);
+  const vencidas=cs.reduce((a,c)=>a+[...c.tasks.todo,...c.tasks.doing].filter(t=>t.late).length,0);
+  return `<div class="grid g4" style="margin-bottom:16px">
+    ${kpiInfo("Clientes activos","briefcase",activos,`de ${cs.length} en total`,true)}
+    ${kpiInfo("En onboarding","target",onboarding,onboarding===1?"1 pendiente de conectar":"pendientes de conectar")}
+    ${kpiInfo("Tareas pendientes","check",tareasPend,"en todo el equipo")}
+    ${kpiInfo("Miembros del equipo","users",studio.team.length,"activos en Qualita")}
+  </div><div class="grid g-2-1">
+    <div class="card pad-lg"><div class="card-h"><h3>Clientes</h3><span class="hint">Tocá un cliente para abrir su panel</span></div>
+      <table class="ctable"><thead><tr><th>Cliente</th><th>Tareas</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="card pad-lg"><div class="card-h"><h3>Carga del equipo</h3></div>
+      ${studio.team.map(m=>`<div style="margin-bottom:18px"><div class="member"><div class="row"><b>${m.n.split(' ')[0]}</b><span>${m.load}% · ${m.tasks} tareas</span></div><div class="barwrap"><i style="width:${m.load}%"></i></div></div></div>`).join('')}</div>
+  </div>`;
+}
+function studioEquipo(){
+  return `<div class="grid g3">${studio.team.map(m=>`
+    <div class="card member"><div class="head"><div class="fav" style="background:${m.color}">${m.i}</div><div><b>${m.n}</b><span>${m.role}</span></div></div>
+    <div><div class="row" style="margin-bottom:6px"><span>Carga de trabajo</span><b>${m.load}%</b></div><div class="barwrap"><i style="width:${m.load}%"></i></div></div>
+    <div class="row"><span>Tareas activas</span><b>${m.tasks}</b></div>
+    <div><div class="row" style="margin-bottom:8px"><span>Clientes asignados</span></div><div class="tags">${m.clients.map(x=>`<span class="tag">${x}</span>`).join('')}</div></div></div>`).join('')}</div>`;
+}
+const AREAS=[["inicio","Inicio"],["equipo","Equipo"],["config","Config"],["clientes","Clientes"],["meta","META"],["crm","CRM"],["tareas","Tareas"],["admin","Admin"]];
+let users=[
+  {email:"admin@qualita.studio", name:"Tu cuenta", role:"admin", status:"activo", areas:{inicio:1,equipo:1,config:1,clientes:1,meta:1,crm:1,tareas:1,admin:1}},
+  {email:"martin@qualita.studio", name:"Martín López", role:"member", status:"activo", areas:{inicio:1,equipo:0,config:0,clientes:1,meta:1,crm:0,tareas:1,admin:0}},
+  {email:"julieta@qualita.studio", name:"Julieta Sosa", role:"member", status:"activo", areas:{inicio:1,equipo:1,config:0,clientes:1,meta:0,crm:1,tareas:1,admin:0}},
+  {email:"nicolas@qualita.studio", name:"Nicolás Rivas", role:"member", status:"activo", areas:{inicio:1,equipo:0,config:1,clientes:1,meta:1,crm:1,tareas:1,admin:0}},
+  {email:"lucia@qualita.studio", name:"Invitación pendiente", role:"member", status:"invitado", areas:{inicio:1,equipo:0,config:0,clientes:0,meta:0,crm:0,tareas:0,admin:0}}
+];
+function studioAdmin(){
+  const rows=users.map((u,i)=>{
+    const adm=u.role==='admin';
+    const chips=AREAS.map(([k,label])=>`<button class="chip ${(adm||u.areas[k])?'on':''}" ${adm?'disabled':''} data-u="${i}" data-a="${k}">${label}</button>`).join('');
+    const ini=u.name.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
+    return `<tr>
+      <td><div class="cl-cell"><div class="fav" style="background:var(--grad);width:34px;height:34px;border-radius:9px;font-size:12px">${ini}</div><div><b>${u.name}</b><span>${u.email}</span></div></div></td>
+      <td><select class="role-sel" data-u="${i}"><option value="member" ${!adm?'selected':''}>Miembro</option><option value="admin" ${adm?'selected':''}>Admin</option></select></td>
+      <td><span class="pill ${u.status==='activo'?'al-dia':'onboarding'}">${u.status==='activo'?'Activo':'Invitado'}</span></td>
+      <td><div class="chips">${chips}</div></td>
+    </tr>`;
+  }).join('');
+  return `<div class="card pad-lg" style="margin-bottom:16px">
+      <div class="card-h"><h3>Invitar al equipo</h3><span class="hint">Solo correos @qualita.studio</span></div>
+      <div class="invite-row"><input id="inviteMail" type="email" placeholder="nombre@qualita.studio"><button class="connect-btn" id="inviteBtn">Enviar invitación</button></div>
+    </div>
+    <div class="card pad-lg"><div class="card-h"><h3>Usuarios y accesos</h3><span class="hint">Activá o desactivá el acceso a cada área. El rol Admin ve todo.</span></div>
+      <table class="ctable admin-table"><thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Acceso a áreas</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function studioConfig(){
+  const rows=Object.entries(clients).map(([id,c])=>`<tr>
+    <td><div class="cl-cell">${avatarHTML(c)}<b>${c.name}</b></div></td>
+    ${['meta','crm','whatsapp'].map(k=>`<td>${c.conn[k]?'<span class="status on">Conectado</span>':`<button class="status off" data-cc="${id}" data-ck="${k}">Conectar</button>`}</td>`).join('')}
+  </tr>`).join('');
+  return `<div class="grid g2">
+    <div class="card pad-lg"><div class="card-h"><h3>Integraciones por cliente</h3><span class="hint">Cada cuenta se conecta por cliente</span></div>
+      <table class="ctable"><thead><tr><th>Cliente</th><th>Meta</th><th>CRM</th><th>WhatsApp</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="card pad-lg"><div class="card-h"><h3>Preferencias del equipo</h3></div>
+      ${studio.prefs.map((p,idx)=>`<div class="pref"><div class="txt"><b>${p.b}</b><span>${p.s}</span></div><div class="toggle ${p.on?'on':''}" data-toggle="${idx}"></div></div>`).join('')}</div>
+  </div>`;
+}
+function clientGeneral(c){
+  const m=c.conn.meta, cr=c.conn.crm;
+  return `<div class="grid g4" style="margin-bottom:16px">
+    ${m?kpi("Alcance total (Meta)","reach",c.meta.reach.v,c.meta.reach.d,true):kpiLocked("Alcance total (Meta)","reach","meta")}
+    ${m?kpi("Seguidores","users",c.meta.followers.v,c.meta.followers.d):kpiLocked("Seguidores","users","meta")}
+    ${cr?kpi("Leads en CRM","target",c.crm.leads.v,c.crm.leads.d):kpiLocked("Leads en CRM","target","crm")}
+    ${cr?kpi("Conversaciones activas","chat",c.crm.chats.v,c.crm.chats.d):kpiLocked("Conversaciones activas","chat","crm")}
+  </div><div class="grid g-2-1">
+    ${m?`<div class="card pad-lg"><div class="card-h"><h3>Alcance e interacción</h3><span class="hint">Últimos 30 días</span></div>${lineChart(c.meta.series.reach,c.meta.series.eng)}<div class="legend"><span><i style="background:#B50CC5"></i>Alcance</span><span><i style="background:#FE6F61"></i>Interacción</span></div></div>`:connectState('meta')}
+    ${cr?`<div class="card pad-lg"><div class="card-h"><h3>Embudo de ventas</h3></div>${funnelHTML(c.crm.funnel)}</div>`:connectState('crm')}
+  </div>`;
+}
+function clientMeta(c){
+  if(!c.conn.meta) return connectState('meta');
+  const a=c.meta.ads;
+  return `<div class="grid g4" style="margin-bottom:16px">
+    ${kpi("Gasto total","money",a.spend.v,a.spend.d,true)}${kpi("Costo por lead (CPL)","target",a.cpl.v,a.cpl.d)}${kpi("Leads generados","users",a.leads.v,a.leads.d)}${kpi("ROAS","bolt",a.roas.v,a.roas.d)}
+  </div><div class="grid g4" style="margin-bottom:16px">
+    ${kpi("Impresiones","eye",a.impressions.v,a.impressions.d)}${kpi("CTR","reach",a.ctr.v,a.ctr.d)}${kpi("CPM","bolt",a.cpm.v,a.cpm.d)}${kpi("Conversiones","check",a.conversions.v,a.conversions.d)}
+  </div>
+  <div class="card pad-lg" style="margin-bottom:16px"><div class="card-h"><h3>Anuncios individuales</h3><span class="hint">${a.items.length} anuncios en la cuenta</span></div>
+    <table class="ctable"><thead><tr><th>Anuncio</th><th>Estado</th><th>Gasto</th><th>Leads</th><th>CPL</th><th>CTR</th><th>Impresiones</th></tr></thead>
+    <tbody>${a.items.map(it=>`<tr><td><div class="cl-cell"><div class="thumb-sm">${svgIco('media')}</div><b>${it.name}</b></div></td>
+      <td><span class="pill ${it.status}">${it.status==='activo'?'Activo':'Pausado'}</span></td>
+      <td class="num">${it.spend}</td><td class="num">${it.leads}</td><td class="num">${it.cpl}</td><td>${it.ctr}</td><td>${it.impr}</td></tr>`).join('')}</tbody></table></div>
+  <div class="card pad-lg"><div class="card-h"><h3>Gasto diario en anuncios</h3><span class="hint">Meta Marketing API · últimos 7 días</span></div>${spendChart(a.spendSeries)}</div>`;
+}
+function clientCrm(c){
+  if(!c.conn.crm) return connectState('crm');
+  const cr=c.crm, lbl={new:"Nuevo",hot:"Caliente",warm:"Tibio",neg:"Negociación"};
+  return `<div class="grid g4" style="margin-bottom:16px">
+    ${kpi("Valor del pipeline","funnel",cr.pipeline.v,cr.pipeline.d,true)}${kpi("Leads del período","target",cr.leads.v,cr.leads.d)}${kpi("Tasa de conversión","bolt",cr.conv.v,cr.conv.d)}${kpi("Conversaciones activas","chat",cr.chats.v,cr.chats.d)}
+  </div><div class="grid g-2-1">
+    <div class="card pad-lg"><div class="card-h"><h3>Etapas del embudo</h3><span class="hint">Sincronizado con el CRM</span></div>${funnelHTML(cr.funnel)}</div>
+    <div class="card pad-lg"><div class="card-h"><h3>Últimos leads</h3></div>
+      ${cr.leads.map(l=>`<div class="lead-row"><div class="info"><b>${l.n}</b><span>${l.s}</span></div><span class="amount">${l.a}</span><span class="pill ${l.t}">${lbl[l.t]}</span></div>`).join('')}</div>
+  </div>`;
+}
+function clientTareas(c){
+  const t=c.tasks;
+  const col=(title,color,items,done)=>`<div class="task-col"><div class="task-col-h"><span class="dot" style="background:${color}"></span><b>${title}</b><span class="count">${items.length}</span></div>
+    ${items.length?items.map(it=>`<div class="task"><span class="prio ${it.p}">${it.p}</span><p style="${done?'opacity:.55;text-decoration:line-through':''}">${it.t}</p><div class="foot"><span class="due ${it.late?'late':''}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${it.due}</span><span class="who">${it.w}</span></div></div>`).join(''):'<div class="empty">Sin tareas</div>'}</div>`;
+  return `<div class="task-cols">${col("Pendientes","#FE6F61",t.todo,false)}${col("En curso","#d68a00",t.doing,false)}${col("Completadas","#12a36b",t.done,true)}</div>`;
+}
+
+let mode="studio", studioView="inicio", currentClient=null, clientView="general";
+const studioTitles={inicio:"Inicio",equipo:"Equipo",config:"Configuración",admin:"Administración"};
+const clientTitles={general:"Vista general",meta:"Métricas de META",crm:"CRM y ventas",tareas:"Tareas"};
+const subItems=[["general","Vista general"],["meta","META"],["crm","CRM"],["tareas","Tareas"]];
+
+function buildClientNav(){
+  const host=$("#clientNav");host.innerHTML="";
+  Object.entries(clients).forEach(([id,c])=>{
+    const sel=mode==="client"&&currentClient===id;
+    const btn=el("button","client-btn"+(sel?" sel":""));
+    btn.innerHTML=`${avatarHTML(c)}<span class="cn">${c.name}</span><svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>`;
+    btn.onclick=()=>selectClient(id);host.appendChild(btn);
+    const sub=el("div","subnav"+(sel?" open":""));
+    subItems.forEach(([k,label])=>{
+      const b=el("button","sb"+(sel&&clientView===k?" active":""));
+      const badge=k==="tareas"?`<span class="sb-badge">${pending(c)}</span>`:"";
+      b.innerHTML=`<span class="ln">·</span>${label}${badge}`;
+      b.onclick=e=>{e.stopPropagation();openClientView(id,k);};sub.appendChild(b);
+    });
+    host.appendChild(sub);
+  });
+}
+const clearStudioActive=()=>document.querySelectorAll("[data-studio]").forEach(x=>x.classList.remove("active"));
+function selectClient(id){mode="client";currentClient=id;clientView="general";clearStudioActive();buildClientNav();render();}
+function openClientView(id,view){mode="client";currentClient=id;clientView=view;clearStudioActive();buildClientNav();render();}
+function openStudio(view){mode="studio";studioView=view;clearStudioActive();document.querySelector(`[data-studio="${view}"]`).classList.add("active");buildClientNav();render();}
+
+function render(){
+  const host=$("#viewHost"), crumb=$("#crumb"), title=$("#tbTitle"), range=$("#range");
+  if(mode==="studio"){
+    crumb.innerHTML=`<b>Qualita</b> <span>/ ${studioTitles[studioView]}</span>`;title.textContent=studioTitles[studioView];
+    range.style.display=studioView==="inicio"?"flex":"none";
+    host.innerHTML=studioView==="inicio"?studioInicio():studioView==="equipo"?studioEquipo():studioView==="config"?studioConfig():studioAdmin();
+    if(studioView==="inicio")host.querySelectorAll("[data-open]").forEach(r=>r.onclick=()=>selectClient(r.dataset.open));
+    if(studioView==="config"){
+      host.querySelectorAll("[data-toggle]").forEach(t=>t.onclick=()=>t.classList.toggle("on"));
+      host.querySelectorAll("[data-cc]").forEach(b=>b.onclick=()=>{clients[b.dataset.cc].conn[b.dataset.ck]=true;buildClientNav();render();});
+    }
+    if(studioView==="admin"){
+      host.querySelectorAll(".chip[data-a]").forEach(b=>b.onclick=()=>{const u=users[b.dataset.u];u.areas[b.dataset.a]=u.areas[b.dataset.a]?0:1;render();});
+      host.querySelectorAll(".role-sel").forEach(s=>s.onchange=()=>{users[s.dataset.u].role=s.value;render();});
+      const ib=host.querySelector("#inviteBtn");
+      if(ib)ib.onclick=()=>{const inp=host.querySelector("#inviteMail");const v=(inp.value||'').trim().toLowerCase();
+        if(!/^[^@\s]+@qualita\.studio$/.test(v)){inp.style.borderColor='var(--down)';inp.focus();return;}
+        users.push({email:v,name:v.split('@')[0],role:'member',status:'invitado',areas:{inicio:1,equipo:0,config:0,clientes:0,meta:0,crm:0,tareas:0,admin:0}});render();};
+    }
+  }else{
+    const c=clients[currentClient];
+    crumb.innerHTML=`<b>${c.name}</b> <span>/ ${clientTitles[clientView]}</span>`;title.textContent=clientTitles[clientView];
+    range.style.display=clientView==="tareas"?"none":"flex";
+    host.innerHTML=clientView==="general"?clientGeneral(c):clientView==="meta"?clientMeta(c):clientView==="crm"?clientCrm(c):clientTareas(c);
+    host.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{clients[currentClient].conn[b.dataset.connect]=true;buildClientNav();render();});
+  }
+}
+document.querySelectorAll("[data-studio]").forEach(b=>b.onclick=()=>openStudio(b.dataset.studio));
+$("#range").querySelectorAll("button").forEach(b=>b.onclick=()=>{$("#range").querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");});
+buildClientNav();render();
+
+/* ---------- Login de prueba ---------- */
+const TEST_USER={email:"ulises@qualita.studio",pass:"123"};
+const loginEl=$("#login");
+const showErr=m=>{$("#loginErr").textContent=m||'';};
+function enterApp(email){
+  loginEl.style.display='none';
+  const n=email.split('@')[0]; const disp=n.charAt(0).toUpperCase()+n.slice(1);
+  $("#meName").textContent=disp; $("#meMail").textContent=email; $("#meAv").textContent=disp.slice(0,1).toUpperCase();
+}
+function tryLogin(){
+  const email=($("#loginEmail").value||'').trim().toLowerCase();
+  const pass=$("#loginPass").value||'';
+  if(!/^[^@\s]+@qualita\.studio$/.test(email)){showErr('Usá tu cuenta corporativa @qualita.studio');return;}
+  if(email===TEST_USER.email&&pass===TEST_USER.pass){showErr('');enterApp(email);}
+  else showErr('Correo o contraseña incorrectos');
+}
+$("#loginBtn").onclick=tryLogin;
+$("#loginPass").addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin();});
+$("#loginEmail").addEventListener('keydown',e=>{if(e.key==='Enter')$("#loginPass").focus();});
+$("#googleBtn").onclick=()=>showErr('El ingreso con Google se habilita al conectar Supabase. Por ahora usá el acceso de prueba.');
+$("#logoutBtn").onclick=()=>{loginEl.style.display='flex';$("#loginPass").value='';showErr('');};
+
+/* ---------- Modo oscuro ---------- */
+const MOON='<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>';
+const SUN='<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+$("#themeBtn").onclick=()=>{
+  const dark=document.body.classList.toggle('dark');
+  $("#themeLabel").textContent=dark?'Modo claro':'Modo oscuro';
+  $("#themeIco").innerHTML=dark?SUN:MOON;
+};
+</script>
+</body>
+</html>
