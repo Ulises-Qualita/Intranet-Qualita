@@ -191,7 +191,7 @@ export function AgentConversation({
         {variant === "panel" ? (
           <div className="agent-title">
             <Icon name="sparkles" size={16} />
-            <h3>Agente</h3>
+            <h3>Agente Qualita</h3>
           </div>
         ) : (
           // En grande el título ya lo da la Topbar, así que acá va de qué se está

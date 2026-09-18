@@ -5,7 +5,7 @@
 // Se guarda solo el texto de cada turno, nunca lo que devolvieron las tools: los
 // datos de clientes ya viven en sus tablas y duplicarlos en un log de chat sería
 // guardarlos de más, con una copia que además envejece.
-import { createClient } from "../supabase/server";
+import { createClient, isMissingTable } from "../supabase/server";
 
 // Turnos que se le mandan al modelo al retomar una conversación. Más atrás que
 // esto, el contexto aporta poco y cuesta tokens en cada pregunta.
@@ -24,10 +24,8 @@ export type AgentMessage = {
 
 export type AgentThread = { id: string; title: string; updated_at: string };
 
-// La tabla puede no existir todavía (falta correr docs/sql/2026-09-18-agente.sql).
+// Las tablas pueden no existir todavía (falta correr docs/sql/2026-09-18-agente.sql).
 // El chat tiene que andar igual, sin historial, en vez de romper.
-const MISSING_TABLE = "42P01";
-const isMissingTable = (error: { code?: string } | null) => error?.code === MISSING_TABLE;
 
 export async function listThreads(limit = 30): Promise<AgentThread[]> {
   const supabase = await createClient();

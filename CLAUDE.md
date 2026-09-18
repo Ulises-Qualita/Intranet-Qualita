@@ -59,6 +59,16 @@ No hay framework de tests configurado todavía.
   El token de usuario de larga duración (~60 días) va en `intranet_integration_secrets`
   (provider `meta`) y `account_ref` guarda el `act_…`. Graph API en `lib/meta.ts`. Env:
   `META_APP_ID`, `META_APP_SECRET`, opcionales `META_LOGIN_CONFIG_ID`, `META_GRAPH_VERSION`.
+- Clarity (solapa WEB de cada cliente, `/clientes/[slug]/web`, área `clientes`): la
+  Data Export API permite **10 consultas por proyecto por día** y solo devuelve las
+  últimas 72 h, así que **no se consulta al abrir la vista**: el cron toma una foto
+  diaria (solo en la corrida de la mañana; dos se solaparían) y la serie se acumula
+  en `intranet_clarity_daily` / `intranet_clarity_pages`. **El historial anterior a
+  la conexión no se puede traer**, y la API solo da números (sin heatmaps ni
+  grabaciones). `lib/clarity.ts` (API + secrets), `lib/clarity-sync.ts`. Ojo:
+  la doc de Microsoft solo detalla los campos de la métrica `Traffic`; el parser
+  prueba nombres candidatos y guarda la respuesta cruda en `raw` para poder corregir
+  el mapeo sin perder datos.
 - Notion: fuente de verdad de las **tareas**, en **solo lectura** y **en vivo** (no se
   espeja en Supabase). Integración *interna* del workspace: un único `NOTION_TOKEN` (env,
   server), no OAuth por cliente. Dos niveles de config:
@@ -96,7 +106,22 @@ No hay framework de tests configurado todavía.
   de cada turno, nunca los resultados de las tools). Modelo por defecto
   `claude-opus-5`, override con `ANTHROPIC_MODEL`. El render del chat soporta un
   markdown acotado (`components/agent/rich-text.tsx`): sin tablas, y el prompt lo
-  dice.
+  dice. `lib/agent/usage.ts` registra tokens y costo estimado por consulta en
+  `intranet_agent_usage` (precios por millón en una tabla del módulo; el costo se
+  guarda ya convertido para que las filas viejas no cambien de valor), y alimenta
+  las cards de gasto de `/admin`.
+- Foro (`/foro`, solapa del sidebar sin área propia, como el agente): mensajes con
+  tipo (error/mejora/pregunta), estado y respuestas, en `intranet_forum_posts` /
+  `intranet_forum_comments`. **Una sola pantalla**, sin ruta por mensaje:
+  `getThreads()` trae todo (dos consultas y el cruce en memoria) y el acordeón de
+  `forum-list.tsx` despliega cada uno sin pedir nada. `lib/forum-shared.ts` es el
+  modelo client-safe. El **estado solo lo mueve un admin**, y eso no se puede
+  expresar con RLS (una política no ve el valor anterior de la fila): va como
+  trigger `forum_status_guard_intranet`.
+- Tablas que todavía no se crearon: chequear con `isMissingTable()` de
+  `lib/supabase/server.ts`. PostgREST responde **`PGRST205`** (no la encuentra en su
+  schema cache), no el `42P01` de Postgres; mirar solo uno deja el otro sin cubrir.
+  `saveNotionConfig` en `app/(app)/admin/actions.ts` todavía compara contra `42P01`.
 - Estilos: clases del mockup en `app/globals.css` (`@layer components`); tema oscuro =
   clase `.dark` en `<html>` + `localStorage("theme")`. Ojo con nombres de clase que
   choquen con utilidades de Tailwind (p. ej. `mb-16`).

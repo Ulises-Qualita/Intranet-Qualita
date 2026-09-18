@@ -601,3 +601,71 @@ export const getTeam = cache(async (): Promise<TeamMember[]> => {
     };
   });
 });
+
+// ---------- Clarity (intranet_clarity_daily / intranet_clarity_pages) ----------
+
+export type ClarityDaily = {
+  as_of: string;
+  sessions: number;
+  bot_sessions: number;
+  distinct_users: number;
+  pages_per_session: number | null;
+  scroll_depth: number | null;
+  total_time: number | null;
+  active_time: number | null;
+  rage_clicks: number;
+  dead_clicks: number;
+  excessive_scroll: number;
+  quickbacks: number;
+  script_errors: number;
+  error_clicks: number;
+  devices: { name: string; sessions: number }[];
+};
+
+// Serie diaria de Clarity. Arranca en la primera sincronización: la API solo
+// entrega los últimos 3 días, así que no hay historial anterior que traer.
+export async function getClarityDaily(clientId: string, days = 30): Promise<ClarityDaily[]> {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("intranet_clarity_daily")
+    .select(
+      "as_of, sessions, bot_sessions, distinct_users, pages_per_session, scroll_depth, total_time, active_time, rage_clicks, dead_clicks, excessive_scroll, quickbacks, script_errors, error_clicks, devices",
+    )
+    .eq("client_id", clientId)
+    .gte("as_of", since)
+    .order("as_of", { ascending: true })
+    .returns<ClarityDaily[]>();
+  if (error) throw error;
+  return (data ?? []).map((d) => ({
+    ...d,
+    pages_per_session: d.pages_per_session === null ? null : Number(d.pages_per_session),
+    scroll_depth: d.scroll_depth === null ? null : Number(d.scroll_depth),
+    total_time: d.total_time === null ? null : Number(d.total_time),
+    active_time: d.active_time === null ? null : Number(d.active_time),
+    devices: d.devices ?? [],
+  }));
+}
+
+export type ClarityPage = { url: string; sessions: number };
+
+// Páginas más vistas del período, sumadas entre los días guardados.
+export async function getClarityPages(clientId: string, days = 30): Promise<ClarityPage[]> {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const supabase = await createClient();
+  const rows = await readAll<ClarityPage>((from, to) =>
+    supabase
+      .from("intranet_clarity_pages")
+      .select("url, sessions")
+      .eq("client_id", clientId)
+      .gte("as_of", since)
+      .range(from, to)
+      .returns<ClarityPage[]>(),
+  );
+
+  const byUrl = new Map<string, number>();
+  for (const row of rows) byUrl.set(row.url, (byUrl.get(row.url) ?? 0) + row.sessions);
+  return [...byUrl.entries()]
+    .map(([url, sessions]) => ({ url, sessions }))
+    .sort((a, b) => b.sessions - a.sessions);
+}

@@ -66,7 +66,7 @@ export function KpiLocked({
   );
 }
 
-type ConnectKind = "meta" | "crm" | "notion";
+type ConnectKind = "meta" | "crm" | "notion" | "clarity";
 
 const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: string; cta: string }> = {
   notion: {
@@ -86,6 +86,12 @@ const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: s
     title: "Conectá el CRM",
     desc: "Vinculá el CRM de este cliente para ver el pipeline, las etapas, los leads y las conversaciones.",
     cta: "Conectar CRM",
+  },
+  clarity: {
+    icon: "eye",
+    title: "Conectá Microsoft Clarity",
+    desc: "Vinculá el proyecto de Clarity del sitio de este cliente para ver sesiones, páginas más vistas y las señales de fricción: rage clicks, clics muertos y errores.",
+    cta: "Conectar Clarity",
   },
 };
 

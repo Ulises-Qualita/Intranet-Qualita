@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { NoAccess } from "@/components/ui";
+import { getAgentUsage } from "@/lib/agent/usage";
 import { getAreaSession } from "@/lib/auth";
 import { getTeam } from "@/lib/data";
+import { AgentUsageCards } from "./agent-usage";
 import { UsersAdmin } from "./users-admin";
 
 export default async function AdminPage() {
@@ -16,7 +18,7 @@ export default async function AdminPage() {
     );
   }
 
-  const members = await getTeam();
+  const [members, usage] = await Promise.all([getTeam(), getAgentUsage()]);
 
   return (
     <>
@@ -29,6 +31,7 @@ export default async function AdminPage() {
           </Link>
         </div>
         <UsersAdmin members={members} currentUserId={session.user.id} canEdit={session.profile?.role === "admin"} />
+        <AgentUsageCards usage={usage} members={members} />
       </section>
     </>
   );

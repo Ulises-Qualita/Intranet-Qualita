@@ -25,6 +25,14 @@ export const INTEGRATIONS = [
     help: "CRM del cliente de donde salen el pipeline, las etapas y los leads.",
   },
   {
+    value: "clarity",
+    label: "Clarity",
+    title: "Microsoft Clarity",
+    refLabel: "ID del proyecto de Clarity",
+    placeholder: "abc123def4",
+    help: "Proyecto de Microsoft Clarity del sitio del cliente, de donde salen las métricas de la solapa WEB.",
+  },
+  {
     value: "whatsapp",
     label: "WhatsApp",
     title: "WhatsApp Business",
@@ -48,6 +56,7 @@ export const CONNECT_PAGES = {
   meta: { path: "meta/conectar", manualError: "Meta se conecta iniciando sesión con Facebook." },
   notion: { path: "notion/conectar", manualError: "Notion se conecta eligiendo el proyecto de la lista." },
   crm: { path: "crm/conectar", manualError: "El CRM se conecta cargando la cuenta y su clave de API." },
+  clarity: { path: "web/conectar", manualError: "Clarity se conecta cargando el token de exportación del proyecto." },
 } as const;
 
 export const hasConnectPage = (provider: Integration): provider is keyof typeof CONNECT_PAGES => provider in CONNECT_PAGES;

@@ -384,6 +384,28 @@ body {
   .invite-row input:focus { outline: none; border-color: var(--magenta); }
   .invite-row input.invalid { border-color: var(--down); }
 
+  /* Consumo del agente. El importe va en cuerpo de KPI: es el dato que se mira, el
+     resto es el desglose que lo explica. */
+  .usage-total { display: flex; flex-direction: column; gap: 5px; margin-bottom: 18px; }
+  .usage-total b { font-family: var(--font-display); font-weight: 700; font-size: 30px; letter-spacing: -1px; line-height: 1; color: var(--navy); }
+  .usage-total span { font-size: 12.5px; color: var(--muted); }
+
+  .usage-rows { display: flex; flex-wrap: wrap; gap: 10px; }
+  .usage-rows > div { flex: 1; min-width: 104px; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+  .usage-rows span { font-size: 11.5px; color: var(--muted); }
+  .usage-rows b { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--ink); }
+
+  .usage-note { margin-top: 14px; font-size: 11.5px; line-height: 1.5; color: var(--muted-2); }
+
+  .usage-people { display: flex; flex-direction: column; }
+  .usage-people > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .usage-people > div:last-child { border-bottom: none; padding-bottom: 0; }
+  .usage-people > div:first-child { padding-top: 0; }
+  .usage-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .usage-who b { font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .usage-who span { font-size: 11.5px; color: var(--muted); }
+  .usage-amount { font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--navy); flex-shrink: 0; }
+
   /* ---------- Login ---------- */
   .login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
     background: radial-gradient(1100px 800px at 82% -12%, rgba(181, 12, 197, .55), transparent 55%), radial-gradient(900px 700px at -5% 112%, rgba(254, 111, 97, .5), transparent 55%), #0a0912; }
@@ -790,7 +812,9 @@ body {
   .agent-thread { display: flex; align-items: center; gap: 2px; }
   .agent-thread > button:first-child { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 10px; border: none; border-radius: 9px; background: none; font-family: inherit; font-size: 12.5px; color: var(--ink); text-align: left; cursor: pointer; }
   .agent-thread > button:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .agent-thread > button:first-child small { color: var(--muted-2); font-size: 11px; flex-shrink: 0; }
+  /* nowrap: sin esto, con un título largo la fecha se parte en dos renglones
+     ("18" / "sept") y el segundo queda cortado por el alto de la fila. */
+  .agent-thread > button:first-child small { color: var(--muted-2); font-size: 11px; flex-shrink: 0; white-space: nowrap; }
   .agent-thread:hover > button:first-child { background: var(--surface-2); }
   .agent-thread-del { width: 26px; height: 26px; border: none; border-radius: 8px; background: none; color: var(--muted-2); display: grid; place-items: center; cursor: pointer; opacity: 0; }
   .agent-thread:hover .agent-thread-del { opacity: 1; }
@@ -879,4 +903,125 @@ body {
     .agent-panel { right: 16px; left: 16px; width: auto; bottom: 84px; max-height: calc(100vh - 120px); }
     .agent-fab { right: 16px; bottom: 16px; }
   }
+}
+
+/* Foro interno: una columna centrada, con todos los mensajes abiertos. */
+@layer components {
+  /* Columna de lectura centrada. `.view` ya trae el padding lateral, así que acá
+     solo va el ancho y el auto de los márgenes. */
+  .view-column { max-width: 900px; margin-inline: auto; width: 100%; }
+  /* Sin texto a la izquierda, la fila de acciones se apoya sobre el borde derecho. */
+  .view-actions-right { justify-content: flex-end; }
+
+  /* ---------- Formulario de nuevo mensaje ---------- */
+
+  .field-label { display: block; margin-bottom: 7px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .forum-kinds { display: flex; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+  .forum-kinds button { flex: 1; font-family: inherit; font-size: 13px; font-weight: 600; padding: 8px 10px; border: none; border-radius: 9px; background: none; color: var(--muted); cursor: pointer; transition: .14s; }
+  .forum-kinds button:hover:not(.on):not(:disabled) { color: var(--ink); }
+  .forum-kinds button.on { background: var(--grad); color: #fff; }
+  .forum-kinds button:disabled { cursor: default; }
+  .forum-kind-hint { margin-top: 7px; font-size: 12px; color: var(--muted-2); }
+
+  .stack-form textarea { font-family: inherit; font-size: 14px; line-height: 1.55; padding: 11px 14px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--surface); color: var(--ink); resize: vertical; }
+  .stack-form textarea:focus { outline: none; border-color: var(--magenta); }
+
+  /* ---------- Mensajes ---------- */
+
+  .forum-list { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Filo izquierdo del color del tipo: la lista se barre por color sin gastar una
+     etiqueta grande al lado del título. */
+  /* Esquinas izquierdas rectas: el filo de color es una franja de 3px y con radio
+     se curva sobre sí misma y deja una astilla a la vista. */
+  .forum-item { position: relative; padding: 22px 26px 20px; border: 1px solid var(--line); border-left: 3px solid var(--kind); border-radius: 0 18px 18px 0; background: var(--surface); transition: box-shadow .16s ease, border-color .16s ease; }
+  .forum-item:hover { border-color: var(--line-strong); border-left-color: var(--kind); box-shadow: 0 6px 24px rgba(37, 40, 81, .06); }
+  .dark .forum-item:hover { box-shadow: 0 6px 24px rgba(0, 0, 0, .3); }
+  .forum-item.error { --kind: var(--down); }
+  .forum-item.mejora { --kind: var(--magenta); }
+  .forum-item.pregunta { --kind: var(--muted-2); }
+
+  .forum-head { display: flex; align-items: flex-start; gap: 13px; }
+  .forum-head-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .forum-head-main b { font-family: var(--font-display); font-size: 16px; font-weight: 500; letter-spacing: -.35px; line-height: 1.35; color: var(--navy); }
+  .forum-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  /* El tipo, en su color, como primer dato de la línea de contexto. */
+  .forum-kind { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--kind); }
+  .forum-head .pill { margin-top: 2px; flex-shrink: 0; }
+
+  /* Fijado: el degradado de marca en la etiqueta y en el filo, para que se
+     distinga del color del tipo sin cambiar el resto de la tarjeta. */
+  .forum-pin { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 2px 8px; border-radius: 5px; background: var(--grad); color: #fff; }
+  /* El filo se tapa con el degradado en vez de recolorear el borde: border-color
+     no acepta un degradado y border-image no acompaña el radio de la tarjeta. */
+  .forum-item.fijado::before { content: ""; position: absolute; inset: -1px auto -1px -3px; width: 3px; background: var(--grad); }
+
+  /* El avatar necesita su propia medida: `.fav` solo existe dentro del sidebar y
+     de la tarjeta de equipo, así que suelto salía sin tamaño ni radio. */
+  .forum-av { width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; }
+  .forum-av.sm { width: 28px; height: 28px; font-size: 10.5px; }
+
+  /* pre-wrap: el detalle se escribe en un textarea y los saltos de línea del autor
+     son parte de lo que quiso decir. La medida de lectura se cuida acá. */
+  .forum-body-wrap { margin-top: 14px; padding-left: 49px; }
+  .forum-item > .forum-body { margin-top: 14px; padding-left: 49px; }
+  .forum-body { max-width: 68ch; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; color: var(--ink); }
+  .forum-body.recortado { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; }
+  .forum-more { margin-top: 8px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--magenta); background: none; border: none; padding: 0; cursor: pointer; }
+  .forum-more:hover { text-decoration: underline; }
+
+  /* Las herramientas de admin, en gris claro y al pie: están para cuando hacen
+     falta, no para mirarlas. */
+  .forum-tools { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 16px; padding-left: 49px; }
+  .forum-status { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted-2); }
+  .forum-status select { font-family: inherit; font-size: 12.5px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); color: var(--ink); cursor: pointer; }
+  .forum-status select:focus { outline: none; border-color: var(--magenta); }
+  .forum-act, .forum-del { font-family: inherit; font-size: 12px; font-weight: 600; color: var(--muted-2); background: none; border: none; cursor: pointer; padding: 0; }
+  .forum-act:hover { color: var(--magenta); text-decoration: underline; }
+  .forum-del:hover { color: var(--down); text-decoration: underline; }
+  .forum-act:disabled, .forum-del:disabled { opacity: .5; cursor: default; text-decoration: none; }
+
+  /* Respuestas: separadas por una línea al ancho de la tarjeta, cada una con su
+     avatar alineado al del mensaje. */
+  .forum-replies { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--line); }
+  .forum-reply { display: flex; gap: 13px; padding: 13px 0 3px; }
+  .forum-reply-main { flex: 1; min-width: 0; }
+  .forum-reply-head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 3px; }
+  .forum-reply-head b { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .forum-reply-head span { font-size: 11.5px; color: var(--muted-2); }
+  .forum-reply-head button { margin-left: auto; align-self: center; width: 24px; height: 24px; border: none; border-radius: 7px; background: none; color: var(--muted-2); display: grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity .14s; }
+  .forum-reply:hover .forum-reply-head button { opacity: 1; }
+  .forum-reply-head button:hover { color: var(--down); background: var(--surface-2); }
+  .forum-reply p { max-width: 68ch; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.65; color: var(--ink); }
+
+  /* El botón al lado del campo: responder es un gesto corto y así ocupa una sola
+     franja. field-sizing hace crecer el campo con el texto, sin medir en JS. */
+  .forum-reply-form { display: flex; align-items: flex-end; gap: 10px; margin-top: 16px; padding-left: 49px; }
+  .forum-reply-form textarea { flex: 1; font-family: inherit; font-size: 13.5px; line-height: 1.6; max-height: 180px; field-sizing: content; padding: 10px 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); color: var(--ink); resize: none; transition: border-color .14s, background .14s; }
+  .forum-reply-form textarea:focus { outline: none; border-color: var(--magenta); background: var(--surface); }
+  .forum-reply-form .connect-btn { padding: 10px 18px; font-size: 13.5px; border-radius: 14px; }
+
+  @media (max-width: 720px) {
+    .forum-item { padding: 18px; }
+    /* Sin la sangría del avatar: a este ancho cada píxel es de la lectura. */
+    .forum-body-wrap, .forum-item > .forum-body, .forum-tools, .forum-reply-form { padding-left: 0; }
+    .forum-reply-form { flex-direction: column; align-items: stretch; }
+  }
+}
+
+/* Solapa WEB (Microsoft Clarity). */
+@layer components {
+  /* Contadores de fricción: número grande, etiqueta abajo. Es lo que Clarity
+     aporta y ninguna otra integración tiene. */
+  .friction { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); }
+  .friction b { font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: -.6px; line-height: 1; color: var(--navy); }
+  .friction span { font-size: 12.5px; color: var(--muted); }
+
+  /* Pasos de la pantalla de conexión. */
+  .steps { margin: 0 0 20px; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; list-style: decimal; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+  .steps b { color: var(--ink); font-weight: 600; }
+  .steps code { font-size: 12px; padding: 1px 5px; border-radius: 5px; background: var(--surface-2); }
+
+  .notes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 9px; list-style: disc; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+  .notes b { color: var(--ink); font-weight: 600; }
 }

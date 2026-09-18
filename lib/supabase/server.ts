@@ -2,6 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
+// Una tabla que todavía no se creó (falta correr el SQL de docs/sql/) llega con
+// dos códigos distintos según quién responda: PostgREST contesta PGRST205 porque
+// no la encuentra en su schema cache, y Postgres 42P01 cuando la consulta igual
+// llega a la base. Chequear solo uno deja el otro camino sin cubrir.
+export const isMissingTable = (error: { code?: string } | null) =>
+  error?.code === "PGRST205" || error?.code === "42P01";
+
 // Cliente con la sesión del usuario: respeta RLS. Crear uno por request.
 export async function createClient() {
   const cookieStore = await cookies();

@@ -18,6 +18,7 @@ const STUDIO_NAV: { href: string; label: string; icon: IconName; area: AreaKey |
   { href: "/clientes", label: "Clientes", icon: "briefcase", area: "clientes" },
   { href: "/equipo", label: "Equipo", icon: "team", area: "equipo" },
   { href: "/agente", label: "Agente", icon: "sparkles", area: null },
+  { href: "/foro", label: "Foro", icon: "chat", area: null },
   { href: "/admin", label: "Administración", icon: "settings", area: "admin" },
 ];
 
@@ -27,6 +28,8 @@ const CLIENT_NAV: { suffix: string; label: string; area: AreaKey }[] = [
   { suffix: "", label: "Vista general", area: "clientes" },
   { suffix: "/meta", label: "META", area: "meta" },
   { suffix: "/crm", label: "CRM", area: "crm" },
+  // Sin área propia: analítica del sitio, para quien ya ve el panel del cliente.
+  { suffix: "/web", label: "WEB", area: "clientes" },
   { suffix: "/tareas", label: "Tareas", area: "tareas" },
   { suffix: "/portal", label: "Portal del cliente", area: "clientes" },
 ];

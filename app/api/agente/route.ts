@@ -13,6 +13,7 @@ import { getSession } from "@/lib/auth";
 import { systemPrompt } from "@/lib/agent/prompt";
 import { toolsFor } from "@/lib/agent/tools";
 import { deleteThread, getMessages, history, listThreads, openThread, saveMessage, type ToolCall } from "@/lib/agent/threads";
+import { addUsage, emptyTokens, recordUsage } from "@/lib/agent/usage";
 import { getClients } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -81,9 +82,12 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       const send = (event: AgentEvent) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
 
-      // Texto final y herramientas usadas, para guardar el turno al terminar.
+      // Texto final, herramientas usadas y tokens gastados, para guardar el turno
+      // al terminar. Una consulta puede dar varias vueltas al modelo y todas se
+      // facturan, así que el consumo se acumula vuelta a vuelta.
       let answer = "";
       const used: ToolCall[] = [];
+      let tokens = emptyTokens();
 
       try {
         if (thread) send({ type: "thread", id: thread.id, title: thread.title });
@@ -115,6 +119,7 @@ export async function POST(request: NextRequest) {
           }
 
           const message = await turn.finalMessage();
+          tokens = addUsage(tokens, message.usage);
 
           if (message.stop_reason === "refusal") {
             send({ type: "error", message: "Claude no respondió esa consulta." });
@@ -163,6 +168,11 @@ export async function POST(request: NextRequest) {
               : "No se pudo completar la consulta.";
         send({ type: "error", message });
       } finally {
+        // En el finally: si la consulta se cortó a mitad de camino, los tokens de
+        // las vueltas que sí corrieron ya se gastaron y tienen que quedar contados.
+        if (tokens.input || tokens.output) {
+          await recordUsage(session.user.id, thread?.id ?? null, MODEL, tokens);
+        }
         controller.close();
       }
     },
