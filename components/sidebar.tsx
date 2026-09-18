@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSyncExternalStore } from "react";
 import { signOut } from "@/app/auth/actions";
 import type { AreaKey } from "@/lib/auth-shared";
 import type { SessionUser } from "@/lib/auth";
@@ -12,36 +11,25 @@ import { ClientAvatar } from "./client-avatar";
 import { Icon, type IconName } from "./icons";
 import { UserAvatar } from "./user-avatar";
 
-const STUDIO_NAV: { href: string; label: string; icon: IconName; area: AreaKey }[] = [
+// area null = no pertenece a un área: el agente consulta las que el usuario
+// tenga, así que aparece con cualquiera habilitada.
+const STUDIO_NAV: { href: string; label: string; icon: IconName; area: AreaKey | null }[] = [
   { href: "/", label: "Inicio", icon: "home", area: "inicio" },
   { href: "/clientes", label: "Clientes", icon: "briefcase", area: "clientes" },
   { href: "/equipo", label: "Equipo", icon: "team", area: "equipo" },
+  { href: "/agente", label: "Agente", icon: "sparkles", area: null },
   { href: "/admin", label: "Administración", icon: "settings", area: "admin" },
 ];
 
+// Solo las vistas de consulta del cliente. Editar se entra desde la tabla de
+// /clientes: es una acción de gestión, no una solapa que se mire a diario.
 const CLIENT_NAV: { suffix: string; label: string; area: AreaKey }[] = [
   { suffix: "", label: "Vista general", area: "clientes" },
   { suffix: "/meta", label: "META", area: "meta" },
   { suffix: "/crm", label: "CRM", area: "crm" },
   { suffix: "/tareas", label: "Tareas", area: "tareas" },
-  { suffix: "/editar", label: "Editar cliente", area: "clientes" },
+  { suffix: "/portal", label: "Portal del cliente", area: "clientes" },
 ];
-
-// Tema: la clase .dark en <html> la pone el script del root layout; acá solo la leemos y alternamos.
-const themeListeners = new Set<() => void>();
-const subscribeTheme = (cb: () => void) => {
-  themeListeners.add(cb);
-  return () => themeListeners.delete(cb);
-};
-const isDark = () => document.documentElement.classList.contains("dark");
-
-function toggleTheme() {
-  const dark = document.documentElement.classList.toggle("dark");
-  try {
-    localStorage.setItem("theme", dark ? "dark" : "light");
-  } catch {}
-  themeListeners.forEach((cb) => cb());
-}
 
 export function Sidebar({
   user,
@@ -55,7 +43,6 @@ export function Sidebar({
   openTasksByClient: Record<string, number>;
 }) {
   const pathname = usePathname();
-  const dark = useSyncExternalStore(subscribeTheme, isDark, () => false);
 
   return (
     <aside className="sidebar">
@@ -67,7 +54,7 @@ export function Sidebar({
       </div>
 
       <div className="nav-title">Qualita</div>
-      {STUDIO_NAV.filter((item) => access[item.area]).map((item) => (
+      {STUDIO_NAV.filter((item) => (item.area ? access[item.area] : Object.values(access).some(Boolean))).map((item) => (
         <Link key={item.href} href={item.href} className={`nav-btn${pathname === item.href ? " active" : ""}`}>
           <Icon name={item.icon} />
           {item.label}
@@ -111,10 +98,6 @@ export function Sidebar({
       )}
 
       <div className="side-bottom">
-        <button type="button" className="nav-btn" onClick={toggleTheme}>
-          <Icon name={dark ? "sun" : "moon"} />
-          <span>{dark ? "Modo claro" : "Modo oscuro"}</span>
-        </button>
         <div className="side-foot">
           <UserAvatar className="fav" name={user.name} avatarUrl={user.avatarUrl} />
           <div className="who">

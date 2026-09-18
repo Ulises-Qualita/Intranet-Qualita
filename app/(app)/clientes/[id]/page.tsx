@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Funnel, LineChart } from "@/components/charts";
+import { LineChart, StageBars } from "@/components/charts";
 import { Topbar } from "@/components/topbar";
 import { Card, ConnectState, EmptyState, Kpi, KpiLocked, NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
@@ -75,7 +75,20 @@ export default async function ClienteGeneralPage({ params }: { params: Promise<{
           )}
         </div>
 
-        <div className="grid g-2-1">
+        {/* Apiladas y a todo el ancho: en dos columnas el gráfico de alcance queda
+            demasiado angosto y el embudo aprieta los nombres de etapa. */}
+        <div className="grid">
+          {!c.conn.crm ? (
+            <ConnectState kind="crm" client={c} />
+          ) : (
+            <Card title="Embudo de ventas" hint={`${leads.length} leads`}>
+              {leads.length ? (
+                <StageBars stages={leadFunnel(leads)} />
+              ) : (
+                <EmptyState label="Sin datos">Todavía no hay leads sincronizados.</EmptyState>
+              )}
+            </Card>
+          )}
           {!c.conn.meta ? (
             <ConnectState kind="meta" client={c} />
           ) : (
@@ -83,6 +96,7 @@ export default async function ClienteGeneralPage({ params }: { params: Promise<{
               {daily.length ? (
                 <LineChart
                   id="reach"
+                  height={260}
                   labels={daily.map((d) => shortDate(d.date))}
                   series={[
                     { label: "Alcance", data: daily.map((d) => d.reach), color: "#B50CC5", fillOpacity: 0.2 },
@@ -91,17 +105,6 @@ export default async function ClienteGeneralPage({ params }: { params: Promise<{
                 />
               ) : (
                 <EmptyState label="Sin datos">Todavía no hay métricas diarias sincronizadas.</EmptyState>
-              )}
-            </Card>
-          )}
-          {!c.conn.crm ? (
-            <ConnectState kind="crm" client={c} />
-          ) : (
-            <Card title="Embudo de ventas" hint={`${leads.length} leads`}>
-              {leads.length ? (
-                <Funnel stages={leadFunnel(leads)} />
-              ) : (
-                <EmptyState label="Sin datos">Todavía no hay leads sincronizados.</EmptyState>
               )}
             </Card>
           )}

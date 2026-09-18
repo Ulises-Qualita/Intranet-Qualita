@@ -9,6 +9,14 @@ export const INTEGRATIONS = [
     help: "Cuenta de Meta Business del cliente de donde salen las métricas de anuncios.",
   },
   {
+    value: "notion",
+    label: "Notion",
+    title: "Notion",
+    refLabel: "Proyecto de Notion",
+    placeholder: "",
+    help: "Proyecto del cliente en la database de Proyectos. Sus tickets se muestran en Tareas.",
+  },
+  {
     value: "crm",
     label: "CRM",
     title: "CRM",
@@ -33,3 +41,16 @@ export const isIntegration = (value: unknown): value is Integration => INTEGRATI
 export const integrationMeta = (value: Integration) => INTEGRATIONS.find((i) => i.value === value)!;
 
 export type IntegrationState = { connected: boolean; accountRef: string | null; connectedAt: string | null };
+
+// Integraciones que se conectan desde una pantalla propia (elegir cuenta o proyecto),
+// no escribiendo la referencia a mano en el diálogo genérico.
+export const CONNECT_PAGES = {
+  meta: { path: "meta/conectar", manualError: "Meta se conecta iniciando sesión con Facebook." },
+  notion: { path: "notion/conectar", manualError: "Notion se conecta eligiendo el proyecto de la lista." },
+  crm: { path: "crm/conectar", manualError: "El CRM se conecta cargando la cuenta y su clave de API." },
+} as const;
+
+export const hasConnectPage = (provider: Integration): provider is keyof typeof CONNECT_PAGES => provider in CONNECT_PAGES;
+
+export const connectPath = (provider: Integration, clientSlug: string) =>
+  hasConnectPage(provider) ? `/clientes/${clientSlug}/${CONNECT_PAGES[provider].path}` : null;

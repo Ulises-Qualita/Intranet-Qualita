@@ -1,11 +1,15 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { getAreaSession } from "@/lib/auth";
 import { isClientStatus } from "@/lib/client-status";
-import { isIntegration } from "@/lib/integrations";
+import { crmProviderLabel, isCrmProvider } from "@/lib/crm-shared";
+import { deleteCrmSecrets, getCrmSecrets, saveCrmSecrets, syncCrmClient } from "@/lib/crm-sync";
+import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
 import { LOGO_MAX_BYTES, LOGO_TYPES, LOGOS_BUCKET } from "@/lib/logos";
 import { deleteMetaSecrets, getAdAccount, getMetaSecrets, saveMetaSecrets } from "@/lib/meta";
+import { NOTION_PORTAL_TAG, NOTION_TICKETS_TAG, getPageRef, notionErrorMessage } from "@/lib/notion";
+import { normalizeOdooUrl, odooLogin } from "@/lib/odoo";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 export type FormState = { ok: boolean; error: string | null };
@@ -39,8 +43,12 @@ function readClientFields(formData: FormData): ClientFields | string {
   return { name, sector: sector || null, website: website || null };
 }
 
-const dbError = (code: string | undefined, fallback: string) =>
-  code === "42501" ? "No tenés permisos para esta acción." : fallback;
+const dbError = (code: string | undefined, fallback: string) => {
+  if (code === "42501") return "No tenés permisos para esta acción.";
+  // CHECK violado: casi siempre es un proveedor nuevo que la base todavía no acepta.
+  if (code === "23514") return "La base rechazó el valor. Puede faltar correr la migración de docs/sql/.";
+  return fallback;
+};
 
 export type CreateClientResult = { ok: true; clientId: string; slug: string } | { ok: false; error: string };
 
@@ -214,8 +222,9 @@ export async function setIntegration(
 ): Promise<FormState> {
   if (!(await getAreaSession("clientes"))) return NO_ACCESS;
   if (!isIntegration(provider)) return { ok: false, error: "Integración inválida." };
-  if (provider === "meta" && change.connected) {
-    return { ok: false, error: "Meta se conecta iniciando sesión con Facebook." };
+  // Estos tienen pantalla propia: no se conectan escribiendo la referencia a mano.
+  if (change.connected && provider in CONNECT_PAGES) {
+    return { ok: false, error: CONNECT_PAGES[provider as keyof typeof CONNECT_PAGES].manualError };
   }
 
   const accountRef = (change.accountRef ?? "").trim();
@@ -232,6 +241,10 @@ export async function setIntegration(
   );
   // Al desconectar Meta se descarta también el token de Facebook.
   if (result.ok && provider === "meta") await deleteMetaSecrets(clientId);
+  // Ídem con las credenciales del CRM.
+  if (result.ok && provider === "crm" && !change.connected) await deleteCrmSecrets(clientId);
+  // Al desconectar Notion cambian los tickets visibles: se descarta el cache.
+  if (result.ok && provider === "notion") revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
   return result;
 }
 
@@ -239,7 +252,7 @@ export async function setIntegration(
 // verificando que el token guardado tenga acceso a ella.
 export async function connectMetaAccount(clientId: string, accountId: string): Promise<FormState> {
   if (!(await getAreaSession("clientes"))) return NO_ACCESS;
-  if (!/^act_d+$/.test(accountId)) return { ok: false, error: "Elegí una cuenta publicitaria." };
+  if (!/^act_\d+$/.test(accountId)) return { ok: false, error: "Elegí una cuenta publicitaria." };
 
   const secrets = await getMetaSecrets(clientId);
   if (!secrets) return { ok: false, error: "La sesión de Facebook venció. Volvé a iniciar sesión." };
@@ -278,6 +291,112 @@ async function writeIntegration(clientId: string, provider: string, values: Reco
 
   if (error) return { ok: false, error: dbError(error.code, "No se pudo guardar la integración.") };
 
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// Vincula el cliente con una página de la database de Proyectos de Notion.
+// Se valida contra Notion que la página exista antes de guardarla.
+export async function connectNotionProject(clientId: string, pageId: string): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!pageId) return { ok: false, error: "Elegí un proyecto de Notion." };
+
+  let project;
+  try {
+    project = await getPageRef(pageId);
+  } catch (e) {
+    console.error("[notion] connectNotionProject", e);
+    return { ok: false, error: notionErrorMessage(e) };
+  }
+
+  const now = new Date().toISOString();
+  const result = await writeIntegration(clientId, "notion", {
+    connected: true,
+    account_ref: project.id,
+    connected_at: now,
+    updated_at: now,
+  });
+  // El cliente nuevo cambia qué tickets se muestran: hay que releer Notion.
+  if (result.ok) revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
+  return result;
+}
+
+// Fuerza una lectura fresca de Notion sin esperar a que venza el cache.
+export async function refreshNotion(): Promise<FormState> {
+  if (!(await getAreaSession("tareas"))) return { ok: false, error: "No tenés acceso a las tareas." };
+  revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// Conecta el CRM del cliente. Cada cliente puede usar uno distinto: el proveedor
+// y sus credenciales se guardan del lado server, nunca vuelven al navegador.
+// Antes de guardar se prueba la conexión contra el CRM.
+export async function connectCrm(clientId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+
+  const provider = String(formData.get("provider") ?? "");
+  if (!isCrmProvider(provider)) return { ok: false, error: "Elegí un CRM de la lista." };
+
+  const db = String(formData.get("db") ?? "").trim();
+  const username = String(formData.get("username") ?? "").trim();
+  const apiKey = String(formData.get("apiKey") ?? "").trim();
+  if (!db || !username || !apiKey) return { ok: false, error: "Completá base de datos, usuario y clave de API." };
+
+  let credentials;
+  try {
+    credentials = { url: normalizeOdooUrl(String(formData.get("url") ?? "")), db, username, apiKey };
+  } catch {
+    return { ok: false, error: "La dirección de Odoo no es válida (ej.: https://empresa.odoo.com)." };
+  }
+
+  // Probar antes de guardar: así el error se ve acá y no en el próximo sync.
+  try {
+    await odooLogin(credentials);
+  } catch (e) {
+    console.error("[crm] connectCrm", e);
+    return { ok: false, error: e instanceof Error ? e.message : "No se pudo conectar con Odoo." };
+  }
+
+  await saveCrmSecrets(clientId, { provider, odoo: credentials });
+
+  const now = new Date().toISOString();
+  const result = await writeIntegration(clientId, "crm", {
+    connected: true,
+    account_ref: `${crmProviderLabel(provider)} · ${db}`,
+    connected_at: now,
+    updated_at: now,
+  });
+  // Primera lectura del CRM para que la vista no arranque vacía.
+  if (result.ok) await syncCrmClient(clientId);
+  return result;
+}
+
+// Etapas del CRM que cuentan como venta ganada. El pipeline de cada cliente sigue
+// después del cierre (producción, entrega), así que no alcanza con lo que el CRM
+// marca como ganado: lo define el equipo por cliente.
+export async function setCrmWonStages(clientId: string, stages: string[]): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+
+  const secrets = await getCrmSecrets(clientId);
+  if (!secrets) return { ok: false, error: "El cliente no tiene un CRM conectado." };
+
+  // Solo etapas que el CRM informó: evita guardar nombres que no existen.
+  const known = new Set(secrets.stage_order ?? []);
+  await saveCrmSecrets(clientId, { ...secrets, won_stages: stages.filter((s) => known.has(s)) });
+
+  // Cambia el estado de cada oportunidad: hay que recalcularlo.
+  const result = await syncCrmClient(clientId);
+  if (!result.ok) return { ok: false, error: result.error ?? "No se pudo releer el CRM." };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// Fuerza una lectura fresca del portal del cliente.
+export async function refreshPortal(): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  revalidateTag(NOTION_PORTAL_TAG, { expire: 0 });
   revalidatePath("/", "layout");
   return { ok: true, error: null };
 }

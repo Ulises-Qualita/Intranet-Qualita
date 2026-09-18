@@ -28,6 +28,11 @@ export default async function InicioPage() {
   const countBy = (status: string) => clients.filter((c) => c.status === status).length;
   const activeMembers = team.filter((m) => m.active);
 
+  // El saludo es personal: solo lo que tiene a cargo quien está mirando. Los KPIs
+  // de abajo siguen siendo del estudio, por eso el texto dice "tenés".
+  const myTasks = openTasks.filter((t) => t.assignee_id === session.user.id);
+  const myLate = myTasks.filter((t) => isLateTask(t, today));
+
   const load = activeMembers
     .map((m) => ({ member: m, count: openTasks.filter((t) => t.assignee_id === m.id).length }))
     .sort((a, b) => b.count - a.count);
@@ -47,10 +52,10 @@ export default async function InicioPage() {
             <p>
               <span className="welcome-date">{longToday()}</span>
               {" · "}
-              {openTasks.length === 0
-                ? "No hay tareas pendientes."
-                : `${openTasks.length} tarea${openTasks.length === 1 ? "" : "s"} pendiente${openTasks.length === 1 ? "" : "s"}${
-                    lateTasks.length ? `, ${lateTasks.length} vencida${lateTasks.length === 1 ? "" : "s"}` : ""
+              {myTasks.length === 0
+                ? "No tenés tareas pendientes."
+                : `Tenés ${myTasks.length} tarea${myTasks.length === 1 ? "" : "s"} pendiente${myTasks.length === 1 ? "" : "s"}${
+                    myLate.length ? `, ${myLate.length} vencida${myLate.length === 1 ? "" : "s"}` : ""
                   }.`}
             </p>
           </div>

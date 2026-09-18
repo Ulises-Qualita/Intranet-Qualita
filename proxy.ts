@@ -2,7 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isQualitaEmail } from "@/lib/auth-shared";
 
-const PUBLIC_PATHS = ["/login", "/auth/"];
+// /api/cron/ no lleva sesión de usuario: lo llama el cron de Vercel y cada ruta
+// valida por su cuenta el header con CRON_SECRET.
+const PUBLIC_PATHS = ["/login", "/auth/", "/api/cron/"];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });

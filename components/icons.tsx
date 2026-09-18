@@ -121,6 +121,22 @@ const PATHS = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  sparkles: (
+    <>
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+      <path d="M18.5 16l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z" />
+    </>
+  ),
+  send: <path d="M4 12l16-8-6 16-2.5-6.5L4 12z" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  expand: (
+    <>
+      <path d="M14 4h6v6" />
+      <path d="M10 20H4v-6" />
+      <path d="M20 4l-7 7" />
+      <path d="M4 20l7-7" />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof PATHS;

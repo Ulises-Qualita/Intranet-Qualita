@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
@@ -21,6 +22,12 @@ export default async function AdminPage() {
     <>
       <Topbar crumb="Qualita" title="Administración" />
       <section className="view">
+        <div className="view-actions">
+          <span className="muted">Accesos del equipo y conexiones del estudio.</span>
+          <Link href="/admin/notion" className="link-connect">
+            Configurar Notion →
+          </Link>
+        </div>
         <UsersAdmin members={members} currentUserId={session.user.id} canEdit={session.profile?.role === "admin"} />
       </section>
     </>

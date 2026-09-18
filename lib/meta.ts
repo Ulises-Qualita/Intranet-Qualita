@@ -83,6 +83,9 @@ export type MetaSecrets = {
   fb_user_id: string;
   fb_user_name: string;
   account_name?: string;
+  // Última sincronización de métricas (la escribe lib/meta-sync.ts).
+  synced_at?: string;
+  sync_error?: string | null;
 };
 
 // service_role: llamar solo después de validar el acceso del usuario.
@@ -174,4 +177,101 @@ export async function listPortfolios(token: string): Promise<Portfolio[]> {
 
 export async function getAdAccount(token: string, accountId: string) {
   return toAccount(await graph<RawAccount>(accountId, { fields: ACCOUNT_FIELDS }, token));
+}
+
+// ---------- Insights (métricas de la cuenta y de cada anuncio) ----------
+
+export type DailyInsight = {
+  date: string;
+  reach: number;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  leads: number;
+  conversions: number;
+  revenue: number;
+};
+
+export type AdInsight = DailyInsight & { adId: string; name: string; campaignId: string | null; campaignName: string | null };
+
+type Action = { action_type: string; value?: string };
+
+type RawInsight = {
+  date_start: string;
+  impressions?: string;
+  clicks?: string;
+  reach?: string;
+  spend?: string;
+  actions?: Action[];
+  action_values?: Action[];
+  ad_id?: string;
+  ad_name?: string;
+  campaign_id?: string;
+  campaign_name?: string;
+};
+
+const INSIGHT_FIELDS = "impressions,clicks,reach,spend,actions,action_values";
+
+// Meta reporta el mismo hecho con varios action_type solapados (p. ej. "lead" y
+// "onsite_conversion.lead_grouped"): sumarlos duplicaría. Se toma el mayor.
+const LEAD_TYPES = ["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead", "leadgen_grouped"];
+const PURCHASE_TYPES = ["omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"];
+
+const pick = (actions: Action[] | undefined, types: string[]) =>
+  Math.max(0, ...types.map((t) => Number(actions?.find((a) => a.action_type === t)?.value ?? 0)));
+
+const toDaily = (r: RawInsight): DailyInsight => ({
+  date: r.date_start,
+  reach: Number(r.reach ?? 0),
+  impressions: Number(r.impressions ?? 0),
+  clicks: Number(r.clicks ?? 0),
+  spend: Number(r.spend ?? 0),
+  leads: pick(r.actions, LEAD_TYPES),
+  conversions: pick(r.actions, PURCHASE_TYPES),
+  revenue: pick(r.action_values, PURCHASE_TYPES),
+});
+
+const timeRange = (since: string, until: string) => JSON.stringify({ since, until });
+
+// Una fila por día de la cuenta publicitaria.
+export async function getAccountInsights(token: string, accountId: string, since: string, until: string) {
+  const rows = await all<RawInsight>(
+    `${accountId}/insights`,
+    { level: "account", time_increment: "1", fields: INSIGHT_FIELDS, time_range: timeRange(since, until) },
+    token,
+  );
+  return rows.map(toDaily);
+}
+
+// Una fila por anuncio y por día: permite sumar después el período que se mire.
+export async function getAdInsights(token: string, accountId: string, since: string, until: string) {
+  const rows = await all<RawInsight>(
+    `${accountId}/insights`,
+    {
+      level: "ad",
+      time_increment: "1",
+      fields: `ad_id,ad_name,campaign_id,campaign_name,${INSIGHT_FIELDS}`,
+      time_range: timeRange(since, until),
+    },
+    token,
+  );
+  return rows
+    .filter((r) => r.ad_id)
+    .map((r): AdInsight => ({
+      ...toDaily(r),
+      adId: r.ad_id!,
+      name: r.ad_name || r.ad_id!,
+      campaignId: r.campaign_id ?? null,
+      campaignName: r.campaign_name ?? null,
+    }));
+}
+
+// Estado actual de cada anuncio (insights no lo trae).
+export async function getAdStatuses(token: string, accountId: string) {
+  const rows = await all<{ id: string; effective_status?: string }>(
+    `${accountId}/ads`,
+    { fields: "id,effective_status" },
+    token,
+  );
+  return new Map(rows.map((a) => [a.id, a.effective_status === "ACTIVE" ? "activo" : "pausado"]));
 }

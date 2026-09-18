@@ -66,7 +66,15 @@ export function KpiLocked({
   );
 }
 
-const CONNECT_COPY: Record<"meta" | "crm", { icon: IconName; title: string; desc: string; cta: string }> = {
+type ConnectKind = "meta" | "crm" | "notion";
+
+const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: string; cta: string }> = {
+  notion: {
+    icon: "check",
+    title: "Conectá el proyecto de Notion",
+    desc: "Elegí a qué proyecto de Notion corresponde este cliente para ver acá sus tickets, con estado, prioridad, responsable y vencimiento.",
+    cta: "Elegir proyecto de Notion",
+  },
   meta: {
     icon: "bolt",
     title: "Conectá la cuenta de Meta",
@@ -81,7 +89,7 @@ const CONNECT_COPY: Record<"meta" | "crm", { icon: IconName; title: string; desc
   },
 };
 
-export function ConnectState({ kind, client }: { kind: "meta" | "crm"; client: Pick<Client, "id" | "slug" | "name" | "integrations"> }) {
+export function ConnectState({ kind, client }: { kind: ConnectKind; client: Pick<Client, "id" | "slug" | "name" | "integrations"> }) {
   const c = CONNECT_COPY[kind];
   return (
     <div className="card connect-state">

@@ -21,6 +21,13 @@ export function LineChart({
   const line = (a: number[]) => a.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
   const area = (a: number[]) => `${line(a)} L ${x(a.length - 1)} ${H - pad} L ${x(0)} ${H - pad} Z`;
 
+  // El SVG se estira al ancho de la tarjeta (preserveAspectRatio="none"), así que
+  // los círculos salen ovalados: con muchos puntos, además, se amontonan. La línea
+  // no sufre porque usa vectorEffect.
+  const dots = len <= 14;
+  // Con muchas fechas, una marca intermedia en el eje ubica mejor.
+  const axis = labels && labels.length > 8 ? [labels[0], labels[(labels.length - 1) >> 1], labels.at(-1)!] : labels;
+
   return (
     <>
       <svg className="chart" style={{ height }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img">
@@ -42,14 +49,14 @@ export function LineChart({
         {series.map((s, i) => (
           <path key={`l${i}`} d={line(s.data)} fill="none" stroke={s.color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
         ))}
-        {series.map((s, i) =>
-          s.data.map((v, j) => <circle key={`c${i}-${j}`} cx={x(j)} cy={y(v)} r="3" fill={s.color} />),
-        )}
+        {dots &&
+          series.map((s, i) => s.data.map((v, j) => <circle key={`c${i}-${j}`} cx={x(j)} cy={y(v)} r="3" fill={s.color} />))}
       </svg>
-      {labels && labels.length > 1 && (
+      {axis && axis.length > 1 && (
         <div className="chart-axis">
-          <span>{labels[0]}</span>
-          <span>{labels[labels.length - 1]}</span>
+          {axis.map((label, i) => (
+            <span key={`${label}-${i}`}>{label}</span>
+          ))}
         </div>
       )}
       {series.length > 1 && (
@@ -66,21 +73,30 @@ export function LineChart({
   );
 }
 
-export function Funnel({ stages }: { stages: { name: string; value: number }[] }) {
+// Etapas del pipeline como columnas: la altura es proporcional a la etapa más
+// grande y el porcentaje, sobre el total, así las etapas suman 100% entre todas.
+export function StageBars({ stages }: { stages: { name: string; value: number }[] }) {
+  const total = stages.reduce((sum, s) => sum + s.value, 0) || 1;
   const top = Math.max(1, ...stages.map((s) => s.value));
+  // Piso de altura (en % del área) para que una etapa con pocas oportunidades no
+  // quede como una línea. Las alturas siguen ordenadas y se diferencian entre sí,
+  // pero las chicas arrancan desde este piso en vez de desde cero.
+  const floor = 8;
+
   return (
-    <div className="funnel">
+    <div className="stage-bars">
       {stages.map((s) => {
-        const pct = Math.round((s.value / top) * 100);
+        const share = (s.value / total) * 100;
+        // Una etapa con pocas oportunidades redondea a 0% sin estar vacía.
+        const pct = share > 0 && share < 1 ? "<1%" : `${Math.round(share)}%`;
         return (
-          <div className="stage" key={s.name}>
-            <div className="name">{s.name}</div>
-            <div className="track">
-              <div className="fill" style={{ width: `${pct}%` }}>
-                <b>{s.value}</b>
-              </div>
+          <div className="col" key={s.name} title={`${s.name}: ${s.value} (${pct})`}>
+            <b className="val">{s.value}</b>
+            <div className="bar-wrap">
+              <div className="bar" style={{ height: `${floor + (s.value / top) * (100 - floor)}%` }} />
             </div>
-            <div className="pct">{pct}%</div>
+            <span className="lbl">{s.name}</span>
+            <span className="share">{pct}</span>
           </div>
         );
       })}

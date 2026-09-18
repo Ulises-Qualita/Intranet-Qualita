@@ -296,5 +296,5 @@ Hacerlo **después** de tener login + datos reales fluyendo.
 - [ ] Login con Google + gating por `role`/`areas`.
 - [ ] Panel de administración escribiendo en `intranet_profiles`.
 - [ ] Tablas de clientes/tareas + integración real Meta y CRM.
-- [ ] Agente de Claude.
+- [x] Agente de Claude (burbuja flotante, fase b: con *tools*).
  

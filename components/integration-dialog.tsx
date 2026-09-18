@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { setIntegration } from "@/app/(app)/clientes/actions";
-import { integrationMeta, type Integration, type IntegrationState } from "@/lib/integrations";
+import { connectPath, integrationMeta, type Integration, type IntegrationState } from "@/lib/integrations";
 import { Icon } from "./icons";
 
 type Trigger = "pill" | "button" | "link";
@@ -53,9 +53,10 @@ export function IntegrationDialog({
 
   const label = triggerLabel ?? (state.connected ? meta.label : `Conectar ${meta.label}`);
 
-  // Meta se conecta con login de Facebook en su propia página, no con este modal.
-  if (provider === "meta") {
-    const href = `/clientes/${clientSlug}/meta/conectar`;
+  // Meta (login de Facebook), Notion (elegir proyecto) y el CRM (credenciales) se
+  // conectan en su propia página, no con este modal: acá el disparador es un link.
+  const href = connectPath(provider, clientSlug);
+  if (href) {
     if (trigger === "pill") {
       return (
         <Link

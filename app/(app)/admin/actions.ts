@@ -1,8 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { AREAS, isQualitaEmail, type AreaKey, type Role } from "@/lib/auth-shared";
 import { getSession } from "@/lib/auth";
+import { NOTION_SETTINGS_KEY } from "@/lib/data";
+import { NOTION_PORTAL_TAG, NOTION_TICKETS_TAG, getDataSource, notionErrorMessage, type NotionProperty } from "@/lib/notion";
+import type { NotionConfig } from "@/lib/notion-map";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 const AREA_KEYS = new Set<string>(AREAS.map(([k]) => k));
@@ -89,4 +92,73 @@ export async function addMember(_prev: ActionResult | null, formData: FormData):
 
   revalidatePath("/", "layout");
   return { ok: true, error: null };
+}
+
+// ---------- Configuración de Notion (intranet_settings) ----------
+
+// Guarda qué data sources de Notion usar y cómo se mapean sus propiedades.
+// Solo admin: define lo que ve todo el equipo en Tareas.
+export async function saveNotionConfig(config: NotionConfig): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede configurar Notion." };
+
+  if (!config.ticketsDataSourceId) return { ok: false, error: "Elegí la database de Tickets." };
+  if (!config.projectsDataSourceId) return { ok: false, error: "Elegí la database de Proyectos." };
+  if (!config.props.project) return { ok: false, error: "Elegí qué propiedad relaciona el ticket con su proyecto." };
+
+  // Se normaliza para no guardar campos de más en el jsonb.
+  const value: NotionConfig = {
+    projectsDataSourceId: config.projectsDataSourceId,
+    ticketsDataSourceId: config.ticketsDataSourceId,
+    props: {
+      status: config.props.status ?? "",
+      priority: config.props.priority ?? "",
+      assignee: config.props.assignee ?? "",
+      dueDate: config.props.dueDate ?? "",
+      project: config.props.project,
+    },
+    statusMap: config.statusMap ?? {},
+    priorityMap: config.priorityMap ?? {},
+    hiddenStatuses: config.hiddenStatuses ?? [],
+    // Portal del cliente: opcional. Sin esto la solapa avisa que falta configurar
+    // y el resto de la app sigue igual.
+    portalUrlProp: config.portalUrlProp ?? "",
+  };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("intranet_settings")
+    .upsert({ key: NOTION_SETTINGS_KEY, value, updated_at: new Date().toISOString() });
+
+  if (error) {
+    return {
+      ok: false,
+      error:
+        error.code === "42P01"
+          ? "Falta crear la tabla intranet_settings (docs/sql/2026-09-17-intranet-settings.sql)."
+          : "No se pudo guardar la configuración de Notion.",
+    };
+  }
+
+  // Cambió el mapeo: lo que estaba cacheado ya no sirve.
+  revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
+  revalidateTag(NOTION_PORTAL_TAG, { expire: 0 });
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// Schema de un data source, para armar el mapeo de propiedades. El buscador de
+// Notion no siempre devuelve las opciones de cada select, así que se pide aparte.
+export async function loadNotionProperties(
+  dataSourceId: string,
+): Promise<{ ok: true; properties: NotionProperty[] } | { ok: false; error: string }> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede configurar Notion." };
+  if (!dataSourceId) return { ok: false, error: "Elegí una database." };
+
+  try {
+    const ds = await getDataSource(dataSourceId);
+    return { ok: true, properties: ds.properties };
+  } catch (e) {
+    console.error("[notion] loadNotionProperties", e);
+    return { ok: false, error: notionErrorMessage(e) };
+  }
 }

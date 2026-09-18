@@ -1,7 +1,9 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
+import { AgentChat } from "@/components/agent/agent-chat";
 import { Sidebar } from "@/components/sidebar";
+import { agentSuggestions } from "@/lib/agent/suggestions";
 import { AREAS, canAccess, type AreaKey } from "@/lib/auth-shared";
 import { getSession } from "@/lib/auth";
 import { getClients, getTasks, isOpenTask } from "@/lib/data";
@@ -44,6 +46,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="shell">
       <Sidebar user={user} access={access} clients={clients} openTasksByClient={openTasksByClient} />
       <div className="main">{children}</div>
+      {/* El agente solo consulta áreas habilitadas; sin ninguna no tendría nada
+          que responder, así que directamente no aparece. */}
+      {Object.values(access).some(Boolean) && (
+        <AgentChat userName={user.name} suggestions={agentSuggestions(clients, access)} />
+      )}
     </div>
   );
 }

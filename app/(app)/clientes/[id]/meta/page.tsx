@@ -1,17 +1,24 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LineChart } from "@/components/charts";
-import { Icon } from "@/components/icons";
+import { RangePicker, readRange } from "@/components/range-picker";
 import { Topbar } from "@/components/topbar";
-import { Card, ConnectState, EmptyState, Kpi, NoAccess, Pill } from "@/components/ui";
+import { Card, ConnectState, EmptyState, Kpi, NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
-import { getClient, getMetaAds, getMetaDaily } from "@/lib/data";
-import { compact, integer, money, percent, ratio, shortDate } from "@/lib/format";
+import { getClient, getMetaCampaigns, getMetaDaily } from "@/lib/data";
+import { compact, integer, money, orDash, percent, relativeTime, safeDiv, shortDate } from "@/lib/format";
+import { prepareMetaView } from "@/lib/meta-sync";
+import { CampaignTable } from "./campaign-table";
 
-const safeDiv = (a: number, b: number) => (b ? a / b : null);
-const orDash = (value: number | null, fmt: (v: number) => string) => (value === null ? "—" : fmt(value));
-
-export default async function ClienteMetaPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function ClienteMetaPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ dias?: string; anuncio?: string }>;
+}) {
+  const [{ id }, { dias, anuncio }] = await Promise.all([params, searchParams]);
+  const days = readRange(dias);
   const session = await getAreaSession("meta");
   if (!session) {
     return (
@@ -36,95 +43,71 @@ export default async function ClienteMetaPage({ params }: { params: Promise<{ id
     );
   }
 
-  const [daily, ads] = await Promise.all([getMetaDaily(c.id), getMetaAds(c.id)]);
+  // Asegura datos la primera vez y programa el refresco si quedaron viejos.
+  const secrets = await prepareMetaView(c.id, c.integrations.meta.accountRef);
+  const [daily, campaigns] = await Promise.all([getMetaDaily(c.id, days), getMetaCampaigns(c.id, days)]);
 
-  const sum = (key: "spend" | "leads" | "impressions" | "clicks" | "conversions" | "revenue") =>
+  const sum = (key: "spend" | "leads" | "impressions" | "clicks") =>
     daily.reduce((acc, d) => acc + d[key], 0);
   const spend = sum("spend");
   const leads = sum("leads");
   const impressions = sum("impressions");
   const clicks = sum("clicks");
-  const revenue = sum("revenue");
   const period = daily.length ? `${shortDate(daily[0].date)} – ${shortDate(daily.at(-1)!.date)}` : "sin datos";
+
+  const updated = secrets?.synced_at ? relativeTime(secrets.synced_at) : null;
 
   return (
     <>
-      <Topbar crumb={c.name} title="Métricas de META" />
+      <Topbar crumb={c.name} title="Métricas de META">
+        <RangePicker basePath={`/clientes/${c.slug}/meta`} days={days} />
+      </Topbar>
       <section className="view">
+        {secrets?.sync_error && <p className="form-error">{secrets.sync_error}</p>}
+        {!secrets && (
+          <p className="form-error">
+            La sesión de Facebook venció. <Link href={`/clientes/${c.slug}/meta/conectar`}>Volvé a conectar Meta</Link> para
+            seguir actualizando las métricas.
+          </p>
+        )}
+
         {daily.length === 0 ? (
           <Card title="Métricas" className="mb-4">
-            <EmptyState label="Sin datos">Todavía no hay métricas diarias sincronizadas para este cliente.</EmptyState>
+            <EmptyState label="Sin datos">
+              No hay entrega registrada en los últimos {days} días para esta cuenta publicitaria.
+            </EmptyState>
           </Card>
         ) : (
           <>
-            <div className="grid g4 mb-4">
+            <div className="grid g3 mb-4">
               <Kpi label="Gasto total" icon="money" value={money(spend)} sub={period} hero />
               <Kpi label="Costo por lead (CPL)" icon="target" value={orDash(safeDiv(spend, leads), (v) => money(v, 2))} sub={period} />
               <Kpi label="Leads generados" icon="users" value={integer(leads)} sub={period} />
-              <Kpi label="ROAS" icon="bolt" value={orDash(safeDiv(revenue, spend), ratio)} sub={period} />
             </div>
-            <div className="grid g4 mb-4">
+            <div className="grid g3 mb-4">
               <Kpi label="Impresiones" icon="eye" value={compact(impressions)} sub={period} />
               <Kpi label="CTR" icon="reach" value={orDash(safeDiv(clicks * 100, impressions), (v) => percent(v))} sub={period} />
               <Kpi label="CPM" icon="bolt" value={orDash(safeDiv(spend * 1000, impressions), (v) => money(v, 2))} sub={period} />
-              <Kpi label="Conversiones" icon="check" value={integer(sum("conversions"))} sub={period} />
             </div>
           </>
         )}
 
         <Card
-          title="Anuncios individuales"
-          hint={ads.length ? `${ads.length} anuncios · al ${shortDate(ads[0].as_of)}` : undefined}
+          title="Campañas y anuncios"
+          hint={campaigns.length ? `${campaigns.length} ${campaigns.length === 1 ? "campaña" : "campañas"} · ${period}` : undefined}
           className="mb-4"
         >
-          {ads.length === 0 ? (
-            <EmptyState label="Sin datos">Todavía no hay anuncios sincronizados.</EmptyState>
+          {campaigns.length === 0 ? (
+            <EmptyState label="Sin datos">Ningún anuncio tuvo entrega en los últimos {days} días.</EmptyState>
           ) : (
-            <div className="table-wrap">
-              <table className="ctable">
-                <thead>
-                  <tr>
-                    <th>Anuncio</th>
-                    <th>Estado</th>
-                    <th>Gasto</th>
-                    <th>Leads</th>
-                    <th>CPL</th>
-                    <th>CTR</th>
-                    <th>Impresiones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ads.map((ad) => (
-                    <tr key={ad.id}>
-                      <td>
-                        <div className="cl-cell">
-                          <div className="thumb-sm">
-                            <Icon name="media" />
-                          </div>
-                          <b>{ad.name}</b>
-                        </div>
-                      </td>
-                      <td>
-                        {ad.status === "activo" ? <Pill variant="activo">Activo</Pill> : <Pill variant="pausado">Pausado</Pill>}
-                      </td>
-                      <td className="num">{money(ad.spend)}</td>
-                      <td className="num">{integer(ad.leads)}</td>
-                      <td className="num">{orDash(safeDiv(ad.spend, ad.leads), (v) => money(v, 2))}</td>
-                      <td>{orDash(safeDiv(ad.clicks * 100, ad.impressions), (v) => percent(v))}</td>
-                      <td>{compact(ad.impressions)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <CampaignTable campaigns={campaigns} highlight={anuncio} />
           )}
         </Card>
 
         {daily.length > 0 && (
-          <Card title="Gasto diario en anuncios" hint={period}>
+          <Card title="Gasto diario en anuncios" hint={updated ? `${period} · actualizado ${updated}` : period}>
             <LineChart
               id="spend"
-              height={180}
               labels={daily.map((d) => shortDate(d.date))}
               series={[{ label: "Gasto", data: daily.map((d) => d.spend), color: "#FE6F61", fillOpacity: 0.22 }]}
             />

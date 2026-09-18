@@ -59,6 +59,44 @@ No hay framework de tests configurado todavía.
   El token de usuario de larga duración (~60 días) va en `intranet_integration_secrets`
   (provider `meta`) y `account_ref` guarda el `act_…`. Graph API en `lib/meta.ts`. Env:
   `META_APP_ID`, `META_APP_SECRET`, opcionales `META_LOGIN_CONFIG_ID`, `META_GRAPH_VERSION`.
+- Notion: fuente de verdad de las **tareas**, en **solo lectura** y **en vivo** (no se
+  espeja en Supabase). Integración *interna* del workspace: un único `NOTION_TOKEN` (env,
+  server), no OAuth por cliente. Dos niveles de config:
+  - Global, en `/admin/notion` → fila `notion` de `intranet_settings`: qué data source es
+    Proyectos y cuál Tickets, y el mapeo de propiedades (estado → las 3 columnas,
+    prioridad, responsable, vencimiento, relación a Proyecto). Se elige desde la UI, no
+    está hardcodeado.
+  - Por cliente, en `/clientes/[slug]/notion/conectar` → `intranet_client_integrations`
+    con provider `notion` y `account_ref` = page id del proyecto. Un proyecto por cliente;
+    los tickets de proyectos sin cliente se ignoran.
+  - `lib/notion.ts` (API, solo server), `lib/notion-map.ts` (traducción pura, client-safe),
+    `lib/tasks.ts` (modelo de tarea, client-safe). Desde la versión `2025-09-03` de la API
+    las databases contienen *data sources* y el query es
+    `POST /v1/data_sources/{id}/query`: consultar los docs, no ir de memoria.
+  - Cache: una sola query trae los tickets de todo el estudio (la DB de Tickets es única).
+    Se cachea solo esa query cruda con `unstable_cache` (60s, tag `notion-tickets`), porque
+    `getTasks()` corre en `app/(app)/layout.tsx` en cada render. El mapeo ticket → cliente
+    va fuera del cache, por request, para respetar la RLS. `"use cache"` no se usa: exige
+    activar `cacheComponents` en todo el proyecto. Invalidación con
+    `revalidateTag(tag, { expire: 0 })` — en Next 16 la forma de un solo argumento está
+    deprecada.
+  - Si Notion falla, `getTasks()` nunca tira: devuelve las tareas de Supabase y el motivo
+    en `notionError`, que la vista de Tareas muestra como aviso.
+- Agente: dos vistas del mismo componente (`components/agent/agent-conversation.tsx`)
+  — la burbuja de `app/(app)/layout.tsx` y la pantalla completa `/agente`, que es
+  también una solapa del sidebar (sin área propia: aparece con cualquiera
+  habilitada). El botón de expandir pasa el hilo por `?hilo=`, que la página lee en
+  el server. Backend: `POST /api/agente` con SSE. `ANTHROPIC_API_KEY` solo en el server; el modelo no recibe datos en el
+  prompt, los pide con tools. `lib/agent/tools.ts` envuelve `lib/data.ts` y **la
+  lista de tools es el control de acceso**: se arma por request con `canAccess`, así
+  que un área sin habilitar no existe para el modelo (y adentro la RLS vuelve a
+  validar porque leen con la sesión del usuario). `lib/agent/prompt.ts` (system
+  prompt cacheado, estable en toda la conversación), `lib/agent/threads.ts`
+  (historial en `intranet_agent_threads` / `intranet_agent_messages`, solo el texto
+  de cada turno, nunca los resultados de las tools). Modelo por defecto
+  `claude-opus-5`, override con `ANTHROPIC_MODEL`. El render del chat soporta un
+  markdown acotado (`components/agent/rich-text.tsx`): sin tablas, y el prompt lo
+  dice.
 - Estilos: clases del mockup en `app/globals.css` (`@layer components`); tema oscuro =
   clase `.dark` en `<html>` + `localStorage("theme")`. Ojo con nombres de clase que
   choquen con utilidades de Tailwind (p. ej. `mb-16`).

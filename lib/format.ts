@@ -30,6 +30,13 @@ export function shortDate(isoDate: string) {
     .replace(".", "");
 }
 
+// Con año: para fechas que pueden estar lejos, como los hitos de un roadmap.
+export function longDate(isoDate: string) {
+  return new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${isoDate}T00:00:00Z`))
+    .replace(".", "");
+}
+
 export function relativeTime(iso: string) {
   const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
   if (minutes < 1) return "recién";
@@ -53,3 +60,7 @@ export function greeting() {
 // Ej.: "martes 15 de septiembre"
 export const longToday = () =>
   new Intl.DateTimeFormat("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: TZ }).format(new Date());
+
+// Divisiones de la vista de métricas: sin denominador no hay dato que mostrar.
+export const safeDiv = (a: number, b: number) => (b ? a / b : null);
+export const orDash = (value: number | null, fmt: (v: number) => string) => (value === null ? "—" : fmt(value));
