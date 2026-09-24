@@ -78,21 +78,24 @@ export function Sidebar({
                   <span className="cn">{c.name}</span>
                   <Icon name="chevron" size={15} strokeWidth={2} className="chev" />
                 </Link>
+                {/* El div interno es el que recorta: la animación va por la fila del grid. */}
                 <div className={`subnav${selected ? " open" : ""}`}>
-                  {CLIENT_NAV.filter((item) => access[item.area]).map((item) => (
-                    <Link
-                      key={item.suffix}
-                      href={base + item.suffix}
-                      className={`sb${pathname === base + item.suffix ? " active" : ""}`}
-                      tabIndex={selected ? undefined : -1}
-                    >
-                      <span className="ln">·</span>
-                      {item.label}
-                      {item.suffix === "/tareas" && openTasksByClient[c.id] > 0 && (
-                        <span className="sb-badge">{openTasksByClient[c.id]}</span>
-                      )}
-                    </Link>
-                  ))}
+                  <div className="subnav-in">
+                    {CLIENT_NAV.filter((item) => access[item.area]).map((item) => (
+                      <Link
+                        key={item.suffix}
+                        href={base + item.suffix}
+                        className={`sb${pathname === base + item.suffix ? " active" : ""}`}
+                        tabIndex={selected ? undefined : -1}
+                      >
+                        <span className="ln">·</span>
+                        {item.label}
+                        {item.suffix === "/tareas" && openTasksByClient[c.id] > 0 && (
+                          <span className="sb-badge">{openTasksByClient[c.id]}</span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               </div>
             );
