@@ -317,7 +317,7 @@ const crmResumen: AgentTool = {
   definition: {
     name: "crm_resumen",
     description:
-      "Estado del CRM de un cliente en el período: leads, conversión, ticket promedio, embudo por etapa, rendimiento por vendedor, por anuncio y por origen.",
+      "Estado del CRM de un cliente en el período: leads, conversión, ticket promedio, embudo por etapa, rendimiento por vendedor, por anuncio, por origen y por etiqueta.",
     input_schema: {
       type: "object",
       properties: { ...CLIENTE_PROP, ...DIAS_PROP },
@@ -357,15 +357,25 @@ const crmResumen: AgentTool = {
       })),
       anuncios: period.ads.map((a) => ({ anuncio: a.name, leads: a.leads, ganadas: a.won, facturacion: round(a.ticketTotal) })),
       origenes: period.sources.map((s) => ({ origen: s.name, leads: s.leads, share_pct: round(s.share, 1) })),
+      ventas_por_origen:
+        period.wonSources?.map((s) => ({ origen: s.name, ganadas: s.leads, share_pct: round(s.share, 1), facturacion: round(s.ticketTotal) })) ?? null,
+      // Una oportunidad puede tener varias etiquetas: las filas no suman el total.
+      etiquetas:
+        period.tags?.map((t) => ({ etiqueta: t.name, leads: t.leads, ganadas: t.won, facturacion: round(t.ticketTotal) })) ??
+        TAGS_UNAVAILABLE,
     };
   },
 };
+
+// Sin la columna, "sin etiquetas" sería un dato falso: se avisa que no se sabe.
+const TAGS_UNAVAILABLE =
+  "Las etiquetas del CRM todavía no se están sincronizando (falta correr una migración en la base). No se sabe cuáles tiene cada oportunidad: no digas que no hay.";
 
 const crmLeads: AgentTool = {
   area: "crm",
   definition: {
     name: "crm_leads",
-    description: "Oportunidades concretas del CRM de un cliente, con etapa, estado, vendedor, anuncio de origen y monto. Usala cuando pregunten por leads puntuales, no por totales.",
+    description: "Oportunidades concretas del CRM de un cliente, con etapa, estado, vendedor, anuncio de origen, etiquetas y monto. Usala cuando pregunten por leads puntuales, no por totales.",
     input_schema: {
       type: "object",
       properties: {
@@ -373,6 +383,7 @@ const crmLeads: AgentTool = {
         ...DIAS_PROP,
         estado: { type: "string", enum: ["abierta", "ganada", "perdida"], description: "Filtrar por estado de la oportunidad." },
         vendedor: { type: "string", description: "Nombre del vendedor a cargo." },
+        etiqueta: { type: "string", description: "Etiqueta del CRM (coincidencia parcial, sin distinguir mayúsculas)." },
         limite: { type: "number", description: "Máximo de leads a devolver. Por defecto 30." },
       },
       required: ["cliente"],
@@ -395,6 +406,10 @@ const crmLeads: AgentTool = {
     const vendedor = str(input.vendedor)?.toLowerCase();
     if (vendedor) list = list.filter((l) => l.owner?.toLowerCase().includes(vendedor));
 
+    const etiqueta = str(input.etiqueta)?.toLowerCase();
+    if (etiqueta && list.some((l) => l.tags === null)) return { cliente: client.name, aviso: TAGS_UNAVAILABLE };
+    if (etiqueta) list = list.filter((l) => l.tags?.some((t) => t.toLowerCase().includes(etiqueta)));
+
     const limite = int(input.limite, 30);
     return {
       cliente: client.name,
@@ -407,6 +422,7 @@ const crmLeads: AgentTool = {
         estado: l.status,
         vendedor: l.owner,
         anuncio: l.ad,
+        etiquetas: l.tags,
         origen: l.source,
         monto: l.amount,
         creada: l.created_at.slice(0, 10),

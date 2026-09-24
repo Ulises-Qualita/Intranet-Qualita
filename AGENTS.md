@@ -206,7 +206,7 @@ navegación. El resto, superficies neutras con bordes finos.
  
 ### Tipografía
  
-- **Unbounded** — títulos, números, KPIs (personalidad de marca).
+- **Lexend** — títulos, números, KPIs (reemplazó a Unbounded).
 - **DM Sans** — cuerpo de texto, tablas, labels.
 - (Dongle es la tipografía del logotipo, no se usa en UI.)
 ### Temas
@@ -282,7 +282,7 @@ Hacerlo **después** de tener login + datos reales fluyendo.
 - Secretos (service_role, tokens de Meta/CRM, API key de Claude) solo del lado
   server.
 - Control de acceso duplicado: front (UX) + server/RLS (seguridad).
-- El diseño sigue el mockup de `docs/`; mantener Unbounded + DM Sans y el uso
+- El diseño sigue el mockup de `docs/`; mantener Lexend + DM Sans y el uso
   medido del degradado.
 ---
  

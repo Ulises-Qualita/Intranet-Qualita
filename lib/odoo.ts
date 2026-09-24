@@ -30,6 +30,7 @@ const LEAD_FIELDS = [
   "priority",
   "active",
   "create_date",
+  "tag_ids",
   // Propiedades del lead: ahí va el "Ticket" que cargan los vendedores.
   "lead_properties",
 ] as const;
@@ -46,6 +47,7 @@ type OdooLeadRow = {
   priority?: string | false;
   active?: boolean;
   create_date?: string;
+  tag_ids?: number[];
   lead_properties?: OdooProperty[] | false;
 };
 
@@ -166,6 +168,13 @@ export async function getOdooOpportunities(session: OdooSession): Promise<CrmLea
     { context: { active_test: false }, order: "create_date desc", limit: 2000 },
   );
 
+  // tag_ids viene como lista de ids: los nombres se piden aparte, una sola vez.
+  const tagIds = [...new Set(rows.flatMap((r) => r.tag_ids ?? []))];
+  const tags = tagIds.length
+    ? await query<{ id: number; name: string }[]>(session, "crm.tag", "search_read", [[["id", "in", tagIds]], ["id", "name"]])
+    : [];
+  const tagName = new Map(tags.map((t) => [t.id, t.name]));
+
   return rows.map((r) => ({
     externalId: String(r.id),
     name: r.partner_name || r.name,
@@ -175,6 +184,7 @@ export async function getOdooOpportunities(session: OdooSession): Promise<CrmLea
     // El importe real de la venta es el ticket; el ingreso esperado queda de respaldo.
     amount: parseAmount(propertyOf(r.lead_properties, TICKET_PROPERTY)) ?? parseAmount(r.expected_revenue),
     ad: textOf(propertyOf(r.lead_properties, AD_PROPERTY)),
+    tags: (r.tag_ids ?? []).map((id) => tagName.get(id)).filter((t): t is string => !!t),
     temperature: temperatureOf(r.priority, r.probability),
     createdAt: r.create_date ? `${r.create_date.replace(" ", "T")}Z` : new Date().toISOString(),
     // En Odoo las perdidas se archivan (active = false) y las ganadas quedan con

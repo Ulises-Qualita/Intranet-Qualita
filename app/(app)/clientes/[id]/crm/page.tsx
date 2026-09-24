@@ -56,7 +56,7 @@ export default async function ClienteCrmPage({
   ]);
 
   // Todo el bloque se recorta por fecha de creación, según el selector del topbar.
-  const { leads, won, withSource, fromMeta, tickets, ticketAvg, ticketTotal, sellers, sources, ads } = crmPeriod(all, days);
+  const { leads, won, tickets, ticketAvg, ticketTotal, sellers, sources, wonSources, ads } = crmPeriod(all, days);
   const periodo = `últimos ${days} días`;
 
   return (
@@ -83,32 +83,28 @@ export default async function ClienteCrmPage({
                 <Kpi label="Ganadas" icon="check" value={integer(won)} sub={periodo} />
               )}
               {ticketAvg === null ? (
-                <KpiLocked label="Ticket promedio" icon="money" note={`Sin tickets cargados en los ${days} días`} />
+                <>
+                  <KpiLocked label="Total en tickets" icon="money" note={`Sin tickets cargados en los ${days} días`} />
+                  <KpiLocked label="Ticket promedio" icon="money" note={`Sin tickets cargados en los ${days} días`} />
+                </>
               ) : (
-                <Kpi
-                  label="Ticket promedio"
-                  icon="money"
-                  value={money(ticketAvg)}
-                  sub={`${tickets} ${tickets === 1 ? "venta con ticket" : "ventas con ticket"} · ${money(ticketTotal)} en total`}
-                />
-              )}
-              {withSource === 0 ? (
-                <KpiLocked label="Desde Meta" icon="reach" note="El CRM no tiene el origen cargado" />
-              ) : (
-                <Kpi
-                  label="Desde Meta"
-                  icon="reach"
-                  value={integer(fromMeta)}
-                  sub={`${percent((fromMeta * 100) / withSource, 0)} de las ${withSource} con origen`}
-                />
+                <>
+                  <Kpi
+                    label="Total en tickets"
+                    icon="money"
+                    value={money(ticketTotal)}
+                    sub={`${tickets} ${tickets === 1 ? "venta con ticket" : "ventas con ticket"}`}
+                  />
+                  <Kpi label="Ticket promedio" icon="money" value={money(ticketAvg)} sub={periodo} />
+                </>
               )}
             </>
           ) : (
             <>
               <KpiLocked label="Oportunidades" icon="target" note="Sin datos sincronizados" />
               <KpiLocked label="Ganadas" icon="check" note="Sin datos sincronizados" />
+              <KpiLocked label="Total en tickets" icon="money" note="Sin datos sincronizados" />
               <KpiLocked label="Ticket promedio" icon="money" note="Sin datos sincronizados" />
-              <KpiLocked label="Desde Meta" icon="reach" note="Sin datos sincronizados" />
             </>
           )}
         </div>
@@ -118,6 +114,7 @@ export default async function ClienteCrmPage({
         <div className="grid g-2-1 items-stretch">
           <Card
             title="Etapas del embudo"
+            className="funnel-card"
             hint={
               secrets?.synced_at
                 ? `${leads.length} oportunidades · ${periodo} · actualizado ${relativeTime(secrets.synced_at)}`
@@ -130,23 +127,48 @@ export default async function ClienteCrmPage({
               <EmptyState label="Sin datos">Ninguna oportunidad creada en los últimos {days} días.</EmptyState>
             )}
           </Card>
-          <Card title="Origen" hint={periodo} className="source-card">
-            {sources.length === 0 ? (
-              <EmptyState label="Sin datos">Sin oportunidades en el período.</EmptyState>
-            ) : (
-              <div className="source-list">
-                {sources.map((s) => (
-                  <div key={s.name} className="lead-row">
-                    <div className="info">
-                      <b>{s.name}</b>
-                      <span>{percent(s.share, 0)} del total</span>
+          <div className="stack-cards">
+            <Card title="Oportunidades por origen" hint={periodo} className="source-card">
+              {sources.length === 0 ? (
+                <EmptyState label="Sin datos">Sin oportunidades en el período.</EmptyState>
+              ) : (
+                <div className="source-list">
+                  {sources.map((s) => (
+                    <div key={s.name} className="lead-row">
+                      <div className="info">
+                        <b>{s.name}</b>
+                        <span>{percent(s.share, 0)} del total</span>
+                      </div>
+                      <span className="amount">{integer(s.leads)}</span>
                     </div>
-                    <span className="amount">{integer(s.leads)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                  ))}
+                </div>
+              )}
+            </Card>
+            <Card title="Ventas por origen" hint={periodo} className="source-card">
+              {wonSources === null ? (
+                <EmptyState label="Pendiente">Falta correr la migración de estados.</EmptyState>
+              ) : wonSources.length === 0 ? (
+                <EmptyState label="Sin datos">Ninguna venta ganada en el período.</EmptyState>
+              ) : (
+                <div className="source-list">
+                  {wonSources.map((s) => (
+                    <div key={s.name} className="lead-row">
+                      <div className="info">
+                        <b>{s.name}</b>
+                        <span>
+                          {[`${percent(s.share, 0)} de las ventas`, s.ticketTotal ? `${money(s.ticketTotal)} facturado` : null]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </div>
+                      <span className="amount">{integer(s.leads)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
 
         {/* items-stretch: la lista de oportunidades acompaña el alto de las dos

@@ -9,6 +9,7 @@ import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
 import { LOGO_MAX_BYTES, LOGO_TYPES, LOGOS_BUCKET } from "@/lib/logos";
 import { deleteMetaSecrets, getAdAccount, getMetaSecrets, saveMetaSecrets } from "@/lib/meta";
 import { NOTION_PORTAL_TAG, NOTION_TICKETS_TAG, getPageRef, notionErrorMessage } from "@/lib/notion";
+import { KommoError, kommoAccount, normalizeKommoUrl } from "@/lib/kommo";
 import { normalizeOdooUrl, odooLogin } from "@/lib/odoo";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
@@ -338,6 +339,8 @@ export async function connectCrm(clientId: string, _prev: FormState, formData: F
   const provider = String(formData.get("provider") ?? "");
   if (!isCrmProvider(provider)) return { ok: false, error: "Elegí un CRM de la lista." };
 
+  if (provider === "kommo") return connectKommo(clientId, formData);
+
   const db = String(formData.get("db") ?? "").trim();
   const username = String(formData.get("username") ?? "").trim();
   const apiKey = String(formData.get("apiKey") ?? "").trim();
@@ -370,6 +373,44 @@ export async function connectCrm(clientId: string, _prev: FormState, formData: F
   // Primera lectura del CRM para que la vista no arranque vacía.
   if (result.ok) await syncCrmClient(clientId);
   return result;
+}
+
+// Kommo: cuenta + token de larga duración de una integración privada.
+async function connectKommo(clientId: string, formData: FormData): Promise<FormState> {
+  const token = String(formData.get("token") ?? "").trim();
+  if (!token) return { ok: false, error: "Pegá el token de larga duración de Kommo." };
+
+  let credentials;
+  try {
+    credentials = { url: normalizeKommoUrl(String(formData.get("account") ?? "")), token };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "La cuenta de Kommo no es válida." };
+  }
+
+  // Probar antes de guardar: así el error se ve acá y no en el próximo sync.
+  let account;
+  try {
+    account = await kommoAccount(credentials);
+  } catch (e) {
+    console.error("[crm] connectKommo", e);
+    return { ok: false, error: e instanceof KommoError ? e.message : "No se pudo conectar con Kommo." };
+  }
+
+  await saveCrmSecrets(clientId, { provider: "kommo", kommo: credentials });
+
+  const now = new Date().toISOString();
+  const result = await writeIntegration(clientId, "crm", {
+    connected: true,
+    account_ref: `Kommo · ${account}`,
+    connected_at: now,
+    updated_at: now,
+  });
+  if (!result.ok) return result;
+
+  // Primera lectura del CRM. Si falla, la conexión queda guardada y el motivo se
+  // ve en la pantalla (sync_error), pero conviene decirlo acá también.
+  const sync = await syncCrmClient(clientId);
+  return sync.ok ? result : { ok: false, error: `Conectado, pero no se pudieron leer los leads: ${sync.error}` };
 }
 
 // Etapas del CRM que cuentan como venta ganada. El pipeline de cada cliente sigue

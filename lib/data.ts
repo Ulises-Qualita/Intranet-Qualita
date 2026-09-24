@@ -383,12 +383,16 @@ export type Lead = {
   owner: string | null;
   // Anuncio que originó la oportunidad.
   ad: string | null;
+  // Etiquetas del CRM. null = la base todavía no tiene la columna: no es lo
+  // mismo que una oportunidad sin etiquetas, y el agente tiene que distinguirlo.
+  tags: string[] | null;
 };
 
 const LEAD_COLUMNS = "id, name, source, amount, stage, temperature, created_at";
-// Columnas agregadas después (ver docs/sql/): mientras la base no las tenga, la
-// vista se muestra igual sin esos datos en vez de romper.
-const LEAD_EXTRA_COLUMNS = ["status", "owner", "ad"];
+// Columnas agregadas después (ver docs/sql/), de a tandas y de la más vieja a la
+// más nueva: mientras la base no tenga alguna, se lee sin ella (y sin las
+// posteriores) en vez de romper.
+const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"]];
 
 export async function getLeads(clientId: string): Promise<Lead[]> {
   const supabase = await createClient();
@@ -403,16 +407,20 @@ export async function getLeads(clientId: string): Promise<Lead[]> {
         .returns<Lead[]>(),
     );
 
-  const data = await read([LEAD_COLUMNS, ...LEAD_EXTRA_COLUMNS].join(", ")).catch((e) => {
-    // Alguna columna opcional todavía no existe en la base: se lee sin ellas.
-    if ((e as { code?: string })?.code !== "42703") throw e;
-    return read(LEAD_COLUMNS);
-  });
+  let data: Lead[] | null = null;
+  for (let tandas = LEAD_EXTRA_COLUMNS.length; data === null; tandas--) {
+    const columns = [LEAD_COLUMNS, ...LEAD_EXTRA_COLUMNS.slice(0, tandas).flat()].join(", ");
+    data = await read(columns).catch((e) => {
+      if (tandas === 0 || (e as { code?: string })?.code !== "42703") throw e;
+      return null;
+    });
+  }
   return data.map((l) => ({
     ...l,
     status: l.status ?? null,
     owner: l.owner ?? null,
     ad: l.ad ?? null,
+    tags: l.tags ?? null,
     amount: l.amount === null ? null : Number(l.amount),
   }));
 }
@@ -497,25 +505,48 @@ function groupAds(leads: Lead[]): AdStats[] {
   return [...byAd.values()].sort((a, b) => b.leads - a.leads || b.ticketTotal - a.ticketTotal);
 }
 
-export type SourceStats = { name: string; leads: number; share: number };
+export type SourceStats = { name: string; leads: number; share: number; ticketTotal: number };
 
-// De dónde vienen las oportunidades. "Sin origen" va último y aparte: en el CRM
-// el campo es opcional y suele quedar vacío, así que conviene verlo separado.
+// De dónde vienen las oportunidades (o las ventas, si se le pasan solo las
+// ganadas). "Sin origen" va último y aparte: en el CRM el campo es opcional y
+// suele quedar vacío, así que conviene verlo separado.
 function groupSources(leads: Lead[]): SourceStats[] {
-  const bySource = new Map<string, number>();
+  const bySource = new Map<string, { leads: number; ticketTotal: number }>();
   for (const lead of leads) {
     const name = lead.source?.trim() || "Sin origen";
-    bySource.set(name, (bySource.get(name) ?? 0) + 1);
+    const source = bySource.get(name) ?? { leads: 0, ticketTotal: 0 };
+    source.leads += 1;
+    if (lead.amount && lead.amount > 0) source.ticketTotal += lead.amount;
+    bySource.set(name, source);
   }
 
   const total = leads.length || 1;
   return [...bySource.entries()]
-    .map(([name, count]) => ({ name, leads: count, share: (count * 100) / total }))
+    .map(([name, s]) => ({ name, ...s, share: (s.leads * 100) / total }))
     .sort((a, b) => {
       if (a.name === "Sin origen") return 1;
       if (b.name === "Sin origen") return -1;
       return b.leads - a.leads;
     });
+}
+
+export type TagStats = { name: string; leads: number; won: number; ticketTotal: number };
+
+// Oportunidades por etiqueta. Una oportunidad puede tener varias, así que la
+// suma de las filas no da el total de oportunidades.
+function groupTags(leads: Lead[]): TagStats[] | null {
+  if (leads.some((l) => l.tags === null)) return null;
+  const byTag = new Map<string, TagStats>();
+  for (const lead of leads) {
+    for (const name of lead.tags ?? []) {
+      const tag = byTag.get(name) ?? { name, leads: 0, won: 0, ticketTotal: 0 };
+      tag.leads += 1;
+      if (lead.status === "won") tag.won += 1;
+      if (lead.amount && lead.amount > 0) tag.ticketTotal += lead.amount;
+      byTag.set(name, tag);
+    }
+  }
+  return [...byTag.values()].sort((a, b) => b.leads - a.leads);
 }
 
 // Corte por período para la vista de CRM: qué leads entran y qué se calcula
@@ -546,7 +577,10 @@ export function crmPeriod(leads: Lead[], days: number) {
     ticketTotal: tickets.reduce((total, t) => total + t, 0),
     sellers: groupSellers(inPeriod),
     sources: groupSources(inPeriod),
+    // Sin la columna de estado no hay forma de saber cuáles son ventas.
+    wonSources: hasStatus ? groupSources(inPeriod.filter((l) => l.status === "won")) : null,
     ads: groupAds(inPeriod),
+    tags: groupTags(inPeriod),
   };
 }
 

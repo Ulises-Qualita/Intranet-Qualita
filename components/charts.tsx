@@ -91,12 +91,12 @@ export function StageBars({ stages }: { stages: { name: string; value: number }[
         const pct = share > 0 && share < 1 ? "<1%" : `${Math.round(share)}%`;
         return (
           <div className="col" key={s.name} title={`${s.name}: ${s.value} (${pct})`}>
-            <b className="val">{s.value}</b>
             <div className="bar-wrap">
               <div className="bar" style={{ height: `${floor + (s.value / top) * (100 - floor)}%` }} />
             </div>
             <span className="lbl">{s.name}</span>
             <span className="share">{pct}</span>
+            <b className="val">{s.value}</b>
           </div>
         );
       })}

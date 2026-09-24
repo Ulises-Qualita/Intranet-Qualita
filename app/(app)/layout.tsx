@@ -2,6 +2,7 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
 import { AgentChat } from "@/components/agent/agent-chat";
+import { AgentProvider } from "@/components/agent/agent-store";
 import { Sidebar } from "@/components/sidebar";
 import { agentSuggestions } from "@/lib/agent/suggestions";
 import { AREAS, canAccess, type AreaKey } from "@/lib/auth-shared";
@@ -43,14 +44,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   for (const t of tasks.filter(isOpenTask)) openTasksByClient[t.client_id] = (openTasksByClient[t.client_id] ?? 0) + 1;
 
   return (
-    <div className="shell">
-      <Sidebar user={user} access={access} clients={clients} openTasksByClient={openTasksByClient} />
-      <div className="main">{children}</div>
-      {/* El agente solo consulta áreas habilitadas; sin ninguna no tendría nada
-          que responder, así que directamente no aparece. */}
-      {Object.values(access).some(Boolean) && (
-        <AgentChat userName={user.name} suggestions={agentSuggestions(clients, access)} />
-      )}
-    </div>
+    // El provider guarda la conversación del agente: al estar en el layout,
+    // sobrevive a cerrar la burbuja y a navegar entre la burbuja y /agente.
+    <AgentProvider>
+      <div className="shell">
+        <Sidebar user={user} access={access} clients={clients} openTasksByClient={openTasksByClient} />
+        <div className="main">{children}</div>
+        {/* El agente solo consulta áreas habilitadas; sin ninguna no tendría nada
+            que responder, así que directamente no aparece. */}
+        {Object.values(access).some(Boolean) && (
+          <AgentChat userName={user.name} suggestions={agentSuggestions(clients, access)} />
+        )}
+      </div>
+    </AgentProvider>
   );
 }

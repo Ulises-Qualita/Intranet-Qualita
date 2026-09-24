@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { DM_Sans, Unbounded } from "next/font/google";
+import { DM_Sans, Lexend } from "next/font/google";
 import "./globals.css";
 
-const unbounded = Unbounded({
-  variable: "--font-unbounded",
+const lexend = Lexend({
+  variable: "--font-lexend",
   subsets: ["latin"],
 });
 
@@ -26,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="es"
-      className={`${unbounded.variable} ${dmSans.variable}`}
+      className={`${lexend.variable} ${dmSans.variable}`}
       suppressHydrationWarning
     >
       <head>

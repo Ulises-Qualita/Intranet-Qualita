@@ -30,22 +30,38 @@ export function CrmForm({ clientId, current }: { clientId: string; current: CrmP
 
       {selected?.help && <p className="modal-lead">{selected.help}</p>}
 
-      <label>
-        <span>Dirección de Odoo</span>
-        <input name="url" required maxLength={200} placeholder="https://empresa.odoo.com" autoComplete="off" />
-      </label>
-      <label>
-        <span>Base de datos</span>
-        <input name="db" required maxLength={120} placeholder="empresa" autoComplete="off" />
-      </label>
-      <label>
-        <span>Usuario</span>
-        <input name="username" required maxLength={200} placeholder="usuario@empresa.com" autoComplete="off" />
-      </label>
-      <label>
-        <span>Clave de API</span>
-        <input name="apiKey" type="password" required maxLength={200} autoComplete="off" />
-      </label>
+      {provider === "kommo" ? (
+        // key: al cambiar de CRM los campos arrancan vacíos, sin arrastrar lo tipeado.
+        <div key="kommo" className="stack-form">
+          <label>
+            <span>Cuenta de Kommo</span>
+            <input name="account" required maxLength={200} placeholder="empresa.kommo.com" autoComplete="off" />
+          </label>
+          <label>
+            <span>Token de larga duración</span>
+            <input name="token" type="password" required maxLength={4000} autoComplete="off" />
+          </label>
+        </div>
+      ) : (
+        <div key="odoo" className="stack-form">
+          <label>
+            <span>Dirección de Odoo</span>
+            <input name="url" required maxLength={200} placeholder="https://empresa.odoo.com" autoComplete="off" />
+          </label>
+          <label>
+            <span>Base de datos</span>
+            <input name="db" required maxLength={120} placeholder="empresa" autoComplete="off" />
+          </label>
+          <label>
+            <span>Usuario</span>
+            <input name="username" required maxLength={200} placeholder="usuario@empresa.com" autoComplete="off" />
+          </label>
+          <label>
+            <span>Clave de API</span>
+            <input name="apiKey" type="password" required maxLength={200} autoComplete="off" />
+          </label>
+        </div>
+      )}
 
       <div className="form-actions">
         <button type="submit" className="connect-btn" disabled={pending}>

@@ -7,15 +7,21 @@ import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { crmStatusOf, type CrmLead, type CrmProvider } from "./crm-shared";
 import { todayISO } from "./format";
+import { readKommo, type KommoCredentials } from "./kommo";
 import { getOdooOpportunities, getOdooStages, odooConnect, type OdooCredentials } from "./odoo";
 import { createAdminClient } from "./supabase/server";
 
 // Antigüedad a partir de la cual abrir la vista dispara un sync.
 const STALE_MS = 6 * 60 * 60 * 1000;
 
+// Tope de filas por respuesta de PostgREST.
+const PAGE_SIZE = 1000;
+const DELETE_BATCH = 200;
+
 export type CrmSecrets = {
   provider: CrmProvider;
   odoo?: OdooCredentials;
+  kommo?: KommoCredentials;
   // Etapas en el orden del CRM: ordena el embudo de la vista.
   stage_order?: string[];
   // Etapas que cuentan como venta ganada, elegidas por cliente. El pipeline suele
@@ -59,6 +65,10 @@ async function readCrm(secrets: CrmSecrets): Promise<{ leads: CrmLead[]; stages:
     ]);
     return { leads, stages };
   }
+  if (secrets.provider === "kommo") {
+    if (!secrets.kommo) throw new Error("Falta el token de Kommo.");
+    return readKommo(secrets.kommo);
+  }
   throw new Error(`El CRM "${secrets.provider}" todavía no está integrado.`);
 }
 
@@ -76,14 +86,23 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     const statuses = new Map(leads.map((l) => [l.externalId, crmStatusOf(l, secrets.won_stages)]));
 
     // Se conserva el id de los leads que ya estaban (el CRM manda external_id).
-    const { data: existing, error: readError } = await db
-      .from("intranet_leads")
-      .select("id, external_id")
-      .eq("client_id", clientId)
-      .returns<{ id: string; external_id: string | null }[]>();
-    if (readError) throw readError;
+    // PostgREST corta en 1000 filas sin avisar: se lee de a páginas, porque un lead
+    // que quede afuera se tomaría como nuevo y chocaría con el que ya existe.
+    const existing: { id: string; external_id: string | null }[] = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error: readError } = await db
+        .from("intranet_leads")
+        .select("id, external_id")
+        .eq("client_id", clientId)
+        .order("id")
+        .range(from, from + PAGE_SIZE - 1)
+        .returns<{ id: string; external_id: string | null }[]>();
+      if (readError) throw readError;
+      existing.push(...(data ?? []));
+      if ((data?.length ?? 0) < PAGE_SIZE) break;
+    }
 
-    const ids = new Map((existing ?? []).map((row) => [row.external_id, row.id]));
+    const ids = new Map(existing.map((row) => [row.external_id, row.id]));
 
     if (leads.length) {
       const rows = leads.map((l) => ({
@@ -101,25 +120,34 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         status: statuses.get(l.externalId),
         owner: l.owner,
         ad: l.ad,
+        tags: l.tags,
       }));
 
-      let { error } = await db.from("intranet_leads").upsert(rows);
-      if (error?.code === "42703") {
-        const basicos = rows.map((row) => {
-          const basico: Record<string, unknown> = { ...row };
-          for (const columna of ["status", "owner", "ad"]) delete basico[columna];
-          return basico;
+      // Se sacan de a tandas, de la más nueva a la más vieja, así una migración
+      // pendiente no se lleva puestas columnas que ya existen.
+      const sinColumnas = (columnas: string[]) =>
+        rows.map((row) => {
+          const copia: Record<string, unknown> = { ...row };
+          for (const columna of columnas) delete copia[columna];
+          return copia;
         });
-        ({ error } = await db.from("intranet_leads").upsert(basicos));
-      }
+      // El choque se resuelve por (cliente, id del CRM) y no por id: si dos syncs
+      // corren a la vez, los dos dan de alta el mismo lead nuevo con ids distintos,
+      // y el segundo tiene que actualizarlo en vez de fallar.
+      const upsert = (batch: Record<string, unknown>[]) =>
+        db.from("intranet_leads").upsert(batch, { onConflict: "client_id,external_id" });
+      let { error } = await upsert(rows);
+      if (error?.code === "42703") ({ error } = await upsert(sinColumnas(["tags"])));
+      if (error?.code === "42703") ({ error } = await upsert(sinColumnas(["tags", "status", "owner", "ad"])));
       if (error) throw error;
     }
 
     // Lo que el CRM ya no devuelve (borrado o fuera del período) se saca.
     const vigentes = new Set(leads.map((l) => l.externalId));
-    const sobran = (existing ?? []).filter((row) => !vigentes.has(row.external_id ?? "")).map((row) => row.id);
-    if (sobran.length) {
-      const { error } = await db.from("intranet_leads").delete().in("id", sobran);
+    const sobran = existing.filter((row) => !vigentes.has(row.external_id ?? "")).map((row) => row.id);
+    // Los ids van en la URL del DELETE: de a tandas, para no pasarse de largo.
+    for (let i = 0; i < sobran.length; i += DELETE_BATCH) {
+      const { error } = await db.from("intranet_leads").delete().in("id", sobran.slice(i, i + DELETE_BATCH));
       if (error) throw error;
     }
 

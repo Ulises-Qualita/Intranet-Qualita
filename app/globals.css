@@ -59,7 +59,7 @@
   --color-magenta: var(--magenta);
   --color-coral: var(--coral);
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;
-  --font-display: var(--font-unbounded), var(--font-dm-sans), sans-serif;
+  --font-display: var(--font-lexend), var(--font-dm-sans), sans-serif;
 }
 
 html,
@@ -225,6 +225,12 @@ body {
   .source-card { display: flex; flex-direction: column; }
   .source-list { flex: 1; display: flex; flex-direction: column; }
   .source-list .lead-row { flex: 1; }
+  /* El embudo se estira al alto de las tarjetas de origen: las barras van al
+     fondo en vez de dejar el hueco abajo. */
+  .funnel-card { display: flex; flex-direction: column; }
+  .funnel-card .stage-bars { margin-top: auto; }
+  /* Apiladas, las dos tarjetas de origen se reparten ese alto. */
+  .stack-cards > .source-card { flex: 1; }
 
   .lead-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
   .lead-row:last-child { border-bottom: none; }
@@ -609,7 +615,7 @@ body {
   .notion-doc p { margin: 0 0 14px; }
   .notion-doc a { color: var(--magenta); text-decoration: underline; text-underline-offset: 2px; }
 
-  /* Unbounded solo en los encabezados; el cuerpo queda en DM Sans. */
+  /* Lexend solo en los encabezados; el cuerpo queda en DM Sans. */
   .notion-doc h2, .notion-doc h3, .notion-doc h4 { font-family: var(--font-display); color: var(--navy); letter-spacing: -.4px; line-height: 1.3; }
   .notion-doc h2 { font-size: 20px; font-weight: 600; margin: 32px 0 12px; }
   .notion-doc h3 { font-size: 17px; font-weight: 600; margin: 26px 0 10px; }

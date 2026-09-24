@@ -10,6 +10,7 @@ import { createClient, isMissingTable } from "../supabase/server";
 // no se cobra igual: escribir en el cache cuesta ~1,25x un token de entrada y
 // leerlo ~0,1x, así que se calculan aparte.
 const PRICES: Record<string, { input: number; output: number }> = {
+  "claude-opus-5-5": { input: 4, output: 20 },
   "claude-opus-5": { input: 5, output: 25 },
   "claude-opus-4-8": { input: 5, output: 25 },
   "claude-opus-4-7": { input: 5, output: 25 },

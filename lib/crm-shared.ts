@@ -14,8 +14,8 @@ export const CRM_PROVIDERS = [
   {
     value: "kommo",
     label: "Kommo",
-    help: "Todavía no está integrado.",
-    ready: false,
+    help: "Un administrador de Kommo crea una integración privada (Configuración → Integraciones → Crear integración) y, en Claves y alcances, genera un token de larga duración. Elegí un vencimiento largo: cuando vence hay que cargar uno nuevo.",
+    ready: true,
   },
 ] as const;
 
@@ -36,6 +36,8 @@ export type CrmLead = {
   owner: string | null;
   // Anuncio que originó la oportunidad; coincide con el nombre en Meta.
   ad: string | null;
+  // Etiquetas, con el nombre que se ve en el CRM.
+  tags: string[];
   amount: number | null;
   temperature: string;
   createdAt: string;

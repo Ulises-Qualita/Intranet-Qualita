@@ -2,28 +2,16 @@
 
 // La conversación con el agente: historial, log y campo de escritura. La usan las
 // dos vistas — la burbuja flotante (`components/agent/agent-chat.tsx`) y la
-// pantalla completa (`app/(app)/agente/page.tsx`) — con el mismo estado y las
-// mismas llamadas; lo único que cambia es el ancho y qué trae la cabecera.
+// pantalla completa (`app/(app)/agente/page.tsx`) — sobre el mismo estado, que
+// vive en `agent-store.tsx`; lo único que cambia es el ancho y qué trae la cabecera.
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../icons";
+import { TOOL_LABELS, useAgent, type Message } from "./agent-store";
 import { RichText } from "./rich-text";
 
-type ToolCall = { name: string; input: Record<string, unknown> };
-export type Message = { role: "user" | "assistant"; content: string; tools: ToolCall[] };
 type Thread = { id: string; title: string; updated_at: string };
-
-// Qué mostrar mientras el agente consulta cada herramienta.
-const TOOL_LABELS: Record<string, string> = {
-  listar_clientes: "Buscando en los clientes",
-  tareas: "Revisando las tareas",
-  meta_metricas: "Leyendo las métricas de Meta",
-  meta_campanas: "Revisando las campañas de Meta",
-  crm_resumen: "Leyendo el CRM",
-  crm_leads: "Buscando oportunidades en el CRM",
-  equipo: "Consultando el equipo",
-};
 
 const dateLabel = (iso: string) =>
   new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short" }).format(new Date(iso)).replace(".", "");
@@ -40,41 +28,37 @@ export function AgentConversation({
   userName: string;
   suggestions: string[];
   variant: "panel" | "page";
-  // Conversación con la que se abre. Al pasar de la burbuja a pantalla completa,
-  // /agente?hilo=… la lee en el server y llega renderizada, sin viaje extra.
+  // Conversación con la que se abre /agente?hilo=…: el server la lee y llega
+  // renderizada. Sin hilo, se sigue la que esté abierta en la burbuja.
   initialThreadId?: string | null;
   initialMessages?: Message[];
   initialTitle?: string | null;
   onClose?: () => void;
 }) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [threadId, setThreadId] = useState<string | null>(initialThreadId);
-  const [title, setTitle] = useState<string | null>(initialTitle);
+  const agent = useAgent();
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  // Qué está haciendo el agente ahora mismo: el nombre de la tool o "pensando".
-  const [activity, setActivity] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [threads, setThreads] = useState<Thread[] | null>(null);
+
+  // Si el hilo del URL no es el que ya está abierto (p. ej. al recargar), se lo
+  // adopta. Hasta que el provider lo tome (sube su epoch) se muestra lo que trajo
+  // el server, así no parpadea el estado vacío.
+  const [adopting] = useState(() =>
+    initialThreadId && initialThreadId !== agent.threadId && !agent.busy ? { from: agent.epoch } : null,
+  );
+  const pending = adopting !== null && agent.epoch === adopting.from;
+  useEffect(() => {
+    if (adopting && initialThreadId) agent.adopt(initialThreadId, initialTitle, initialMessages);
+    // Solo al montar: después la conversación la maneja el provider.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const messages = pending ? initialMessages : agent.messages;
+  const threadId = pending ? initialThreadId : agent.threadId;
+  const title = pending ? initialTitle : agent.title;
+  const { busy, activity, error } = agent;
 
   const scroller = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
-
-  async function loadThread(id: string, threadTitle: string) {
-    setThreads(null);
-    setError(null);
-    setTitle(threadTitle);
-    const res = await fetch(`/api/agente?hilo=${id}`);
-    const body = await res.json().catch(() => null);
-    setMessages(
-      (body?.messages ?? []).map((m: { role: "user" | "assistant"; content: string; tools: ToolCall[] }) => ({
-        role: m.role,
-        content: m.content,
-        tools: m.tools ?? [],
-      })),
-    );
-    setThreadId(id);
-  }
 
   // Cada respuesta que llega empuja el scroll al final, salvo que el usuario haya
   // subido a leer algo: ahí mandar el scroll abajo sería pelearle.
@@ -84,92 +68,29 @@ export function AgentConversation({
     if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
   }, [messages, activity]);
 
+  // Al abrir, la conversación retomada arranca desde el último mensaje.
   useEffect(() => {
+    const box = scroller.current;
+    if (box) box.scrollTop = box.scrollHeight;
     field.current?.focus();
   }, []);
 
-  const send = useCallback(
-    async (question: string) => {
-      const text = question.trim();
-      if (!text || busy) return;
-
-      setInput("");
-      setError(null);
-      setBusy(true);
-      setActivity("Pensando");
-      setThreads(null);
-      setMessages((prev) => [...prev, { role: "user", content: text, tools: [] }, { role: "assistant", content: "", tools: [] }]);
-
-      // Va acumulando sobre el último mensaje, que es el del asistente recién creado.
-      const patch = (fn: (m: Message) => Message) =>
-        setMessages((prev) => prev.map((m, i) => (i === prev.length - 1 ? fn(m) : m)));
-
-      try {
-        const res = await fetch("/api/agente", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, threadId }),
-        });
-
-        if (!res.ok || !res.body) {
-          const body = await res.json().catch(() => null);
-          throw new Error(body?.error ?? "No se pudo conectar con el agente.");
-        }
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        // SSE: eventos separados por línea en blanco, cada uno con su "data:".
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          const chunks = buffer.split("\n\n");
-          buffer = chunks.pop() ?? "";
-
-          for (const chunk of chunks) {
-            const line = chunk.split("\n").find((l) => l.startsWith("data: "));
-            if (!line) continue;
-            const event = JSON.parse(line.slice(6));
-
-            if (event.type === "thread") {
-              setThreadId(event.id);
-              setTitle(event.title);
-            }
-            if (event.type === "tool") {
-              setActivity(TOOL_LABELS[event.name] ?? "Consultando la intranet");
-              patch((m) => ({ ...m, tools: [...m.tools, { name: event.name, input: {} }] }));
-            }
-            if (event.type === "thinking") setActivity("Pensando");
-            if (event.type === "text") {
-              setActivity(null);
-              patch((m) => ({ ...m, content: m.content + event.text }));
-            }
-            if (event.type === "error") setError(event.message);
-          }
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "No se pudo completar la consulta.");
-      } finally {
-        setBusy(false);
-        setActivity(null);
-        // Un turno que terminó sin texto (error a mitad de camino) no deja una
-        // burbuja vacía colgada.
-        setMessages((prev) => prev.filter((m, i) => i !== prev.length - 1 || m.role !== "assistant" || m.content.trim()));
-      }
-    },
-    [busy, threadId],
-  );
+  function send(question: string) {
+    if (!question.trim() || busy) return;
+    setInput("");
+    setThreads(null);
+    agent.send(question);
+  }
 
   function reset() {
-    setMessages([]);
-    setThreadId(null);
-    setTitle(null);
-    setError(null);
+    agent.reset();
     setThreads(null);
     field.current?.focus();
+  }
+
+  async function loadThread(id: string, threadTitle: string) {
+    setThreads(null);
+    await agent.loadThread(id, threadTitle);
   }
 
   async function toggleHistory() {
