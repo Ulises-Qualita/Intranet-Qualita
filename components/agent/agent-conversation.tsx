@@ -112,7 +112,7 @@ export function AgentConversation({
         {variant === "panel" ? (
           <div className="agent-title">
             <Icon name="sparkles" size={16} />
-            <h3>Agente Qualita</h3>
+            <h3>Agente Q</h3>
           </div>
         ) : (
           // En grande el título ya lo da la Topbar, así que acá va de qué se está
@@ -137,7 +137,7 @@ export function AgentConversation({
             <Icon name="plus" size={16} />
           </button>
           {variant === "panel" && onClose && (
-            <button type="button" onClick={onClose} title="Cerrar" aria-label="Cerrar el agente">
+            <button type="button" onClick={onClose} title="Cerrar" aria-label="Cerrar Agente Q">
               <Icon name="close" size={16} />
             </button>
           )}

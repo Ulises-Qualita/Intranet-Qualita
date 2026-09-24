@@ -30,7 +30,7 @@ export function AgentChat({ userName, suggestions }: { userName: string; suggest
         type="button"
         className={`agent-fab${open ? " on" : ""}`}
         onClick={() => setOpen((v) => !v)}
-        aria-label={open ? "Cerrar el agente" : "Abrir el agente"}
+        aria-label={open ? "Cerrar Agente Q" : "Abrir Agente Q"}
       >
         {open ? (
           <Icon name="close" size={22} />
@@ -44,11 +44,11 @@ export function AgentChat({ userName, suggestions }: { userName: string; suggest
       {/* Fondo atenuado, como un modal. Es un button y no un div para que cerrar
           con el mouse y cerrar con el teclado sean la misma cosa. */}
       {open && (
-        <button type="button" className="agent-backdrop" onClick={() => setOpen(false)} aria-label="Cerrar el agente" />
+        <button type="button" className="agent-backdrop" onClick={() => setOpen(false)} aria-label="Cerrar Agente Q" />
       )}
 
       {open && (
-        <section className="agent-panel" aria-label="Agente de la intranet">
+        <section className="agent-panel" aria-label="Agente Q">
           <AgentConversation userName={userName} suggestions={suggestions} variant="panel" onClose={() => setOpen(false)} />
         </section>
       )}

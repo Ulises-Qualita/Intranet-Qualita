@@ -17,7 +17,7 @@ export function AgentUsageCards({ usage, members }: { usage: AgentUsage; members
   if (usage.sinTabla) {
     return (
       <div className="grid mt-4">
-        <Card title="Gasto del agente">
+        <Card title="Gasto de Agente Q">
           <EmptyState label="Sin configurar">
             Falta crear la tabla de consumo: correr <code>docs/sql/2026-09-18-agente-uso.sql</code> en Supabase.
           </EmptyState>
@@ -33,7 +33,7 @@ export function AgentUsageCards({ usage, members }: { usage: AgentUsage; members
 
   return (
     <div className="grid g-2-1 mt-4">
-      <Card title="Gasto del agente" hint={`Últimos ${usage.dias} días`}>
+      <Card title="Gasto de Agente Q" hint={`Últimos ${usage.dias} días`}>
         {total.consultas ? (
           <>
             <div className="usage-total">
@@ -62,7 +62,7 @@ export function AgentUsageCards({ usage, members }: { usage: AgentUsage; members
             </p>
           </>
         ) : (
-          <EmptyState label="Sin datos">Todavía nadie usó el agente en este período.</EmptyState>
+          <EmptyState label="Sin datos">Todavía nadie usó Agente Q en este período.</EmptyState>
         )}
       </Card>
 

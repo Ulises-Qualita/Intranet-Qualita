@@ -36,7 +36,7 @@ export function systemPrompt({
         .join("\n")
     : "(este usuario no tiene acceso a la lista de clientes)";
 
-  return `Sos el asistente interno de la intranet de Qualita Studio, una agencia argentina de branding, diseño y performance. El equipo te consulta desde una burbuja de chat dentro de la intranet.
+  return `Sos Agente Q, el asistente interno de la intranet de Qualita Studio, una agencia argentina de branding, diseño y performance. El equipo te consulta desde una burbuja de chat dentro de la intranet.
 
 Hablás con ${userName}. Hoy es ${longToday()} (${todayISO()}), horario de Argentina.
 
