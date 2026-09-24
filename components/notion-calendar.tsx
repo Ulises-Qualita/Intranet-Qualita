@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Icon } from "@/components/icons";
-import { WEEKDAYS, type CalEvent, type CalMonth } from "@/lib/notion-blocks";
+import { WEEKDAYS, type CalMonth } from "@/lib/notion-blocks";
 
 // Umbral del gesto: menos que esto es un toque o un scroll vertical torcido.
 const SWIPE_PX = 50;
@@ -10,15 +10,7 @@ const SWIPE_PX = 50;
 // Calendario de una database embebida, un mes a la vez como la vista de Notion:
 // título del mes a la izquierda y "‹ Hoy ›" a la derecha. En touch se pasa de mes
 // deslizando. Los meses llegan armados desde el server; acá solo se elige cuál ver.
-export function NotionCalendar({
-  months,
-  undated,
-  initial,
-}: {
-  months: CalMonth[];
-  undated: CalEvent[];
-  initial: number;
-}) {
+export function NotionCalendar({ months, initial }: { months: CalMonth[]; initial: number }) {
   const [index, setIndex] = useState(initial);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const month = months[index];
@@ -101,17 +93,6 @@ export function NotionCalendar({
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {undated.length > 0 && (
-        <div className="nd-cal-undated">
-          <b>Sin fecha</b>
-          {undated.map((e) => (
-            <span key={e.id} className={`nd-ev c-${e.color}`}>
-              {e.title}
-            </span>
-          ))}
         </div>
       )}
     </div>

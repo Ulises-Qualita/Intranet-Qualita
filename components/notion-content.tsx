@@ -1,10 +1,13 @@
 import { NotionCalendar } from "@/components/notion-calendar";
+import { NotionDbTabs } from "@/components/notion-db-tabs";
 import {
+  buildBoard,
   buildCalendar,
   groupBlocks,
   plainOf,
   type BlockNode,
   type DbCell,
+  type DbView,
   type EmbeddedDb,
   type RichText,
 } from "@/lib/notion-blocks";
@@ -70,11 +73,104 @@ function Cell({ cell }: { cell: DbCell }) {
   }
 }
 
-// Database con fecha → calendario mensual, un mes a la vez como la vista de
-// Notion. Los meses se arman acá (server) y el componente cliente solo navega.
-function Calendar({ db }: { db: EmbeddedDb }) {
-  const { months, undated, initial } = buildCalendar(db, todayISO());
-  return <NotionCalendar months={months} undated={undated} initial={initial} />;
+const isEmptyCell = (cell: DbCell) =>
+  cell.kind === "tags" ? !cell.tags.length : cell.kind === "check" ? false : !cell.text;
+
+// Calendario mensual, un mes a la vez como la vista de Notion. Los meses se arman
+// acá (server) y el componente cliente solo navega.
+function DbCalendar({ db, dateColumn }: { db: EmbeddedDb; dateColumn: number }) {
+  const { months, initial } = buildCalendar(db, dateColumn, todayISO());
+  if (!months.length) return <p className="nd-unsupported">Ninguna fila tiene fecha todavía.</p>;
+  return <NotionCalendar months={months} initial={initial} />;
+}
+
+// Tablero: una columna por grupo, en el orden y color de Notion. Las tarjetas
+// muestran el título y las propiedades que la vista tiene visibles, salteando
+// las vacías como hace Notion.
+function DbBoard({ db, view }: { db: EmbeddedDb; view: DbView }) {
+  const columns = buildBoard(db, view);
+  return (
+    <div className="nd-board">
+      {columns.map((col) => (
+        <div key={col.key} className="nd-board-col">
+          <div className="nd-board-head">
+            <span className={`nd-tag${col.tag ? ` c-${col.tag.color}` : ""}`}>{col.label}</span>
+            <span className="nd-board-count">{col.rows.length}</span>
+          </div>
+          {col.rows.map((row) => {
+            const title = db.titleColumn >= 0 ? row.cells[db.titleColumn] : undefined;
+            return (
+              <div key={row.id} className="nd-card">
+                <b>{title && "text" in title && title.text ? title.text : "Sin título"}</b>
+                {(view.cardColumns ?? [])
+                  .filter((i) => !isEmptyCell(row.cells[i]))
+                  .map((i) => (
+                    <span key={i} className="nd-card-prop">
+                      <Cell cell={row.cells[i]} />
+                    </span>
+                  ))}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Tabla con las columnas que la vista de Notion tiene visibles, en su orden.
+function DbTable({ db, columns }: { db: EmbeddedDb; columns?: number[] }) {
+  const cols = columns ?? db.columns.map((_, i) => i);
+  return (
+    <div className="nd-table-wrap">
+      <table className="nd-table">
+        <thead>
+          <tr>
+            {cols.map((i) => (
+              <th key={i}>{db.columns[i]}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {db.rows.map((row) => (
+            <tr key={row.id}>
+              {cols.map((i) => (
+                <td key={i} className={i === db.titleColumn ? "title" : undefined}>
+                  <Cell cell={row.cells[i]} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Una solapa por vista de Notion. `views` puede faltar en un portal que quedó en
+// el cache de antes de leer las vistas: ahí se usa la de siempre.
+function DbViews({ db }: { db: EmbeddedDb }) {
+  const views: DbView[] = db.views?.length
+    ? db.views
+    : [
+        db.dateColumn !== null
+          ? { id: "default", name: "Calendario", kind: "calendar", dateColumn: db.dateColumn }
+          : { id: "default", name: "Tabla", kind: "table" },
+      ];
+
+  return (
+    <NotionDbTabs names={views.map((v) => v.name)}>
+      {views.map((v) =>
+        v.kind === "calendar" && v.dateColumn !== undefined ? (
+          <DbCalendar key={v.id} db={db} dateColumn={v.dateColumn} />
+        ) : v.kind === "board" ? (
+          <DbBoard key={v.id} db={db} view={v} />
+        ) : (
+          <DbTable key={v.id} db={db} columns={v.tableColumns} />
+        ),
+      )}
+    </NotionDbTabs>
+  );
 }
 
 function Block({ node }: { node: BlockNode }) {
@@ -263,31 +359,8 @@ function Block({ node }: { node: BlockNode }) {
             </p>
           ) : node.db.rows.length === 0 ? (
             <p className="nd-unsupported">Todavía no tiene filas.</p>
-          ) : node.db.dateColumn !== null ? (
-            <Calendar db={node.db} />
           ) : (
-            <div className="nd-table-wrap">
-              <table className="nd-table">
-                <thead>
-                  <tr>
-                    {node.db.columns.map((c) => (
-                      <th key={c}>{c}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {node.db.rows.map((row) => (
-                    <tr key={row.id}>
-                      {row.cells.map((cell, i) => (
-                        <td key={i}>
-                          <Cell cell={cell} />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DbViews db={node.db} />
           )}
         </div>
       );

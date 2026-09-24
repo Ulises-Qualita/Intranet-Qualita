@@ -55,6 +55,25 @@ export type DbCell =
 
 export type DbRow = { id: string; cells: DbCell[] };
 
+// Una vista de la database como está armada en Notion (las solapas de arriba:
+// "Calendario", "Etapas"…). Las propiedades ya vienen traducidas a índices de
+// columna. Se dibujan estos tres tipos; el resto (galería, lista…) cae en tabla.
+export type DbView = {
+  id: string;
+  name: string;
+  kind: "calendar" | "board" | "table";
+  // calendar: qué columna de fecha ubica cada fila.
+  dateColumn?: number;
+  // board: columna que agrupa, grupos en el orden de Notion y qué propiedades
+  // muestra cada tarjeta además del título.
+  groupColumn?: number;
+  groups?: Tag[];
+  hideEmptyGroups?: boolean;
+  cardColumns?: number[];
+  // table: columnas visibles en el orden de la vista (sin esto, todas).
+  tableColumns?: number[];
+};
+
 export type EmbeddedDb = {
   columns: string[];
   rows: DbRow[];
@@ -62,7 +81,23 @@ export type EmbeddedDb = {
   // database se puede dibujar como calendario.
   titleColumn: number;
   dateColumn: number | null;
+  // Nunca vacío: si Notion no devuelve las vistas, se arma una por defecto
+  // (calendario si hay fecha, si no tabla).
+  views: DbView[];
 };
+
+// Lo mínimo que se usa de la API de vistas y del schema del data source.
+export type RawView = {
+  id: string;
+  name?: string;
+  type: string;
+  configuration?: {
+    date_property_id?: string;
+    group_by?: { property_id?: string; hide_empty_groups?: boolean };
+    properties?: { property_id: string; visible?: boolean }[];
+  };
+};
+export type RawSchemaProp = { id: string; type: string; options?: { name: string; color?: string }[] };
 
 export type BlockNode = {
   id: string;
@@ -281,11 +316,28 @@ export function toDbCell(prop: RawDbProp): DbCell {
   }
 }
 
+// Notion a veces manda los ids de propiedad url-encodeados y a veces no.
+const propKey = (id: string) => {
+  try {
+    return decodeURIComponent(id);
+  } catch {
+    return id;
+  }
+};
+
+// Vistas no dibujables acá: no muestran filas (formulario, gráfico) o necesitan
+// otra cosa (mapa, dashboard de widgets). Se omiten en vez de caer en tabla.
+const SKIPPED_VIEWS = new Set(["form", "chart", "map", "dashboard"]);
+
 // Filas crudas de una database → tabla lista para renderizar. El título va
-// primero: es la columna que identifica cada fila.
-export function toEmbeddedDb(pages: { id: string; properties: Record<string, RawDbProp> }[]): EmbeddedDb {
+// primero: es la columna que identifica cada fila. `meta` trae las vistas y el
+// schema; sin eso (o si Notion no los dio) se arma una vista por defecto.
+export function toEmbeddedDb(
+  pages: { id: string; properties: Record<string, RawDbProp> }[],
+  meta?: { views: RawView[]; schema: RawSchemaProp[] } | null,
+): EmbeddedDb {
   const first = pages[0];
-  if (!first) return { columns: [], rows: [], titleColumn: 0, dateColumn: null };
+  if (!first) return { columns: [], rows: [], titleColumn: 0, dateColumn: null, views: [] };
 
   const names = Object.keys(first.properties).filter((n) => !HIDDEN_DB_TYPES.has(first.properties[n].type));
   const titleName = names.find((n) => first.properties[n].type === "title");
@@ -310,7 +362,113 @@ export function toEmbeddedDb(pages: { id: string; properties: Record<string, Raw
     });
   }
 
-  return { columns, rows, titleColumn: titleName ? 0 : -1, dateColumn: dateCol >= 0 ? dateCol : null };
+  const titleColumn = titleName ? 0 : -1;
+  const dateColumn = dateCol >= 0 ? dateCol : null;
+
+  const colById = new Map(columns.map((n, i) => [propKey(String(first.properties[n].id ?? "")), i]));
+  const col = (id?: string) => (id ? colById.get(propKey(id)) : undefined);
+  const isDateCol = (c: number) => rows.every((r) => r.cells[c].kind === "date");
+
+  const views: DbView[] = [];
+  for (const v of meta?.views ?? []) {
+    if (SKIPPED_VIEWS.has(v.type)) continue;
+    const conf = v.configuration ?? {};
+
+    // La línea de tiempo se dibuja como calendario: es lo más parecido que hay acá.
+    if (v.type === "calendar" || v.type === "timeline") {
+      const c = col(conf.date_property_id);
+      if (c !== undefined && isDateCol(c)) {
+        views.push({ id: v.id, name: v.name?.trim() || "Calendario", kind: "calendar", dateColumn: c });
+        continue;
+      }
+    }
+
+    if (v.type === "board") {
+      const groupId = conf.group_by?.property_id;
+      const c = col(groupId);
+      if (c !== undefined && c !== titleColumn) {
+        // Grupos en el orden de las opciones en Notion. Si la propiedad no tiene
+        // opciones (personas, texto), en el orden en que aparecen en las filas.
+        const options = meta?.schema.find((p) => propKey(p.id) === propKey(groupId!))?.options;
+        const groups: Tag[] = options?.length
+          ? options.map((o) => ({ name: o.name, color: o.color ?? "default" }))
+          : [];
+        if (!groups.length) {
+          for (const r of rows) {
+            const cell = r.cells[c];
+            const names = cell.kind === "tags" ? cell.tags : "text" in cell && cell.text ? [{ name: cell.text, color: "default" }] : [];
+            for (const t of names) if (!groups.some((g) => g.name === t.name)) groups.push(t);
+          }
+        }
+        const cardColumns = (conf.properties ?? [])
+          .filter((p) => p.visible !== false)
+          .map((p) => col(p.property_id))
+          .filter((i): i is number => i !== undefined && i !== c && i !== titleColumn);
+
+        views.push({
+          id: v.id,
+          name: v.name?.trim() || "Tablero",
+          kind: "board",
+          groupColumn: c,
+          groups,
+          hideEmptyGroups: Boolean(conf.group_by?.hide_empty_groups),
+          cardColumns,
+        });
+        continue;
+      }
+    }
+
+    // Tabla (y lo que no se pudo dibujar de otra forma): las columnas que la vista
+    // tiene visibles, en su orden. Las relaciones ocultas acá ya no están en `col`.
+    const visible = (conf.properties ?? [])
+      .filter((p) => p.visible !== false)
+      .map((p) => col(p.property_id))
+      .filter((i): i is number => i !== undefined);
+    views.push({
+      id: v.id,
+      name: v.name?.trim() || "Tabla",
+      kind: "table",
+      tableColumns: visible.length ? visible : undefined,
+    });
+  }
+
+  if (!views.length) {
+    views.push(
+      dateColumn !== null
+        ? { id: "default", name: "Calendario", kind: "calendar", dateColumn }
+        : { id: "default", name: "Tabla", kind: "table" },
+    );
+  }
+
+  return { columns, rows, titleColumn, dateColumn, views };
+}
+
+// ---------- Tablero ----------
+
+export type BoardColumn = { key: string; tag: Tag | null; label: string; rows: DbRow[] };
+
+// Filas repartidas en los grupos de la vista. Una multi-selección cae en cada una
+// de sus opciones (como en Notion) y las filas sin valor van a "Sin <propiedad>",
+// al principio, que es donde Notion pone ese grupo.
+export function buildBoard(db: EmbeddedDb, view: DbView): BoardColumn[] {
+  const c = view.groupColumn;
+  if (c === undefined) return [];
+
+  const byName = new Map<string, DbRow[]>();
+  const empty: DbRow[] = [];
+  for (const row of db.rows) {
+    const cell = row.cells[c];
+    const names = cell.kind === "tags" ? cell.tags.map((t) => t.name) : "text" in cell && cell.text ? [cell.text] : [];
+    if (!names.length) empty.push(row);
+    for (const n of names) byName.set(n, [...(byName.get(n) ?? []), row]);
+  }
+
+  const columns: BoardColumn[] = [
+    { key: "__empty", tag: null, label: `Sin ${db.columns[c].toLowerCase()}`, rows: empty },
+    ...(view.groups ?? []).map((t) => ({ key: t.name, tag: t, label: t.name, rows: byName.get(t.name) ?? [] })),
+  ];
+  // El grupo "Sin…" solo aparece si tiene algo; el resto respeta la vista.
+  return columns.filter((col) => (col.tag === null || view.hideEmptyGroups ? col.rows.length > 0 : true));
 }
 
 // ---------- Calendario ----------
@@ -337,28 +495,24 @@ function eventColor(row: DbRow, skip: number[]): string {
 // muestra igual, así pasar de mes avanza de a uno como en Notion), cada uno con su
 // grilla de semanas de lunes a domingo. `initial` es el mes en el que abre la
 // vista: el actual si cae en el rango, si no el extremo más cercano.
-// `today` se pasa desde afuera para no congelarlo en el cache.
+// Las filas sin fecha no aparecen, igual que en el calendario de Notion (en el
+// tablero sí están). `today` se pasa desde afuera para no congelarlo en el cache.
 export function buildCalendar(
   db: EmbeddedDb,
+  dateColumn: number,
   today: string,
-): { months: CalMonth[]; undated: CalEvent[]; initial: number } {
-  if (db.dateColumn === null) return { months: [], undated: [], initial: 0 };
-
-  const undated: CalEvent[] = [];
+): { months: CalMonth[]; initial: number } {
   const byDay = new Map<string, CalEvent[]>();
   const monthKeys = new Set<string>();
 
   for (const row of db.rows) {
-    const dateCell = row.cells[db.dateColumn];
+    const dateCell = row.cells[dateColumn];
+    const date = dateCell?.kind === "date" ? dateCell.text : "";
+    if (!date) continue;
+
     const titleCell = db.titleColumn >= 0 ? row.cells[db.titleColumn] : undefined;
     const title = titleCell && "text" in titleCell ? titleCell.text : "Sin título";
-    const event: CalEvent = { id: row.id, title, color: eventColor(row, [db.dateColumn, db.titleColumn]) };
-
-    const date = dateCell?.kind === "date" ? dateCell.text : "";
-    if (!date) {
-      undated.push(event);
-      continue;
-    }
+    const event: CalEvent = { id: row.id, title, color: eventColor(row, [dateColumn, db.titleColumn]) };
     byDay.set(date, [...(byDay.get(date) ?? []), event]);
     monthKeys.add(date.slice(0, 7));
   }
@@ -409,7 +563,7 @@ export function buildCalendar(
   const found = keys.indexOf(current);
   const initial = found >= 0 ? found : current > keys[keys.length - 1] ? keys.length - 1 : 0;
 
-  return { months, undated, initial };
+  return { months, initial };
 }
 
 export const WEEKDAYS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
