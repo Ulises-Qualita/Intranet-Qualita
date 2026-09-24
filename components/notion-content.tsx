@@ -1,5 +1,5 @@
+import { NotionCalendar } from "@/components/notion-calendar";
 import {
-  WEEKDAYS,
   buildCalendar,
   groupBlocks,
   plainOf,
@@ -70,48 +70,11 @@ function Cell({ cell }: { cell: DbCell }) {
   }
 }
 
-// Database con fecha → calendario mensual, como la vista de Notion. Solo se
-// dibujan los meses que tienen algo: un roadmap de 3 meses no muestra 12.
+// Database con fecha → calendario mensual, un mes a la vez como la vista de
+// Notion. Los meses se arman acá (server) y el componente cliente solo navega.
 function Calendar({ db }: { db: EmbeddedDb }) {
-  const { months, undated } = buildCalendar(db, todayISO());
-
-  return (
-    <div className="nd-cal">
-      {months.map((month) => (
-        <div key={month.key} className="nd-cal-month">
-          <div className="nd-cal-title">{month.label}</div>
-          <div className="nd-cal-grid">
-            {WEEKDAYS.map((d) => (
-              <div key={d} className="nd-cal-wd">
-                {d}
-              </div>
-            ))}
-            {month.weeks.flat().map((day) => (
-              <div key={day.iso} className={`nd-cal-day${day.inMonth ? "" : " out"}${day.isToday ? " today" : ""}`}>
-                <span className="nd-cal-num">{day.day}</span>
-                {day.events.map((e) => (
-                  <span key={e.id} className={`nd-ev c-${e.color}`} title={e.title}>
-                    {e.title}
-                  </span>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {undated.length > 0 && (
-        <div className="nd-cal-undated">
-          <b>Sin fecha</b>
-          {undated.map((e) => (
-            <span key={e.id} className={`nd-ev c-${e.color}`}>
-              {e.title}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const { months, undated, initial } = buildCalendar(db, todayISO());
+  return <NotionCalendar months={months} undated={undated} initial={initial} />;
 }
 
 function Block({ node }: { node: BlockNode }) {

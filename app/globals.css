@@ -724,18 +724,34 @@ body {
 
 /* Calendario mensual de una database embebida. */
 @layer components {
-  .nd-cal { display: flex; flex-direction: column; gap: 26px; }
-  .nd-cal-title { font-family: var(--font-display); font-size: 14.5px; font-weight: 600; color: var(--navy); margin-bottom: 9px; }
+  .nd-cal { display: flex; flex-direction: column; gap: 18px; }
+
+  /* Un mes a la vez, como la vista de Notion: título a la izquierda y
+     "‹ Hoy ›" a la derecha. pan-y deja el scroll vertical al navegador y el
+     deslizamiento horizontal al componente, que lo usa para cambiar de mes. */
+  .nd-cal-month { touch-action: pan-y; }
+  .nd-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .nd-cal-title { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--navy); letter-spacing: -.3px; }
   /* Solo la inicial: "capitalize" pondría en mayúscula también el año. */
   .nd-cal-title::first-letter { text-transform: uppercase; }
 
-  .nd-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--line); gap: 1px; }
-  .nd-cal-wd { background: var(--surface-2); font-size: 10.5px; font-weight: 700; letter-spacing: .4px; color: var(--muted-2); text-transform: uppercase; padding: 7px 8px; text-align: center; }
+  .nd-cal-nav { display: flex; align-items: center; gap: 2px; }
+  .nd-cal-btn { height: 28px; min-width: 28px; padding: 0 6px; display: grid; place-items: center; border: none; border-radius: 7px; background: none; color: var(--muted); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .12s, color .12s; }
+  .nd-cal-btn.today { padding: 0 10px; }
+  .nd-cal-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+  .nd-cal-btn:focus-visible { outline: 2px solid var(--magenta); outline-offset: 1px; }
+  .nd-cal-btn:disabled { opacity: .35; cursor: default; }
+  .nd-cal-btn .flip { transform: scaleX(-1); }
 
-  .nd-cal-day { background: var(--surface); min-height: 86px; padding: 6px 6px 8px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  /* Líneas finas y sin relleno en la cabecera de días, más cerca de Notion. */
+  .nd-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--line); gap: 1px; animation: nd-cal-in .22s ease; }
+  .nd-cal-wd { background: var(--surface); font-size: 11.5px; font-weight: 500; color: var(--muted-2); padding: 7px 8px; text-align: center; }
+
+  .nd-cal-day { background: var(--surface); min-height: 96px; padding: 6px 6px 8px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .nd-cal-day.out { background: var(--surface-2); }
   .nd-cal-day.out .nd-cal-num { color: var(--muted-2); opacity: .55; }
-  .nd-cal-num { font-size: 12px; font-weight: 600; color: var(--muted); padding: 1px 4px; align-self: flex-start; }
+  /* El número arriba a la derecha, como en Notion. */
+  .nd-cal-num { font-size: 12px; font-weight: 600; color: var(--muted); padding: 1px 4px; align-self: flex-end; }
   /* El día de hoy con el acento de marca, como referencia rápida. */
   .nd-cal-day.today .nd-cal-num { background: var(--grad); color: #fff; border-radius: 20px; min-width: 21px; text-align: center; }
 
@@ -746,9 +762,16 @@ body {
   .nd-cal-undated { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
   .nd-cal-undated b { font-weight: 600; color: var(--ink); }
 
-  /* La grilla de 7 necesita ancho; si no entra, se scrollea en vez de aplastarse. */
-  .nd-cal-month { overflow-x: auto; }
-  .nd-cal-grid { min-width: 620px; }
+  @keyframes nd-cal-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .nd-cal-grid { animation: none; } }
+
+  /* Sin scroll horizontal (competiría con el gesto de cambiar de mes): en
+     pantallas chicas la grilla se compacta. */
+  @media (max-width: 720px) {
+    .nd-cal-wd { padding: 6px 2px; font-size: 10.5px; }
+    .nd-cal-day { min-height: 70px; padding: 4px 3px 6px; }
+    .nd-ev { font-size: 10px; padding: 2px 4px; }
+  }
 }
 
 /* Portal publicado: la página de Notion embebida tal cual. */

@@ -333,10 +333,16 @@ function eventColor(row: DbRow, skip: number[]): string {
   return "default";
 }
 
-// Meses (solo los que tienen filas) con su grilla de semanas de lunes a domingo.
+// Meses corridos del primero al último que tienen filas (uno vacío en el medio se
+// muestra igual, así pasar de mes avanza de a uno como en Notion), cada uno con su
+// grilla de semanas de lunes a domingo. `initial` es el mes en el que abre la
+// vista: el actual si cae en el rango, si no el extremo más cercano.
 // `today` se pasa desde afuera para no congelarlo en el cache.
-export function buildCalendar(db: EmbeddedDb, today: string): { months: CalMonth[]; undated: CalEvent[] } {
-  if (db.dateColumn === null) return { months: [], undated: [] };
+export function buildCalendar(
+  db: EmbeddedDb,
+  today: string,
+): { months: CalMonth[]; undated: CalEvent[]; initial: number } {
+  if (db.dateColumn === null) return { months: [], undated: [], initial: 0 };
 
   const undated: CalEvent[] = [];
   const byDay = new Map<string, CalEvent[]>();
@@ -357,7 +363,20 @@ export function buildCalendar(db: EmbeddedDb, today: string): { months: CalMonth
     monthKeys.add(date.slice(0, 7));
   }
 
-  const months = [...monthKeys].sort().map((key) => {
+  const sorted = [...monthKeys].sort();
+  const keys: string[] = [];
+  if (sorted.length) {
+    let [y, m] = sorted[0].split("-").map(Number);
+    const last = sorted[sorted.length - 1];
+    for (;;) {
+      const key = `${y}-${String(m).padStart(2, "0")}`;
+      keys.push(key);
+      if (key >= last) break;
+      if (++m > 12) [y, m] = [y + 1, 1];
+    }
+  }
+
+  const months = keys.map((key) => {
     const [y, m] = key.split("-").map(Number);
     const firstOfMonth = new Date(Date.UTC(y, m - 1, 1));
     // getUTCDay(): 0 = domingo. La semana acá empieza el lunes.
@@ -386,7 +405,11 @@ export function buildCalendar(db: EmbeddedDb, today: string): { months: CalMonth
     return { key, label: `${month} ${y}`, weeks };
   });
 
-  return { months, undated };
+  const current = today.slice(0, 7);
+  const found = keys.indexOf(current);
+  const initial = found >= 0 ? found : current > keys[keys.length - 1] ? keys.length - 1 : 0;
+
+  return { months, undated, initial };
 }
 
 export const WEEKDAYS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
