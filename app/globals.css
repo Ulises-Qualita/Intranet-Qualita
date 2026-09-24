@@ -82,11 +82,14 @@ body {
   /* ---------- Shell ---------- */
   .shell { display: flex; min-height: 100vh; }
 
-  /* Sigue scrolleando cuando la lista de clientes es larga, pero sin barra a la
-     vista: si se quitara el overflow, el usuario y el botón de salir del pie
-     quedarían fuera de alcance. */
-  .sidebar { width: 272px; flex-shrink: 0; background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 22px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; scrollbar-width: none; }
-  .sidebar::-webkit-scrollbar { display: none; }
+  /* El sidebar ocupa el alto de la pantalla y no scrollea entero: scrollea solo
+     .side-scroll (logo + navegación), sin barra a la vista, y el pie con el
+     usuario y el botón de salir queda fijo abajo siempre. */
+  .sidebar { width: 272px; flex-shrink: 0; background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 22px 16px 16px; position: sticky; top: 0; height: 100vh; }
+  /* Margen negativo + padding: el overflow recorta en los bordes, y así los
+     fondos de hover y el foco de los botones no quedan cortados. */
+  .side-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px 12px; }
+  .side-scroll::-webkit-scrollbar { display: none; }
   .brand { display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 22px; }
   .brand .logo { height: 46px; width: auto; align-self: flex-start; }
   .logo-dark, .dark .logo-light { display: none; }
@@ -124,7 +127,7 @@ body {
   .av.logo { background: #fff; border: 1px solid var(--line); color: #252851; position: relative; overflow: hidden; }
   .av.logo img { position: absolute; inset: 0; margin: auto; width: 74%; height: 74%; object-fit: contain; }
 
-  .side-bottom { margin-top: auto; }
+  .side-bottom { flex-shrink: 0; }
   .side-foot { padding: 14px 8px 4px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
   .side-foot .fav { width: 34px; height: 34px; border-radius: 50%; background: var(--grad); display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; position: relative; overflow: hidden; }
   .photo-av { position: relative; overflow: hidden; }
