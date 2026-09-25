@@ -3,8 +3,9 @@ import { Topbar } from "@/components/topbar";
 import { NoAccess } from "@/components/ui";
 import { getAgentUsage } from "@/lib/agent/usage";
 import { getAreaSession } from "@/lib/auth";
-import { getTeam } from "@/lib/data";
+import { getClientAccounts, getClients, getTeam } from "@/lib/data";
 import { AgentUsageCards } from "./agent-usage";
+import { ClientAccounts } from "./client-accounts";
 import { UsersAdmin } from "./users-admin";
 
 export default async function AdminPage() {
@@ -18,7 +19,14 @@ export default async function AdminPage() {
     );
   }
 
-  const [members, usage] = await Promise.all([getTeam(), getAgentUsage()]);
+  // Las cuentas de clientes se administran solo como admin (el área "admin" sola no alcanza).
+  const isAdmin = session.profile?.role === "admin";
+  const [members, usage, clients, accounts] = await Promise.all([
+    getTeam(),
+    getAgentUsage(),
+    isAdmin ? getClients() : [],
+    isAdmin ? getClientAccounts() : null,
+  ]);
 
   return (
     <>
@@ -30,7 +38,8 @@ export default async function AdminPage() {
             Configurar Notion →
           </Link>
         </div>
-        <UsersAdmin members={members} currentUserId={session.user.id} canEdit={session.profile?.role === "admin"} />
+        <UsersAdmin members={members} currentUserId={session.user.id} canEdit={isAdmin} />
+        {isAdmin && <ClientAccounts clients={clients} accounts={accounts} />}
         <AgentUsageCards usage={usage} members={members} />
       </section>
     </>

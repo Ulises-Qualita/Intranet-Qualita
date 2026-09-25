@@ -1,11 +1,14 @@
+import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { initialsOf, type Profile } from "./auth-shared";
 import type { ClientStatus } from "./client-status";
 import { INTEGRATIONS, type Integration, type IntegrationState } from "./integrations";
-import { LOGOS_BUCKET } from "./logos";
+import { localDate } from "./format";
+import { LOGOS_BUCKET, LOGOS_TAG } from "./logos";
 import { getTickets, notionConfigured, notionErrorMessage } from "./notion";
+import { type Period, toPeriod } from "./period";
 import { EMPTY_NOTION_CONFIG, isNotionConfigured, normalizeId, type NotionConfig } from "./notion-map";
-import { createAdminClient, createClient } from "./supabase/server";
+import { createAdminClient, createClient, isMissingTable } from "./supabase/server";
 import type { Task } from "./tasks";
 
 export type { Integration } from "./integrations";
@@ -42,16 +45,24 @@ type ClientRow = {
 };
 
 // Logo de cada cliente: un objeto por cliente en el bucket, con nombre = client id.
-// El bucket es público para leer; listar requiere service_role.
-const getLogoUrls = cache(async (): Promise<Map<string, string>> => {
-  const storage = createAdminClient().storage.from(LOGOS_BUCKET);
-  const { data } = await storage.list("", { limit: 1000 });
-  return new Map(
-    (data ?? [])
+// El bucket es público para leer; listar requiere service_role. El listado no
+// depende del usuario, así que se cachea entre requests (si no, es una consulta a
+// Storage en cada página) y las acciones que suben o borran logos lo invalidan.
+const listLogos = unstable_cache(
+  async (): Promise<[string, string][]> => {
+    const storage = createAdminClient().storage.from(LOGOS_BUCKET);
+    const { data, error } = await storage.list("", { limit: 1000 });
+    // Tirar en vez de devolver [] para no cachear "sin logos" por un error puntual.
+    if (error) throw error;
+    return (data ?? [])
       .filter((f) => f.id)
-      .map((f) => [f.name, `${storage.getPublicUrl(f.name).data.publicUrl}?v=${Date.parse(f.updated_at ?? "") || 0}`]),
-  );
-});
+      .map((f) => [f.name, `${storage.getPublicUrl(f.name).data.publicUrl}?v=${Date.parse(f.updated_at ?? "") || 0}`]);
+  },
+  ["client-logos"],
+  { revalidate: 3600, tags: [LOGOS_TAG] },
+);
+
+const getLogoUrls = cache(async (): Promise<Map<string, string>> => new Map(await listLogos().catch(() => [])));
 
 const toDomain = (website: string | null) =>
   (website ?? "")
@@ -240,14 +251,15 @@ export type MetaDaily = {
   engagements: number | null;
 };
 
-export async function getMetaDaily(clientId: string, days = 30): Promise<MetaDaily[]> {
-  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+export async function getMetaDaily(clientId: string, period: Period | number = 30): Promise<MetaDaily[]> {
+  const { since, until } = toPeriod(period);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("intranet_meta_daily")
     .select("date, reach, impressions, clicks, spend, leads, conversions, revenue, followers, engagements")
     .eq("client_id", clientId)
     .gte("date", since)
+    .lte("date", until)
     .order("date", { ascending: true })
     .returns<MetaDaily[]>();
   if (error) throw error;
@@ -264,12 +276,31 @@ export type MetaAd = {
   impressions: number;
   revenue: number;
   as_of: string;
+  // Id del anuncio en Meta (para pedir la vista previa); null en campañas y en
+  // filas viejas sin id.
+  externalId: string | null;
+  // Tipo y miniatura del creativo; null si todavía no se sincronizó.
+  creative: AdCreativeInfo | null;
 };
+
+export type AdCreativeInfo = { type: "video" | "image" | "other"; thumbnail: string | null };
 
 export type MetaCampaign = MetaAd & { ads: MetaAd[] };
 
+// Creativos de los anuncios del cliente (los escribe lib/meta-sync.ts). Si la
+// tabla todavía no existe, la vista sigue sin miniaturas en vez de romperse.
+async function getMetaCreatives(clientId: string): Promise<Map<string, AdCreativeInfo>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("intranet_meta_creatives")
+    .select("ad_external_id, creative_type, thumbnail_url")
+    .eq("client_id", clientId)
+    .returns<{ ad_external_id: string; creative_type: AdCreativeInfo["type"]; thumbnail_url: string | null }[]>();
+  if (error && !isMissingTable(error)) throw error;
+  return new Map((data ?? []).map((c) => [c.ad_external_id, { type: c.creative_type, thumbnail: c.thumbnail_url }]));
+}
 
-type MetaAdRow = MetaAd & {
+type MetaAdRow = Omit<MetaAd, "externalId" | "creative"> & {
   ad_external_id: string | null;
   campaign_external_id: string | null;
   campaign_name: string | null;
@@ -290,21 +321,25 @@ const addTotals = (target: MetaAd, row: MetaAdRow) => {
 // se agrupan por campaña. Nombre, estado y as_of salen de la fila más reciente
 // (la query viene ordenada por as_of descendente); una campaña está activa si
 // alguno de sus anuncios lo está.
-export async function getMetaCampaigns(clientId: string, days = 30): Promise<MetaCampaign[]> {
-  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+export async function getMetaCampaigns(clientId: string, period: Period | number = 30): Promise<MetaCampaign[]> {
+  const { since, until } = toPeriod(period);
   const supabase = await createClient();
-  const rows = await readAll<MetaAdRow>((from, to) =>
-    supabase
-      .from("intranet_meta_ads")
-      .select(
-        "id, ad_external_id, name, status, spend, leads, clicks, impressions, revenue, as_of, campaign_external_id, campaign_name",
-      )
-      .eq("client_id", clientId)
-      .gte("as_of", since)
-      .order("as_of", { ascending: false })
-      .range(from, to)
-      .returns<MetaAdRow[]>(),
-  );
+  const [rows, creatives] = await Promise.all([
+    readAll<MetaAdRow>((from, to) =>
+      supabase
+        .from("intranet_meta_ads")
+        .select(
+          "id, ad_external_id, name, status, spend, leads, clicks, impressions, revenue, as_of, campaign_external_id, campaign_name",
+        )
+        .eq("client_id", clientId)
+        .gte("as_of", since)
+        .lte("as_of", until)
+        .order("as_of", { ascending: false })
+        .range(from, to)
+        .returns<MetaAdRow[]>(),
+    ),
+    getMetaCreatives(clientId),
+  ]);
 
   const campaigns = new Map<string, MetaCampaign>();
   const ads = new Map<string, MetaAd>();
@@ -325,6 +360,8 @@ export async function getMetaCampaigns(clientId: string, days = 30): Promise<Met
         impressions: 0,
         revenue: 0,
         as_of: row.as_of,
+        externalId: null,
+        creative: null,
         ads: [],
       };
       campaigns.set(campaignId, campaign);
@@ -332,7 +369,19 @@ export async function getMetaCampaigns(clientId: string, days = 30): Promise<Met
 
     let ad = ads.get(adId);
     if (!ad) {
-      ad = { id: adId, name: row.name, status: row.status, spend: 0, leads: 0, clicks: 0, impressions: 0, revenue: 0, as_of: row.as_of };
+      ad = {
+        id: adId,
+        name: row.name,
+        status: row.status,
+        spend: 0,
+        leads: 0,
+        clicks: 0,
+        impressions: 0,
+        revenue: 0,
+        as_of: row.as_of,
+        externalId: row.ad_external_id,
+        creative: (row.ad_external_id && creatives.get(row.ad_external_id)) || null,
+      };
       ads.set(adId, ad);
       campaign.ads.push(ad);
     }
@@ -551,9 +600,12 @@ function groupTags(leads: Lead[]): TagStats[] | null {
 
 // Corte por período para la vista de CRM: qué leads entran y qué se calcula
 // sobre ellos, siempre por fecha de creación.
-export function crmPeriod(leads: Lead[], days: number) {
-  const since = Date.now() - days * 86_400_000;
-  const inPeriod = leads.filter((l) => Date.parse(l.created_at) >= since);
+export function crmPeriod(leads: Lead[], period: Period | number) {
+  const { since, until } = toPeriod(period);
+  const inPeriod = leads.filter((l) => {
+    const day = localDate(l.created_at);
+    return day >= since && day <= until;
+  });
   // Sin la columna de estado no se puede saber qué pasó con cada lead.
   const hasStatus = leads.some((l) => l.status);
   const closed = inPeriod.filter((l) => l.status === "won" || l.status === "lost").length;
@@ -702,4 +754,147 @@ export async function getClarityPages(clientId: string, days = 30): Promise<Clar
   return [...byUrl.entries()]
     .map(([url, sessions]) => ({ url, sessions }))
     .sort((a, b) => b.sessions - a.sessions);
+}
+
+// ---------- Mejores videos (card del CRM) ----------
+
+export type VideoPerformance = {
+  ad: MetaAd;
+  // Resultados según el CRM (oportunidades que traen este anuncio cargado).
+  crmLeads: number;
+  won: number;
+  ticketTotal: number;
+  // Resultados según Meta, sumando todos los anuncios con ese nombre.
+  spend: number;
+  metaLeads: number;
+  clicks: number;
+  impressions: number;
+};
+
+// Los videos que mejor rindieron en el período. El CRM identifica el anuncio por
+// nombre, y en Meta es común duplicar un anuncio en varios conjuntos con el mismo
+// nombre: por eso se agrupa por nombre, sumando el gasto de todas las copias, y
+// la miniatura y la vista previa salen de la copia con más gasto.
+//
+// Orden: ventas ganadas, después oportunidades, después facturado (lo que el CRM
+// sabe y Meta no). Si ningún video tiene oportunidades atribuidas en el CRM, se
+// ordena por los leads que reporta Meta, y `by` lo indica para decirlo en la card.
+export function topVideoAds(campaigns: MetaCampaign[], crmAds: AdStats[], limit = 3) {
+  const byName = new Map<string, VideoPerformance>();
+  for (const ad of campaigns.flatMap((c) => c.ads)) {
+    if (ad.creative?.type !== "video") continue;
+    const name = ad.name.trim();
+    const v = byName.get(name) ?? {
+      ad,
+      crmLeads: 0,
+      won: 0,
+      ticketTotal: 0,
+      spend: 0,
+      metaLeads: 0,
+      clicks: 0,
+      impressions: 0,
+    };
+    if (ad.spend > v.ad.spend) v.ad = ad;
+    v.spend += ad.spend;
+    v.metaLeads += ad.leads;
+    v.clicks += ad.clicks;
+    v.impressions += ad.impressions;
+    byName.set(name, v);
+  }
+
+  for (const stats of crmAds) {
+    const v = byName.get(stats.name.trim());
+    if (!v) continue;
+    v.crmLeads = stats.leads;
+    v.won = stats.won;
+    v.ticketTotal = stats.ticketTotal;
+  }
+
+  const videos = [...byName.values()];
+  const by: "crm" | "meta" = videos.some((v) => v.crmLeads > 0) ? "crm" : "meta";
+  const ranked =
+    by === "crm"
+      ? videos
+          .filter((v) => v.crmLeads > 0)
+          .sort((a, b) => b.won - a.won || b.crmLeads - a.crmLeads || b.ticketTotal - a.ticketTotal)
+      : videos.filter((v) => v.metaLeads > 0).sort((a, b) => b.metaLeads - a.metaLeads || a.spend - b.spend);
+
+  return { by, videos: ranked.slice(0, limit), total: videos.length };
+}
+
+// ---------- Inversión en Meta del estudio (Inicio) ----------
+
+export type MetaSpend = { spend: number; leads: number };
+
+// Gasto y leads de Meta por cliente en los últimos `days` días, en una sola
+// consulta para todos. Lee con la sesión del usuario (RLS): llamar solo si puede
+// ver META.
+export async function getMetaSpendByClient(clientIds: string[], days = 30): Promise<Map<string, MetaSpend>> {
+  const totals = new Map<string, MetaSpend>();
+  if (!clientIds.length) return totals;
+  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const supabase = await createClient();
+  const rows = await readAll<{ client_id: string; spend: number | string; leads: number }>((from, to) =>
+    supabase
+      .from("intranet_meta_daily")
+      .select("client_id, spend, leads")
+      .in("client_id", clientIds)
+      .gte("date", since)
+      .order("date", { ascending: true })
+      .range(from, to),
+  );
+  for (const r of rows) {
+    const t = totals.get(r.client_id) ?? { spend: 0, leads: 0 };
+    t.spend += Number(r.spend);
+    t.leads += r.leads;
+    totals.set(r.client_id, t);
+  }
+  return totals;
+}
+
+// ---------- Conversión por canal (vista general del cliente) ----------
+
+export type ChannelConversion = { name: string; leads: number; won: number; rate: number };
+
+// Ventas ganadas sobre oportunidades, por origen del CRM. Recibe las
+// oportunidades ya recortadas al período (crmPeriod(...).leads). "Sin origen"
+// queda afuera: mezcla canales y no dice nada de ninguno.
+export function conversionByChannel(leads: Lead[]): ChannelConversion[] {
+  const byChannel = new Map<string, { leads: number; won: number }>();
+  for (const lead of leads) {
+    const name = lead.source?.trim();
+    if (!name) continue;
+    const channel = byChannel.get(name) ?? { leads: 0, won: 0 };
+    channel.leads += 1;
+    if (lead.status === "won") channel.won += 1;
+    byChannel.set(name, channel);
+  }
+  return [...byChannel.entries()]
+    .map(([name, c]) => ({ name, ...c, rate: (c.won * 100) / c.leads }))
+    .sort((a, b) => b.leads - a.leads);
+}
+
+// ---------- Cuentas de clientes (panel de /admin) ----------
+
+export type ClientAccount = { userId: string; clientId: string; email: string; active: boolean; createdAt: string };
+
+// Con la sesión: la RLS de intranet_client_users solo deja ver todas a un admin.
+// null si la tabla todavía no existe (falta correr la migración).
+export async function getClientAccounts(): Promise<ClientAccount[] | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("intranet_client_users")
+    .select("user_id, client_id, email, active, created_at")
+    .returns<{ user_id: string; client_id: string; email: string; active: boolean; created_at: string }[]>();
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  return (data ?? []).map((r) => ({
+    userId: r.user_id,
+    clientId: r.client_id,
+    email: r.email,
+    active: r.active,
+    createdAt: r.created_at,
+  }));
 }

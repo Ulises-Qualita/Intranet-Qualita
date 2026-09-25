@@ -275,3 +275,82 @@ export async function getAdStatuses(token: string, accountId: string) {
   );
   return new Map(rows.map((a) => [a.id, a.effective_status === "ACTIVE" ? "activo" : "pausado"]));
 }
+
+// ---------- Creativos (miniatura y tipo) y vista previa ----------
+
+export type CreativeType = "video" | "image" | "other";
+export type AdCreative = { adId: string; type: CreativeType; thumbnail: string | null };
+
+type RawCreative = {
+  object_type?: string;
+  video_id?: string;
+  image_url?: string;
+  thumbnail_url?: string;
+  object_story_spec?: { video_data?: { video_id?: string } };
+  asset_feed_spec?: { videos?: { video_id?: string }[] };
+};
+
+const CREATIVE_FIELDS =
+  "object_type,video_id,image_url,thumbnail_url,object_story_spec{video_data{video_id}},asset_feed_spec{videos{video_id}}";
+
+// Un video puede venir en tres lugares según cómo se armó el anuncio: creativo
+// simple, publicación de la página o creativo dinámico (asset_feed_spec).
+function creativeType(c: RawCreative): CreativeType {
+  if (c.video_id || c.object_story_spec?.video_data?.video_id || c.asset_feed_spec?.videos?.length) return "video";
+  if (c.object_type === "VIDEO") return "video";
+  if (c.image_url || c.object_type === "PHOTO" || c.object_type === "SHARE") return "image";
+  return "other";
+}
+
+// Miniatura y tipo de cada anuncio de la cuenta. thumbnail_url sale por defecto
+// en 64×64; se pide más grande para la card del CRM, y si Meta rechaza el
+// modificador se reintenta sin él (miniatura chica, pero miniatura).
+export async function getAdCreatives(token: string, accountId: string): Promise<AdCreative[]> {
+  const read = (creative: string) =>
+    // Página más chica que la de siempre: con el creativo expandido, 200 anuncios
+    // por página puede superar el límite de datos de Meta.
+    all<{ id: string; creative?: RawCreative }>(
+      `${accountId}/ads`,
+      { fields: `id,${creative}{${CREATIVE_FIELDS}}`, limit: "100" },
+      token,
+    );
+  const rows = await read("creative.thumbnail_width(480).thumbnail_height(480)").catch(() => read("creative"));
+  return rows
+    .filter((a) => a.creative)
+    .map((a) => {
+      const type = creativeType(a.creative!);
+      // Para imágenes, image_url es el archivo original; la miniatura sale recortada.
+      const thumbnail = (type === "image" ? a.creative!.image_url : null) ?? a.creative!.thumbnail_url ?? null;
+      return { adId: a.id, type, thumbnail };
+    });
+}
+
+// Formatos de vista previa a probar en orden: un anuncio que solo sale en
+// Instagram no tiene vista de feed de Facebook, y al revés.
+const PREVIEW_FORMATS = ["MOBILE_FEED_STANDARD", "INSTAGRAM_STANDARD", "INSTAGRAM_REELS", "INSTAGRAM_STORY"];
+
+export type AdPreview = { src: string; width: number; height: number };
+
+// Vista previa oficial del anuncio (reproduce los videos). Meta devuelve un
+// <iframe> con una URL firmada que vence en ~24 h, así que se pide al abrirla y
+// no se guarda. Solo se acepta un src de facebook.com: es HTML de un tercero y
+// no se inyecta tal cual en la página.
+export async function getAdPreview(token: string, adId: string): Promise<AdPreview | null> {
+  for (const format of PREVIEW_FORMATS) {
+    const res = await graph<{ data: { body?: string }[] }>(`${adId}/previews`, { ad_format: format }, token).catch((e) => {
+      if (isAuthError(e)) throw e;
+      return null;
+    });
+    const body = res?.data?.[0]?.body;
+    const src = body?.match(/src="([^"]+)"/)?.[1]?.replaceAll("&amp;", "&");
+    if (!src) continue;
+    try {
+      if (!/(^|\.)facebook\.com$/.test(new URL(src).hostname)) continue;
+    } catch {
+      continue;
+    }
+    const size = (attr: string, fallback: number) => Number(body!.match(new RegExp(`${attr}="(\d+)"`))?.[1]) || fallback;
+    return { src, width: size("width", 400), height: size("height", 700) };
+  }
+  return null;
+}

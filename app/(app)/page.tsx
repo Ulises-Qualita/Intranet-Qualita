@@ -4,10 +4,14 @@ import { Icon } from "@/components/icons";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, NoAccess, Pill } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
+import { canAccess } from "@/lib/auth-shared";
 import { statusMeta } from "@/lib/client-status";
-import { getClients, getTasks, getTeam, isLateTask, isOpenTask } from "@/lib/data";
+import { getClients, getMetaSpendByClient, getTeam } from "@/lib/data";
 import { UserAvatar } from "@/components/user-avatar";
-import { greeting, longToday, todayISO } from "@/lib/format";
+import { greeting, longToday, money } from "@/lib/format";
+
+// Período del gasto en Meta que muestra la tabla de clientes.
+const META_DAYS = 30;
 
 export default async function InicioPage() {
   const session = await getAreaSession("inicio");
@@ -20,24 +24,27 @@ export default async function InicioPage() {
     );
   }
 
-  const [clients, team, tasks] = await Promise.all([getClients(), getTeam(), getTasks()]);
-  const today = todayISO();
-  const activeClientIds = new Set(clients.map((c) => c.id));
-  const openTasks = tasks.filter((t) => isOpenTask(t) && activeClientIds.has(t.client_id));
-  const lateTasks = openTasks.filter((t) => isLateTask(t, today));
+  // El gasto en Meta de la tabla sale de las métricas sincronizadas: solo para
+  // quien puede ver META y de los clientes que lo tienen conectado.
+  const [clients, team] = await Promise.all([getClients(), getTeam()]);
+  const seesMeta = canAccess(session.profile, "meta");
+  const metaClients = seesMeta ? clients.filter((c) => c.conn.meta) : [];
+  const spendByClient = await getMetaSpendByClient(metaClients.map((c) => c.id), META_DAYS);
+
   const countBy = (status: string) => clients.filter((c) => c.status === status).length;
   const activeMembers = team.filter((m) => m.active);
+  const integrations = clients.reduce((t, c) => t + Object.values(c.conn).filter(Boolean).length, 0);
+  const connectedClients = clients.filter((c) => Object.values(c.conn).some(Boolean)).length;
 
   // El saludo es personal: solo lo que tiene a cargo quien está mirando. Los KPIs
-  // de abajo siguen siendo del estudio, por eso el texto dice "tenés".
-  const myTasks = openTasks.filter((t) => t.assignee_id === session.user.id);
-  const myLate = myTasks.filter((t) => isLateTask(t, today));
+  // de abajo son del estudio, por eso el texto dice "tenés".
+  const mine = clients.filter((c) => c.assigneeIds.includes(session.user.id)).length;
 
   const load = activeMembers
-    .map((m) => ({ member: m, count: openTasks.filter((t) => t.assignee_id === m.id).length }))
+    .map((m) => ({ member: m, count: clients.filter((c) => c.assigneeIds.includes(m.id)).length }))
     .sort((a, b) => b.count - a.count);
   const maxLoad = Math.max(1, ...load.map((l) => l.count));
-  const unassigned = openTasks.filter((t) => !t.assignee_id).length;
+  const unassigned = clients.filter((c) => c.assigneeIds.length === 0).length;
 
   return (
     <>
@@ -52,11 +59,9 @@ export default async function InicioPage() {
             <p>
               <span className="welcome-date">{longToday()}</span>
               {" · "}
-              {myTasks.length === 0
-                ? "No tenés tareas pendientes."
-                : `Tenés ${myTasks.length} tarea${myTasks.length === 1 ? "" : "s"} pendiente${myTasks.length === 1 ? "" : "s"}${
-                    myLate.length ? `, ${myLate.length} vencida${myLate.length === 1 ? "" : "s"}` : ""
-                  }.`}
+              {mine === 0
+                ? "No tenés clientes a cargo."
+                : `Tenés ${mine} cliente${mine === 1 ? "" : "s"} a cargo.`}
             </p>
           </div>
         </div>
@@ -65,10 +70,10 @@ export default async function InicioPage() {
           <Kpi label="Clientes" icon="briefcase" value={countBy("cliente")} sub={`de ${clients.length} en total`} hero />
           <Kpi label="En onboarding" icon="target" value={countBy("onboarding")} sub={`${countBy("lead")} lead${countBy("lead") === 1 ? "" : "s"} en seguimiento`} />
           <Kpi
-            label="Tareas pendientes"
-            icon="check"
-            value={openTasks.length}
-            sub={lateTasks.length ? `${lateTasks.length} vencida${lateTasks.length === 1 ? "" : "s"}` : "ninguna vencida"}
+            label="Integraciones conectadas"
+            icon="bolt"
+            value={integrations}
+            sub={`en ${connectedClients} de ${clients.length} cliente${clients.length === 1 ? "" : "s"}`}
           />
           <Kpi label="Miembros del equipo" icon="users" value={activeMembers.length} sub="activos en Qualita" />
         </div>
@@ -83,15 +88,14 @@ export default async function InicioPage() {
                   <thead>
                     <tr>
                       <th>Cliente</th>
-                      <th>Tareas</th>
+                      {metaClients.length > 0 && <th>Meta, {META_DAYS} días</th>}
                       <th>Estado</th>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
                     {clients.map((c) => {
-                      const clientOpen = openTasks.filter((t) => t.client_id === c.id);
-                      const hasLate = clientOpen.some((t) => isLateTask(t, today));
+                      const spend = spendByClient.get(c.id)?.spend ?? 0;
                       return (
                         <tr key={c.id} className="link-row">
                           <td>
@@ -103,11 +107,12 @@ export default async function InicioPage() {
                               </div>
                             </Link>
                           </td>
-                          <td className="num">{clientOpen.length}</td>
+                          {metaClients.length > 0 && (
+                            <td className="num">{c.conn.meta ? money(spend) : <span className="muted">—</span>}</td>
+                          )}
                           <td>
                             <div className="chips">
                               <Pill variant={statusMeta(c.status).pill}>{statusMeta(c.status).label}</Pill>
-                              {hasLate && <Pill variant="atencion">Tareas vencidas</Pill>}
                             </div>
                           </td>
                           <td className="go">
@@ -124,13 +129,13 @@ export default async function InicioPage() {
             )}
           </Card>
 
-          <Card title="Carga del equipo" hint="Tareas abiertas asignadas">
+          <Card title="Carga del equipo" hint="Clientes asignados">
             {load.map(({ member, count }) => (
               <div key={member.id} className="member" style={{ marginBottom: 18 }}>
                 <div className="row">
                   <b>{member.name.split(" ")[0]}</b>
                   <span>
-                    {count} tarea{count === 1 ? "" : "s"}
+                    {count} cliente{count === 1 ? "" : "s"}
                   </span>
                 </div>
                 <div className="barwrap">
@@ -140,7 +145,7 @@ export default async function InicioPage() {
             ))}
             {unassigned > 0 && (
               <p className="hint-text">
-                {unassigned} tarea{unassigned === 1 ? "" : "s"} abierta{unassigned === 1 ? "" : "s"} sin responsable.
+                {unassigned} cliente{unassigned === 1 ? "" : "s"} sin responsable.
               </p>
             )}
           </Card>

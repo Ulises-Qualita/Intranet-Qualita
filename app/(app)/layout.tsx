@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
 import { AgentChat } from "@/components/agent/agent-chat";
 import { AgentProvider } from "@/components/agent/agent-store";
+import { PresenceProvider } from "@/components/presence";
 import { Sidebar } from "@/components/sidebar";
 import { agentSuggestions } from "@/lib/agent/suggestions";
 import { AREAS, canAccess, type AreaKey } from "@/lib/auth-shared";
@@ -20,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     return (
       <main className="login">
         <div className="login-card">
-          <Image className="login-logo" src="/qualita-logo-navy.svg" alt="Qualita" width={107} height={44} unoptimized priority />
+          <Image className="login-logo" src="/Logo-nuevo.png" alt="Qualita" width={145} height={38} unoptimized priority />
           <h1>Cuenta sin acceso</h1>
           <p className="sub">
             {user.email} todavía no está habilitada en la intranet. Pedile a un administrador que te dé acceso.
@@ -47,15 +48,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // El provider guarda la conversación del agente: al estar en el layout,
     // sobrevive a cerrar la burbuja y a navegar entre la burbuja y /agente.
     <AgentProvider>
-      <div className="shell">
-        <Sidebar user={user} access={access} clients={clients} openTasksByClient={openTasksByClient} />
-        <div className="main">{children}</div>
-        {/* El agente solo consulta áreas habilitadas; sin ninguna no tendría nada
-            que responder, así que directamente no aparece. */}
-        {Object.values(access).some(Boolean) && (
-          <AgentChat userName={user.name} suggestions={agentSuggestions(clients, access)} />
-        )}
-      </div>
+      {/* Presencia en el layout: cualquier pantalla abierta cuenta como en línea. */}
+      <PresenceProvider userId={user.id}>
+        <div className="shell">
+          <Sidebar user={user} access={access} clients={clients} openTasksByClient={openTasksByClient} />
+          <div className="main">{children}</div>
+          {/* El agente solo consulta áreas habilitadas; sin ninguna no tendría nada
+              que responder, así que directamente no aparece. */}
+          {Object.values(access).some(Boolean) && (
+            <AgentChat userName={user.name} suggestions={agentSuggestions(clients, access)} />
+          )}
+        </div>
+      </PresenceProvider>
     </AgentProvider>
   );
 }

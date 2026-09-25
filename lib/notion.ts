@@ -4,7 +4,16 @@
 // sources*, y las consultas van contra el data source, no contra la database.
 // Por eso acá todo se identifica con data_source_id.
 import { unstable_cache } from "next/cache";
-import { TRANSPARENT_TYPES, toBlockNode, toEmbeddedDb, type BlockNode, type EmbeddedDb, type RawBlock } from "./notion-blocks";
+import {
+  TRANSPARENT_TYPES,
+  toBlockNode,
+  toEmbeddedDb,
+  type BlockNode,
+  type EmbeddedDb,
+  type RawBlock,
+  type RawSchemaProp,
+  type RawView,
+} from "./notion-blocks";
 import { pageIdFromUrl, toTicket, type NotionConfig, type NotionTicket } from "./notion-map";
 
 const NOTION_API = "https://api.notion.com/v1";
@@ -248,6 +257,8 @@ const MAX_BLOCKS = 500;
 // ~3 req/s: se acotan tanto la cantidad como las filas de cada una.
 const MAX_DBS = 4;
 const MAX_DB_ROWS = 100;
+// Solapas por database: cada una es un request, y más de esto no se usa.
+const MAX_DB_VIEWS = 8;
 
 // El proyecto guarda el link al portal en una propiedad de tipo url; de ahí sale
 // el id de la página que hay que leer.
@@ -283,10 +294,40 @@ async function fetchEmbeddedDb(databaseId: string): Promise<EmbeddedDb | null> {
     const sourceId = db.data_sources?.[0]?.id;
     if (!sourceId) return null;
 
-    const pages = await queryAll(sourceId, { page_size: MAX_DB_ROWS });
-    return toEmbeddedDb(pages.slice(0, MAX_DB_ROWS) as unknown as Parameters<typeof toEmbeddedDb>[0]);
+    const [pages, meta] = await Promise.all([
+      queryAll(sourceId, { page_size: MAX_DB_ROWS }),
+      fetchDbMeta(databaseId, sourceId),
+    ]);
+    return toEmbeddedDb(pages.slice(0, MAX_DB_ROWS) as unknown as Parameters<typeof toEmbeddedDb>[0], meta);
   } catch (e) {
     console.error("[notion] fetchEmbeddedDb", databaseId, e);
+    return null;
+  }
+}
+
+// Vistas de la database (las solapas "Calendario", "Etapas"… de Notion) y el
+// schema del data source, que trae el orden y color de las opciones para los
+// grupos del tablero. El listado de vistas solo trae ids: cada una se pide aparte.
+// Es un extra: si falla, la database se dibuja igual con una vista por defecto.
+async function fetchDbMeta(
+  databaseId: string,
+  sourceId: string,
+): Promise<{ views: RawView[]; schema: RawSchemaProp[] } | null> {
+  try {
+    const [ds, list] = await Promise.all([
+      notionFetch<RawDataSource>(`/data_sources/${sourceId}`),
+      notionFetch<Paginated<{ id: string }>>(`/views?database_id=${databaseId}&page_size=${MAX_DB_VIEWS}`),
+    ]);
+    const views = await Promise.all(
+      list.results.slice(0, MAX_DB_VIEWS).map((v) => notionFetch<RawView & { data_source_id?: string | null }>(`/views/${v.id}`)),
+    );
+    return {
+      // Una database con varias fuentes tiene vistas de cada una; acá solo se leyó la primera.
+      views: views.filter((v) => !v.data_source_id || v.data_source_id === sourceId),
+      schema: toProperties(ds.properties),
+    };
+  } catch (e) {
+    console.error("[notion] fetchDbMeta", databaseId, e);
     return null;
   }
 }
@@ -335,27 +376,11 @@ async function fetchBlockTree(
 // el usuario es distinta: cargar el link vs. compartir la página.
 export type PortalIcon = { kind: "emoji"; emoji: string } | { kind: "image"; url: string };
 
-// La URL pública normal NO se puede embeber: Notion la sirve con
-// `x-frame-options: SAMEORIGIN` y `frame-ancestors 'self' app.notion.com…`.
-// La que sí permite iframe desde cualquier origen es la variante /ebd/<id>,
-// que es la que Notion entrega en su propio "Embed this page".
-export function toEmbedUrl(publicUrl: string | null | undefined, pageId: string): string | null {
-  if (!publicUrl) return null;
-  try {
-    return `${new URL(publicUrl).origin}/ebd/${pageId.replace(/-/g, "")}`;
-  } catch {
-    return null;
-  }
-}
-
 export type Portal =
   | {
       state: "ok";
       title: string;
       url: string;
-      // Si la página está publicada, se embebe tal cual en un iframe y se ve
-      // idéntica a Notion. Si no, se dibuja con el render propio.
-      embedUrl: string | null;
       cover: string | null;
       icon: PortalIcon | null;
       blocks: BlockNode[];
@@ -363,7 +388,7 @@ export type Portal =
   | { state: "missing" }
   | { state: "unreachable"; pageId: string };
 
-// Portal de un proyecto, listo para renderizar.
+// Portal de un proyecto, listo para renderizar con el render propio de bloques.
 //
 // Igual que con los tickets, la normalización va ADENTRO del cache: los bloques
 // crudos de Notion pesan de más y el data cache de Next descarta en silencio
@@ -383,13 +408,6 @@ export const getPortal = unstable_cache(
       throw e;
     }
 
-    // Publicada: alcanza con el iframe, no hace falta bajar el árbol de bloques
-    // (son varias requests contra el rate limit de Notion para nada).
-    const embedUrl = toEmbedUrl(page.public_url, pageId);
-    if (embedUrl) {
-      return { state: "ok", title: pageTitle(page), url: page.url, embedUrl, cover: null, icon: null, blocks: [] };
-    }
-
     const blocks = await fetchBlockTree(page.id, { left: MAX_BLOCKS });
 
     // Las urls de archivo de Notion vienen firmadas y vencen en 1 h; el cache del
@@ -401,7 +419,7 @@ export const getPortal = unstable_cache(
         ? { kind: "image", url: iconUrl }
         : null;
 
-    return { state: "ok", title: pageTitle(page), url: page.url, embedUrl: null, cover: notionFileUrl(page.cover), icon, blocks };
+    return { state: "ok", title: pageTitle(page), url: page.url, cover: notionFileUrl(page.cover), icon, blocks };
   },
   ["notion-portal"],
   { revalidate: PORTAL_TTL, tags: [NOTION_PORTAL_TAG] },

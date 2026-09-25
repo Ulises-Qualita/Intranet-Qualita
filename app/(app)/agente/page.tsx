@@ -16,7 +16,7 @@ export default async function AgentePage({ searchParams }: { searchParams: Promi
   if (!session || !Object.values(access).some(Boolean)) {
     return (
       <>
-        <Topbar crumb="Qualita" title="Agente" />
+        <Topbar crumb="Qualita" title="Agente Q" />
         <NoAccess />
       </>
     );
@@ -32,7 +32,7 @@ export default async function AgentePage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <Topbar crumb="Qualita" title="Agente" />
+      <Topbar crumb="Qualita" title="Agente Q" />
       {/* view-fill: la conversación ocupa el alto libre y el único scroll es el
           del log, como en el portal del cliente. */}
       <section className="view view-fill">

@@ -24,6 +24,7 @@ import {
   type Client,
 } from "../data";
 import { todayISO } from "../format";
+import { SHOW_TASKS } from "../tasks";
 
 // Una tool = su definición para la API + el área que la habilita + qué corre.
 type AgentTool = {
@@ -437,11 +438,17 @@ const equipo: AgentTool = {
   area: "equipo",
   definition: {
     name: "equipo",
-    description: "Miembros del equipo con su rol, áreas habilitadas, clientes asignados y cuántas tareas abiertas tiene cada uno.",
+    description: SHOW_TASKS
+      ? "Miembros del equipo con su rol, áreas habilitadas, clientes asignados y cuántas tareas abiertas tiene cada uno."
+      : "Miembros del equipo con su rol, áreas habilitadas y clientes asignados.",
     input_schema: { type: "object", properties: {} },
   },
   run: async () => {
-    const [team, clients, tasks] = await Promise.all([getTeam(), getClients(), getTasks().catch(() => [])]);
+    const [team, clients, tasks] = await Promise.all([
+      getTeam(),
+      getClients(),
+      SHOW_TASKS ? getTasks().catch(() => []) : [],
+    ]);
     const openByUser = new Map<string, number>();
     for (const t of tasks.filter(isOpenTask)) {
       if (t.assignee_id) openByUser.set(t.assignee_id, (openByUser.get(t.assignee_id) ?? 0) + 1);
@@ -457,12 +464,13 @@ const equipo: AgentTool = {
         .filter(([, on]) => on)
         .map(([area]) => area),
       clientes: clients.filter((c) => c.assigneeIds.includes(m.id)).map((c) => c.name),
-      tareas_abiertas: openByUser.get(m.id) ?? 0,
+      ...(SHOW_TASKS ? { tareas_abiertas: openByUser.get(m.id) ?? 0 } : {}),
     }));
   },
 };
 
-const ALL_TOOLS = [listarClientes, tareas, metaMetricas, metaCampanas, crmResumen, crmLeads, equipo];
+// Con las tareas ocultas (SHOW_TASKS) la tool no existe para el modelo.
+const ALL_TOOLS = [listarClientes, ...(SHOW_TASKS ? [tareas] : []), metaMetricas, metaCampanas, crmResumen, crmLeads, equipo];
 
 // Las tools que este usuario puede usar. Es el control de acceso del agente: lo
 // que no está acá no existe para el modelo.

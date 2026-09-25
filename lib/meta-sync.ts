@@ -8,13 +8,14 @@ import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import {
   getAccountInsights,
+  getAdCreatives,
   getAdInsights,
   getAdStatuses,
   getMetaSecrets,
   isAuthError,
   saveMetaSecrets,
 } from "./meta";
-import { createAdminClient } from "./supabase/server";
+import { createAdminClient, isMissingTable } from "./supabase/server";
 
 // Ventana del backfill inicial: cubre el período más largo que ofrece la vista.
 export const SYNC_DAYS = 90;
@@ -40,10 +41,15 @@ export async function syncMetaClient(clientId: string, accountRef: string | null
   const until = day(0);
 
   try {
-    const [daily, ads, statuses] = await Promise.all([
+    const [daily, ads, statuses, creatives] = await Promise.all([
       getAccountInsights(secrets.access_token, accountRef, since, until),
       getAdInsights(secrets.access_token, accountRef, since, until),
       getAdStatuses(secrets.access_token, accountRef).catch(() => new Map<string, string>()),
+      // Las miniaturas son un extra: si fallan, las métricas se guardan igual.
+      getAdCreatives(secrets.access_token, accountRef).catch((e) => {
+        console.error("[meta] creativos", clientId, e instanceof Error ? e.message : e);
+        return [];
+      }),
     ]);
 
     const db = createAdminClient();
@@ -85,6 +91,23 @@ export async function syncMetaClient(clientId: string, accountRef: string | null
     if (seen.length) cleanup = cleanup.or(`ad_external_id.is.null,ad_external_id.not.in.(${seen.join(",")})`);
     const { error: cleanupError } = await cleanup;
     if (cleanupError) throw cleanupError;
+
+    // Una fila por anuncio, pisada en cada corrida: las URLs de las miniaturas
+    // vencen, así que se renuevan todas y no solo las de los últimos días.
+    // Sin la tabla (docs/sql/2026-09-25-meta-creatives.sql) se sigue sin miniaturas.
+    if (creatives.length) {
+      const { error } = await db.from("intranet_meta_creatives").upsert(
+        creatives.map((c) => ({
+          client_id: clientId,
+          ad_external_id: c.adId,
+          creative_type: c.type,
+          thumbnail_url: c.thumbnail,
+          updated_at: new Date().toISOString(),
+        })),
+        { onConflict: "client_id,ad_external_id" },
+      );
+      if (error && !isMissingTable(error)) throw error;
+    }
 
     await saveMetaSecrets(clientId, { ...secrets, synced_at: new Date().toISOString(), sync_error: null });
     return { clientId, ok: true, days: daily.length, ads: ads.length };

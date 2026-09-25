@@ -75,9 +75,37 @@ export function LineChart({
 
 // Etapas del pipeline como columnas: la altura es proporcional a la etapa más
 // grande y el porcentaje, sobre el total, así las etapas suman 100% entre todas.
+// Con más etapas que esto, las columnas no entran en la card (cada una necesita
+// ~70px) y el gráfico pasa a filas horizontales, como el embudo del mockup.
+const MAX_COLUMNS = 8;
+
 export function StageBars({ stages }: { stages: { name: string; value: number }[] }) {
   const total = stages.reduce((sum, s) => sum + s.value, 0) || 1;
   const top = Math.max(1, ...stages.map((s) => s.value));
+
+  if (stages.length > MAX_COLUMNS) {
+    return (
+      <div className="stage-rows">
+        {stages.map((s) => {
+          const share = (s.value / total) * 100;
+          const pct = share > 0 && share < 1 ? "<1%" : `${Math.round(share)}%`;
+          const width = Math.max(2, (s.value / top) * 100);
+          return (
+            <div className="row" key={s.name} title={`${s.name}: ${s.value} (${pct})`}>
+              <span className="lbl">{s.name}</span>
+              <div className="track">
+                {/* El degradado se estira al ancho de la pista, no al de la barra:
+                    así una barra corta muestra solo el arranque, como en las columnas. */}
+                <div className="bar" style={{ width: `${width}%`, backgroundSize: `${10000 / width}% 100%` }} />
+              </div>
+              <b className="val">{s.value}</b>
+              <span className="share">{pct}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   // Piso de altura (en % del área) para que una etapa con pocas oportunidades no
   // quede como una línea. Las alturas siguen ordenadas y se diferencian entre sí,
   // pero las chicas arrancan desde este piso en vez de desde cero.

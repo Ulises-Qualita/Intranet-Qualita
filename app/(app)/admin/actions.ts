@@ -162,3 +162,112 @@ export async function loadNotionProperties(
     return { ok: false, error: notionErrorMessage(e) };
   }
 }
+
+// ---------- Cuentas de clientes (/mi-empresa) ----------
+//
+// Una cuenta por empresa, con mail y contraseña que define el admin. Van con
+// service_role porque Auth se administra desde el server; cada acción exige admin
+// y las que tocan un usuario existente verifican antes que sea una cuenta de
+// cliente, para que por acá no se pueda borrar ni cambiarle la clave a nadie del
+// equipo ni del otro app.
+
+const MIN_PASSWORD = 8;
+
+async function clientAccount(userId: string) {
+  const { data } = await createAdminClient()
+    .from("intranet_client_users")
+    .select("user_id, client_id")
+    .eq("user_id", userId)
+    .maybeSingle<{ user_id: string; client_id: string }>();
+  return data;
+}
+
+export async function createClientAccount(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede crear cuentas de clientes." };
+
+  const clientId = String(form.get("clientId") ?? "");
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const password = String(form.get("password") ?? "");
+
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, error: "Ingresá un mail válido." };
+  if (isQualitaEmail(email)) return { ok: false, error: "Las cuentas @qualita.studio son del equipo, no de clientes." };
+  if (password.length < MIN_PASSWORD) return { ok: false, error: `La contraseña tiene que tener al menos ${MIN_PASSWORD} caracteres.` };
+
+  const admin = createAdminClient();
+  const { data: client } = await admin.from("intranet_clients").select("id, name").eq("id", clientId).maybeSingle();
+  if (!client) return { ok: false, error: "No se encontró el cliente." };
+
+  const { data: taken } = await admin.from("intranet_client_users").select("user_id").eq("client_id", clientId).maybeSingle();
+  if (taken) return { ok: false, error: `${client.name} ya tiene una cuenta.` };
+
+  // Auth es compartido con el otro app: si el mail ya existe no se reutiliza,
+  // porque habría que pisarle la contraseña a alguien que ya la tiene.
+  const { data: created, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: client.name },
+  });
+  if (error || !created.user) {
+    const exists = error?.status === 422 || /already/i.test(error?.message ?? "");
+    return { ok: false, error: exists ? "Ese mail ya tiene una cuenta. Usá otro." : "No se pudo crear el usuario." };
+  }
+  const userId = created.user.id;
+
+  // on_auth_user_created_intranet le crea un perfil de equipo activo a todo
+  // usuario nuevo. Una cuenta de cliente no puede tenerlo: pasaría las políticas
+  // de "perfil activo" y leería datos de otros clientes.
+  const { error: profileError } = await admin.from("intranet_profiles").delete().eq("id", userId);
+  const { error: linkError } = profileError
+    ? { error: profileError }
+    : await admin.from("intranet_client_users").insert({ user_id: userId, client_id: clientId, email });
+
+  if (profileError || linkError) {
+    // Sin el vínculo (o con el perfil de equipo) la cuenta no sirve y es un
+    // riesgo: se borra el usuario recién creado.
+    console.error("[admin] createClientAccount", profileError ?? linkError);
+    await admin.auth.admin.deleteUser(userId);
+    return { ok: false, error: "No se pudo crear la cuenta. ¿Corriste docs/sql/2026-09-25-cuentas-clientes.sql?" };
+  }
+
+  revalidatePath("/admin");
+  return { ok: true, error: null };
+}
+
+export async function setClientAccountPassword(userId: string, password: string): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede cambiar contraseñas." };
+  if (password.length < MIN_PASSWORD) return { ok: false, error: `La contraseña tiene que tener al menos ${MIN_PASSWORD} caracteres.` };
+  if (!(await clientAccount(userId))) return { ok: false, error: "No es una cuenta de cliente." };
+
+  const { error } = await createAdminClient().auth.admin.updateUserById(userId, { password });
+  if (error) return { ok: false, error: "No se pudo cambiar la contraseña." };
+  return { ok: true, error: null };
+}
+
+// Desactivar corta el acceso en el acto: intranet_my_client_id() deja de
+// devolver su empresa, así que la RLS ya no le muestra nada aunque tenga sesión.
+export async function setClientAccountActive(userId: string, active: boolean): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede cambiar cuentas." };
+
+  const { data, error } = await createAdminClient()
+    .from("intranet_client_users")
+    .update({ active: active === true })
+    .eq("user_id", userId)
+    .select("user_id");
+  if (error || !data?.length) return { ok: false, error: "No se pudo guardar el cambio." };
+
+  revalidatePath("/admin");
+  return { ok: true, error: null };
+}
+
+// Borra el usuario de Auth (la fila de intranet_client_users cae en cascada).
+export async function deleteClientAccount(userId: string): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede borrar cuentas." };
+  if (!(await clientAccount(userId))) return { ok: false, error: "No es una cuenta de cliente." };
+
+  const { error } = await createAdminClient().auth.admin.deleteUser(userId);
+  if (error) return { ok: false, error: "No se pudo borrar la cuenta." };
+
+  revalidatePath("/admin");
+  return { ok: true, error: null };
+}

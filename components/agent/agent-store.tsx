@@ -85,7 +85,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         if (!res.ok || !res.body) {
           const body = await res.json().catch(() => null);
-          throw new Error(body?.error ?? "No se pudo conectar con el agente.");
+          throw new Error(body?.error ?? "No se pudo conectar con Agente Q.");
         }
 
         const reader = res.body.getReader();

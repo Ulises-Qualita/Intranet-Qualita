@@ -1,8 +1,13 @@
+import Link from "next/link";
+import { ClientAvatar } from "@/components/client-avatar";
+import { OnlineCount, OnlineDot, OnlineStatus } from "@/components/presence";
 import { Topbar } from "@/components/topbar";
 import { NoAccess, Pill } from "@/components/ui";
 import { UserAvatar } from "@/components/user-avatar";
 import { getAreaSession } from "@/lib/auth";
-import { getAllClients, getTasks, getTeam, isOpenTask } from "@/lib/data";
+import { getAllClients, getTasks, getTeam, isLateTask, isOpenTask } from "@/lib/data";
+import { todayISO } from "@/lib/format";
+import { SHOW_TASKS } from "@/lib/tasks";
 
 export default async function EquipoPage() {
   const session = await getAreaSession("equipo");
@@ -15,59 +20,76 @@ export default async function EquipoPage() {
     );
   }
 
-  const [team, clients, tasks] = await Promise.all([getTeam(), getAllClients(), getTasks()]);
+  // Con las tareas ocultas no se consulta Notion.
+  const [team, clients, tasks] = await Promise.all([getTeam(), getAllClients(), SHOW_TASKS ? getTasks() : []]);
   const openTasks = tasks.filter(isOpenTask);
+  const today = todayISO();
 
   return (
     <>
-      <Topbar crumb="Qualita" title="Equipo" />
+      <Topbar crumb="Qualita" title="Equipo">
+        <OnlineCount />
+      </Topbar>
       <section className="view">
-        <div className="grid g3">
+        <div className="grid g3 team-grid">
           {team.map((m) => {
-            const name = m.name;
             const assigned = clients.filter((c) => c.active && c.assigneeIds.includes(m.id));
-            const taskCount = openTasks.filter((t) => t.assignee_id === m.id).length;
+            const mine = openTasks.filter((t) => t.assignee_id === m.id);
+            const late = mine.filter((t) => isLateTask(t, today)).length;
             return (
-              <div key={m.id} className="card member">
-                <div className="head">
-                  <UserAvatar className="fav" name={name} avatarUrl={m.avatarUrl} />
-                  <div>
-                    <b>{name}</b>
-                    <span>{m.email}</span>
+              <article key={m.id} className={`card team-card${m.active ? "" : " off"}`}>
+                <header className="team-head">
+                  <div className="av-wrap">
+                    <UserAvatar className="team-av" name={m.name} avatarUrl={m.avatarUrl} />
+                    <OnlineDot userId={m.id} />
                   </div>
-                </div>
-                <div className="row">
-                  <span>Rol</span>
-                  {m.role === "admin" ? <Pill variant="admin">Admin</Pill> : <Pill variant="pausado">Miembro</Pill>}
-                </div>
-                <div className="row">
-                  <span>Estado</span>
-                  {m.active ? <Pill variant="al-dia">Activo</Pill> : <Pill variant="pausado">Inactivo</Pill>}
-                </div>
-                <div className="row">
-                  <span>Tareas abiertas</span>
-                  <b>{taskCount}</b>
-                </div>
-                <div>
-                  <div className="row" style={{ marginBottom: 8 }}>
-                    <span>Clientes asignados</span>
-                    <b>{assigned.length}</b>
-                  </div>
-                  {assigned.length > 0 ? (
-                    <div className="tags">
-                      {assigned.map((c) => (
-                        <span key={c.id} className="tag">
-                          {c.name}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="muted" style={{ fontSize: 12.5 }}>
-                      Sin clientes asignados
+                  <div className="team-id">
+                    <h3>{m.name}</h3>
+                    <span className="team-mail" title={m.email ?? undefined}>
+                      {m.email}
                     </span>
+                    {m.active ? (
+                      <OnlineStatus userId={m.id} />
+                    ) : (
+                      <span className="muted">{m.invited ? "Invitación pendiente" : "Sin acceso a la intranet"}</span>
+                    )}
+                  </div>
+                  {m.role === "admin" ? <Pill variant="admin">Admin</Pill> : <Pill variant="pausado">Miembro</Pill>}
+                </header>
+
+                <dl className="team-stats">
+                  {SHOW_TASKS && (
+                    <div>
+                      <dt>Tareas abiertas</dt>
+                      <dd>{mine.length}</dd>
+                      {late > 0 && (
+                        <span className="team-late">
+                          {late} {late === 1 ? "vencida" : "vencidas"}
+                        </span>
+                      )}
+                    </div>
                   )}
-                </div>
-              </div>
+                  <div>
+                    <dt>{assigned.length === 1 ? "Cliente" : "Clientes"}</dt>
+                    <dd>{assigned.length}</dd>
+                  </div>
+                </dl>
+
+                {assigned.length > 0 ? (
+                  <ul className="team-clients">
+                    {assigned.map((c) => (
+                      <li key={c.id}>
+                        <Link href={`/clientes/${c.slug}`}>
+                          <ClientAvatar client={c} />
+                          {c.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="team-empty">Sin clientes asignados</p>
+                )}
+              </article>
             );
           })}
         </div>

@@ -117,6 +117,40 @@ export function ConnectState({ kind, client }: { kind: ConnectKind; client: Pick
   );
 }
 
+// Lo mismo que ConnectState pero para la cuenta de un cliente: sin botón, porque
+// conectar es tarea del equipo de Qualita.
+const NOT_CONNECTED: Record<ConnectKind, string> = {
+  notion: "El portal todavía no está disponible.",
+  meta: "Las métricas de Meta todavía no están conectadas.",
+  crm: "El CRM todavía no está conectado.",
+  clarity: "La analítica del sitio todavía no está conectada.",
+};
+
+export function NotConnected({ kind }: { kind: ConnectKind }) {
+  return (
+    <div className="card connect-state">
+      <div className="cs-ico">
+        <Icon name={CONNECT_COPY[kind].icon} />
+      </div>
+      <h3>{NOT_CONNECTED[kind]}</h3>
+      <p>Tu equipo de Qualita lo configura. Cuando esté listo, los datos aparecen acá.</p>
+    </div>
+  );
+}
+
+// ConnectState para el equipo, NotConnected para la cuenta de un cliente.
+export function MissingIntegration({
+  kind,
+  client,
+  internal,
+}: {
+  kind: ConnectKind;
+  client: Pick<Client, "id" | "slug" | "name" | "integrations">;
+  internal: boolean;
+}) {
+  return internal ? <ConnectState kind={kind} client={client} /> : <NotConnected kind={kind} />;
+}
+
 export function Card({
   title,
   hint,

@@ -11,7 +11,9 @@ const PREVIEW = 4;
 
 // Anuncios que el CRM atribuye a cada oportunidad. Cada fila abre el anuncio en
 // la vista de META, con su campaña ya desplegada.
-export function AdsTable({ ads, clientSlug, days }: { ads: AdStats[]; clientSlug: string; days: number }) {
+// `query` es el período actual (periodQuery): el anuncio se abre en META con el mismo corte.
+// `base` es la ruta de las pestañas del cliente (/clientes/[slug] o /mi-empresa).
+export function AdsTable({ ads, base, query }: { ads: AdStats[]; base: string; query: string }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? ads : ads.slice(0, PREVIEW);
   const hidden = ads.length - visible.length;
@@ -31,7 +33,7 @@ export function AdsTable({ ads, clientSlug, days }: { ads: AdStats[]; clientSlug
           </thead>
           <tbody>
             {visible.map((ad) => {
-              const href = `/clientes/${clientSlug}/meta?dias=${days}&anuncio=${encodeURIComponent(ad.name)}`;
+              const href = `${base}/meta?${query}&anuncio=${encodeURIComponent(ad.name)}`;
               return (
                 <tr key={ad.name} className="link-row">
                   <td>

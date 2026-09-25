@@ -24,6 +24,11 @@ export const ratio = (value: number) => `${num(value, 1)}x`;
 // Fecha de hoy (YYYY-MM-DD) en horario de Argentina.
 export const todayISO = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
 
+// Día (YYYY-MM-DD) en horario de Argentina de un timestamp: una oportunidad creada
+// a las 23 h del 1/9 es del 1/9 acá, aunque en UTC ya sea el 2/9.
+const localDay = new Intl.DateTimeFormat("en-CA", { timeZone: TZ });
+export const localDate = (iso: string) => localDay.format(new Date(iso));
+
 export function shortDate(isoDate: string) {
   return new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", timeZone: "UTC" })
     .format(new Date(`${isoDate}T00:00:00Z`))

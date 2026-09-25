@@ -1,6 +1,11 @@
 // Modelo de tareas, sin dependencias de server: lo usan lib/data.ts (server),
 // lib/notion-map.ts y los componentes cliente de la pantalla de mapeo.
 
+// Tareas ocultas por el momento en la solapa de cada cliente (sidebar) y en
+// Equipo. La ruta /clientes/[slug]/tareas sigue existiendo; volver a true las
+// muestra de nuevo.
+export const SHOW_TASKS = false;
+
 export type TaskStatus = "todo" | "doing" | "blocked" | "done";
 export type TaskPriority = "alta" | "media" | "baja";
 

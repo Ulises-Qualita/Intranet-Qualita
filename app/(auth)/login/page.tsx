@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { GoogleButton } from "./google-button";
+import { PasswordForm } from "./password-form";
 
 export const metadata: Metadata = {
   title: "Ingresar · Qualita Intranet",
@@ -20,20 +21,23 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       <div className="login-card">
         <Image
           className="login-logo"
-          src="/qualita-logo-navy.svg"
+          src="/Logo-nuevo.png"
           alt="Qualita"
-          width={107}
-          height={44}
+          width={145}
+          height={38}
           unoptimized
           priority
         />
-        <h1>Intranet del equipo</h1>
-        <p className="sub">
-          Ingresá con tu cuenta corporativa <b>@qualita.studio</b>
-        </p>
+        <h1>Intranet de Qualita</h1>
+        <p className="sub">Ingresá para ver tus métricas y las de tus clientes.</p>
         {message && <p className="login-err login-err-box">{message}</p>}
         <GoogleButton />
-        <p className="login-note">Solo se permiten cuentas @qualita.studio.</p>
+        <p className="login-note">El equipo ingresa con su cuenta @qualita.studio.</p>
+
+        <div className="login-sep">
+          <span>¿Sos cliente de Qualita?</span>
+        </div>
+        <PasswordForm />
       </div>
     </main>
   );

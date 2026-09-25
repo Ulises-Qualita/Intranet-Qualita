@@ -43,3 +43,27 @@ export async function getAreaSession(area: AreaKey) {
   const session = await getSession();
   return session && canAccess(session.profile, area) ? session : null;
 }
+
+// ---------- Cuentas de clientes (/mi-empresa) ----------
+
+export type ClientSession = { userId: string; email: string; clientId: string; active: boolean };
+
+// Cuenta de cliente con la que se está navegando, memorizada por request. null si
+// no hay sesión, si es del equipo (esas usan getSession) o si el usuario no tiene
+// cuenta de cliente. La fila se lee con la sesión: la RLS solo deja ver la propia.
+export const getClientSession = cache(async (): Promise<ClientSession | null> => {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  const email = claims?.email as string | undefined;
+  if (!claims || !email || isQualitaEmail(email)) return null;
+
+  const { data: row } = await supabase
+    .from("intranet_client_users")
+    .select("client_id, active")
+    .eq("user_id", claims.sub)
+    .maybeSingle<{ client_id: string; active: boolean }>();
+  if (!row) return null;
+
+  return { userId: claims.sub, email, clientId: row.client_id, active: row.active };
+});

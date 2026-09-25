@@ -115,6 +115,12 @@ const PATHS = {
       <circle cx="12" cy="12" r="9" />
     </>
   ),
+  calendar: (
+    <>
+      <rect x="3" y="4.5" width="18" height="16.5" rx="3" />
+      <path d="M3 9.5h18M8 2.5v4M16 2.5v4" />
+    </>
+  ),
   clock: (
     <>
       <circle cx="12" cy="12" r="9" />

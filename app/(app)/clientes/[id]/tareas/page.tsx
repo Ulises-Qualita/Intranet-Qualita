@@ -61,7 +61,8 @@ function TaskCard({ task, today, assignee }: { task: Task; today: string; assign
 
 export default async function ClienteTareasPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getAreaSession("tareas");
+  // En paralelo: getClient lee con la sesión del usuario (RLS), sin acceso no trae nada.
+  const [session, c] = await Promise.all([getAreaSession("tareas"), getClient(id)]);
   if (!session) {
     return (
       <>
@@ -71,7 +72,6 @@ export default async function ClienteTareasPage({ params }: { params: Promise<{ 
     );
   }
 
-  const c = await getClient(id);
   if (!c) notFound();
 
   const [{ tasks, notionError }, team] = await Promise.all([getTasksResult(), getTeam()]);

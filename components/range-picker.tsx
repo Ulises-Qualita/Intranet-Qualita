@@ -1,21 +1,19 @@
 import Link from "next/link";
+import { type Period, RANGES } from "@/lib/period";
+import { CustomRange } from "./custom-range";
 
-// Períodos que ofrecen las vistas de métricas. El sync guarda 90 días.
-export const RANGES = [7, 30, 90] as const;
-export const DEFAULT_RANGE = 30;
-
-// Lee ?dias= de la URL y descarta cualquier otro valor.
-export const readRange = (dias: string | undefined) => RANGES.find((r) => String(r) === dias) ?? DEFAULT_RANGE;
-
-// Va en el topbar: cambia el período navegando, sin estado en el cliente.
-export function RangePicker({ basePath, days }: { basePath: string; days: number }) {
+// Va en el topbar: los atajos de 7 / 30 / 90 días navegan con un link, y
+// "Personalizado" abre un calendario para elegir desde y hasta. El período vive
+// en la URL (ver lib/period.ts), sin estado en el cliente.
+export function RangePicker({ basePath, period }: { basePath: string; period: Period }) {
   return (
     <div className="range">
       {RANGES.map((r) => (
-        <Link key={r} href={`${basePath}?dias=${r}`} className={r === days ? "on" : undefined}>
+        <Link key={r} href={`${basePath}?dias=${r}`} className={r === period.days ? "on" : undefined}>
           {r} días
         </Link>
       ))}
+      <CustomRange basePath={basePath} period={period} />
     </div>
   );
 }

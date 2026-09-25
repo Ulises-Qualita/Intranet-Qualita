@@ -6,7 +6,7 @@ import { isClientStatus } from "@/lib/client-status";
 import { crmProviderLabel, isCrmProvider } from "@/lib/crm-shared";
 import { deleteCrmSecrets, getCrmSecrets, saveCrmSecrets, syncCrmClient } from "@/lib/crm-sync";
 import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
-import { LOGO_MAX_BYTES, LOGO_TYPES, LOGOS_BUCKET } from "@/lib/logos";
+import { LOGO_MAX_BYTES, LOGO_TYPES, LOGOS_BUCKET, LOGOS_TAG } from "@/lib/logos";
 import { deleteMetaSecrets, getAdAccount, getMetaSecrets, saveMetaSecrets } from "@/lib/meta";
 import { NOTION_PORTAL_TAG, NOTION_TICKETS_TAG, getPageRef, notionErrorMessage } from "@/lib/notion";
 import { KommoError, kommoAccount, normalizeKommoUrl } from "@/lib/kommo";
@@ -158,6 +158,7 @@ export async function createLogoUpload(
 
 export async function logoUploaded(): Promise<void> {
   if (!(await getAreaSession("clientes"))) return;
+  revalidateTag(LOGOS_TAG, { expire: 0 });
   revalidatePath("/", "layout");
 }
 
@@ -167,6 +168,7 @@ export async function removeLogo(clientId: string): Promise<FormState> {
   const { error } = await createAdminClient().storage.from(LOGOS_BUCKET).remove([clientId]);
   if (error) return { ok: false, error: "No se pudo quitar el logo." };
 
+  revalidateTag(LOGOS_TAG, { expire: 0 });
   revalidatePath("/", "layout");
   return { ok: true, error: null };
 }
@@ -210,6 +212,7 @@ export async function deleteClient(clientId: string, confirmation: string): Prom
 
   await admin.storage.from(LOGOS_BUCKET).remove([clientId]);
 
+  revalidateTag(LOGOS_TAG, { expire: 0 });
   revalidatePath("/", "layout");
   return { ok: true, error: null };
 }

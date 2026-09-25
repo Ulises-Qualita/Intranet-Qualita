@@ -27,6 +27,21 @@ const LOST_STATUS = 143;
 // Propiedades que usa la intranet, por nombre de campo (igual que en Odoo).
 const TICKET_FIELD = /^ticket$/i;
 const AD_FIELD = /^anuncio$/i;
+// El origen sale de utm_source (campo de seguimiento que Kommo completa solo
+// desde formularios y anuncios) y no de la "fuente" de Kommo: en Arteplac la
+// fuente es la sucursal que recibió el lead, no el canal que lo trajo.
+const UTM_SOURCE_FIELD = /^utm_source$/i;
+
+// Los valores de utm_source vienen como los cargó cada campaña ("meta", "google",
+// "ig"): se traducen al nombre del canal. Lo que no está acá se muestra tal cual.
+const SOURCE_LABELS: Record<string, string> = {
+  meta: "Meta",
+  facebook: "Meta",
+  fb: "Meta",
+  google: "Google Ads",
+  ig: "Instagram",
+  instagram: "Instagram",
+};
 
 // Acepta el subdominio suelto ("arteplac"), el dominio o cualquier URL de la cuenta.
 export function normalizeKommoUrl(raw: string) {
@@ -104,7 +119,7 @@ async function getUsers(creds: KommoCredentials) {
   return names;
 }
 
-type KommoField = { field_name?: string; values?: { value?: unknown }[] };
+type KommoField = { field_name?: string; field_code?: string | null; values?: { value?: unknown }[] };
 type KommoLead = {
   id: number;
   name: string;
@@ -116,14 +131,21 @@ type KommoLead = {
   custom_fields_values: KommoField[] | null;
   _embedded?: {
     tags?: { name: string }[];
-    source?: { name?: string } | null;
   };
 };
 
+// Por nombre o por código: los campos de seguimiento traen field_code (UTM_SOURCE)
+// aunque alguien les cambie el nombre visible.
 const fieldOf = (fields: KommoField[] | null, label: RegExp) =>
-  (fields ?? []).find((f) => f.field_name && label.test(f.field_name))?.values?.[0]?.value;
+  (fields ?? []).find((f) => (f.field_name && label.test(f.field_name)) || (f.field_code && label.test(f.field_code)))
+    ?.values?.[0]?.value;
 
 const textOf = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+
+const sourceOf = (fields: KommoField[] | null) => {
+  const raw = textOf(fieldOf(fields, UTM_SOURCE_FIELD));
+  return raw ? (SOURCE_LABELS[raw.toLowerCase()] ?? raw) : null;
+};
 
 export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLead[]; stages: string[] }> {
   const [pipelines, users] = await Promise.all([getPipelines(creds), getUsers(creds)]);
@@ -134,7 +156,6 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
     const body = await api<{ _embedded: { leads: KommoLead[] } }>(creds, "leads", {
       page,
       limit: PAGE_LIMIT,
-      with: "source",
       "order[created_at]": "desc",
     });
     const rows = body?._embedded.leads ?? [];
@@ -149,7 +170,7 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
         externalId: String(r.id),
         name: r.name,
         stage: won ? pipelines.won : lost ? pipelines.lost : (pipelines.stageName.get(`${r.pipeline_id}:${r.status_id}`) ?? null),
-        source: textOf(r._embedded?.source?.name),
+        source: sourceOf(r.custom_fields_values),
         owner: r.responsible_user_id ? (users.get(r.responsible_user_id) ?? null) : null,
         ad: textOf(fieldOf(r.custom_fields_values, AD_FIELD)),
         tags: (r._embedded?.tags ?? []).map((t) => t.name).filter(Boolean),

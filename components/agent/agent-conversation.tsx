@@ -112,7 +112,7 @@ export function AgentConversation({
         {variant === "panel" ? (
           <div className="agent-title">
             <Icon name="sparkles" size={16} />
-            <h3>Agente Qualita</h3>
+            <h3>Agente Q</h3>
           </div>
         ) : (
           // En grande el título ya lo da la Topbar, así que acá va de qué se está
@@ -137,7 +137,7 @@ export function AgentConversation({
             <Icon name="plus" size={16} />
           </button>
           {variant === "panel" && onClose && (
-            <button type="button" onClick={onClose} title="Cerrar" aria-label="Cerrar el agente">
+            <button type="button" onClick={onClose} title="Cerrar" aria-label="Cerrar Agente Q">
               <Icon name="close" size={16} />
             </button>
           )}
@@ -173,7 +173,7 @@ export function AgentConversation({
               <div className="agent-hero">
                 <Image src="/Agente.png" alt="" width={72} height={72} priority />
                 <h2>¿Qué querés saber, {userName.split(" ")[0]}?</h2>
-                <p>Leo los clientes, el CRM, Meta y las tareas del estudio, en vivo. Preguntame con tus palabras.</p>
+                <p>Leo los clientes, el CRM y Meta del estudio, en vivo. Preguntame con tus palabras.</p>
                 <div className="agent-cards">
                   {suggestions.map((s) => (
                     <button type="button" key={s} onClick={() => send(s)}>
@@ -185,7 +185,7 @@ export function AgentConversation({
               </div>
             ) : (
               <div className="agent-empty">
-                <p>Hola {userName.split(" ")[0]}. Preguntame lo que necesites sobre los clientes, el CRM, Meta o las tareas.</p>
+                <p>Hola {userName.split(" ")[0]}. Preguntame lo que necesites sobre los clientes, el CRM o Meta.</p>
                 <div className="agent-chips">
                   {suggestions.map((s) => (
                     <button type="button" key={s} onClick={() => send(s)}>
