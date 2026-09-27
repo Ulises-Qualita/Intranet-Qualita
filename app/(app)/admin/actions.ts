@@ -9,6 +9,7 @@ import type { NotionConfig } from "@/lib/notion-map";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 const AREA_KEYS = new Set<string>(AREAS.map(([k]) => k));
+const MAX_JOB_TITLE = 60;
 
 export type ActionResult = { ok: true; error: null } | { ok: false; error: string };
 
@@ -19,7 +20,7 @@ async function requireAdmin() {
 
 export async function updateUserAccess(
   userId: string,
-  patch: { role?: Role; areas?: Record<AreaKey, boolean>; active?: boolean },
+  patch: { role?: Role; areas?: Record<AreaKey, boolean>; active?: boolean; jobTitle?: string | null },
 ): Promise<ActionResult> {
   const session = await requireAdmin();
   if (!session) return { ok: false, error: "Solo un administrador puede cambiar accesos." };
@@ -46,10 +47,20 @@ export async function updateUserAccess(
     update.areas = Object.fromEntries(entries);
   }
 
+  // Puesto: texto libre, solo para mostrar. Vacío lo borra.
+  if (patch.jobTitle !== undefined) {
+    const title = String(patch.jobTitle ?? "").trim().replace(/\s+/g, " ");
+    if (title.length > MAX_JOB_TITLE) return { ok: false, error: `El puesto admite hasta ${MAX_JOB_TITLE} caracteres.` };
+    update.job_title = title || null;
+  }
+
   // Cliente con la sesión del usuario: la RLS de intranet_profiles vuelve a exigir admin.
   const supabase = await createClient();
   const { data, error } = await supabase.from("intranet_profiles").update(update).eq("id", userId).select("id");
 
+  if (error?.code === "PGRST204" || error?.code === "42703") {
+    return { ok: false, error: "Falta la columna job_title (docs/sql/2026-09-26-perfil-puesto.sql)." };
+  }
   if (error || !data?.length) return { ok: false, error: "No se pudo guardar el cambio." };
 
   revalidatePath("/", "layout");

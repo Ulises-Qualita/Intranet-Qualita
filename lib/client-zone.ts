@@ -26,6 +26,8 @@ export function clientTabs(client: Client) {
     { href: `${CLIENT_BASE}/crm`, label: "CRM", show: client.conn.crm },
     { href: `${CLIENT_BASE}/web`, label: "WEB", show: client.conn.clarity },
     { href: `${CLIENT_BASE}/portal`, label: "Portal", show: client.conn.notion },
+    // Siempre visible: si no hay nadie asignado, la vista lo dice.
+    { href: `${CLIENT_BASE}/equipo`, label: "Equipo", show: true },
   ]
     .filter((t) => t.show)
     .map(({ href, label }) => ({ href, label }));

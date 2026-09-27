@@ -28,8 +28,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           unoptimized
           priority
         />
-        <h1>Intranet de Qualita</h1>
-        <p className="sub">Ingresá para ver tus métricas y las de tus clientes.</p>
         {message && <p className="login-err login-err-box">{message}</p>}
         <GoogleButton />
         <p className="login-note">El equipo ingresa con su cuenta @qualita.studio.</p>

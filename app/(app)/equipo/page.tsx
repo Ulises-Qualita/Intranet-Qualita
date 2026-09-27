@@ -45,6 +45,7 @@ export default async function EquipoPage() {
                   </div>
                   <div className="team-id">
                     <h3>{m.name}</h3>
+                    {m.jobTitle && <span className="team-job">{m.jobTitle}</span>}
                     <span className="team-mail" title={m.email ?? undefined}>
                       {m.email}
                     </span>

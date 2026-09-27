@@ -657,7 +657,9 @@ export function leadFunnel(leads: Lead[], order: string[] = STAGE_ORDER) {
 
 // ---------- Equipo ----------
 
-export type TeamMember = Profile & { name: string; avatarUrl: string | null; invited: boolean };
+// jobTitle: puesto (Diseñador, Project manager…). Lo define un admin y es solo
+// para mostrar; los permisos siguen saliendo de role + areas.
+export type TeamMember = Profile & { name: string; avatarUrl: string | null; invited: boolean; jobTitle: string | null };
 
 // Miembros del equipo con su foto de Google. Usa service_role (RLS solo deja ver
 // el propio perfil a los members): llamar únicamente después de validar canAccess.
@@ -666,20 +668,25 @@ export const getTeam = cache(async (): Promise<TeamMember[]> => {
   const [{ data: profiles, error }, { data: authUsers }] = await Promise.all([
     admin
       .from("intranet_profiles")
-      .select("id, email, full_name, role, areas, active")
+      // "*" y no la lista de columnas: job_title llega con
+      // docs/sql/2026-09-26-perfil-puesto.sql y, mientras no se corra, pedirla
+      // por nombre rompería toda pantalla que lista al equipo.
+      .select("*")
       .order("email", { ascending: true })
-      .returns<Profile[]>(),
+      .returns<(Profile & { job_title?: string | null })[]>(),
     admin.auth.admin.listUsers({ perPage: 1000 }),
   ]);
   if (error) throw error;
 
   const users = new Map((authUsers?.users ?? []).map((u) => [u.id, u]));
 
-  return (profiles ?? []).map((p) => {
+  return (profiles ?? []).map(({ id, email, full_name, role, areas, active, job_title }) => {
+    const p = { id, email, full_name, role, areas, active };
     const user = users.get(p.id);
     const meta = user?.user_metadata ?? {};
     return {
       ...p,
+      jobTitle: job_title?.trim() || null,
       name: meta.full_name || meta.name || p.full_name || p.email?.split("@")[0] || "Sin nombre",
       avatarUrl: meta.avatar_url || meta.picture || null,
       // Alta hecha desde Administración que todavía no ingresó con Google.
@@ -687,6 +694,19 @@ export const getTeam = cache(async (): Promise<TeamMember[]> => {
     };
   });
 });
+
+// Equipo asignado a un cliente (intranet_client_assignments), solo los activos.
+// Service_role porque la cuenta del cliente no ve asignaciones ni perfiles:
+// llamar solo después de validar que quien pide puede ver ese cliente.
+export async function getClientTeam(clientId: string): Promise<TeamMember[]> {
+  const [{ data, error }, team] = await Promise.all([
+    createAdminClient().from("intranet_client_assignments").select("user_id").eq("client_id", clientId),
+    getTeam(),
+  ]);
+  if (error) throw error;
+  const assigned = new Set((data ?? []).map((a: { user_id: string }) => a.user_id));
+  return team.filter((m) => m.active && assigned.has(m.id)).sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
 
 // ---------- Clarity (intranet_clarity_daily / intranet_clarity_pages) ----------
 
@@ -850,28 +870,6 @@ export async function getMetaSpendByClient(clientIds: string[], days = 30): Prom
     totals.set(r.client_id, t);
   }
   return totals;
-}
-
-// ---------- Conversión por canal (vista general del cliente) ----------
-
-export type ChannelConversion = { name: string; leads: number; won: number; rate: number };
-
-// Ventas ganadas sobre oportunidades, por origen del CRM. Recibe las
-// oportunidades ya recortadas al período (crmPeriod(...).leads). "Sin origen"
-// queda afuera: mezcla canales y no dice nada de ninguno.
-export function conversionByChannel(leads: Lead[]): ChannelConversion[] {
-  const byChannel = new Map<string, { leads: number; won: number }>();
-  for (const lead of leads) {
-    const name = lead.source?.trim();
-    if (!name) continue;
-    const channel = byChannel.get(name) ?? { leads: 0, won: 0 };
-    channel.leads += 1;
-    if (lead.status === "won") channel.won += 1;
-    byChannel.set(name, channel);
-  }
-  return [...byChannel.entries()]
-    .map(([name, c]) => ({ name, ...c, rate: (c.won * 100) / c.leads }))
-    .sort((a, b) => b.leads - a.leads);
 }
 
 // ---------- Cuentas de clientes (panel de /admin) ----------

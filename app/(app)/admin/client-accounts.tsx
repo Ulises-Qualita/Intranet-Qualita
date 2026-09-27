@@ -2,7 +2,8 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { ClientAvatar } from "@/components/client-avatar";
-import { Card, EmptyState, Pill } from "@/components/ui";
+import { Icon } from "@/components/icons";
+import { Card, EmptyState } from "@/components/ui";
 import type { Client, ClientAccount } from "@/lib/data";
 import {
   type ActionResult,
@@ -76,19 +77,78 @@ function CreateForm({ client, onDone }: { client: Client; onDone: (email: string
   );
 }
 
+// Estado de la cuenta como interruptor: se lee y se cambia en el mismo lugar, y
+// es reversible, así que no pide confirmación.
+function ActiveToggle({ account }: { account: ClientAccount }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="account-status">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={account.active}
+        aria-label={account.active ? "Desactivar cuenta" : "Activar cuenta"}
+        title={account.active ? "Desactivar cuenta" : "Activar cuenta"}
+        className={`toggle${account.active ? " on" : ""}`}
+        disabled={pending}
+        onClick={() =>
+          startTransition(async () => {
+            setError(null);
+            const result = await setClientAccountActive(account.userId, !account.active);
+            if (!result.ok) setError(result.error);
+          })
+        }
+      />
+      <span className={account.active ? "on" : undefined}>{account.active ? "Activa" : "Desactivada"}</span>
+      {error && <p className="form-error form-msg">{error}</p>}
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="copy-btn"
+      onClick={() =>
+        navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1600);
+        })
+      }
+    >
+      <Icon name={copied ? "check" : "copy"} size={14} />
+      {copied ? "Copiada" : "Copiar"}
+    </button>
+  );
+}
+
 function AccountActions({ account, name }: { account: ClientAccount; name: string }) {
   const [mode, setMode] = useState<"idle" | "password" | "delete">("idle");
   const [password, setPassword] = useState("");
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // La contraseña nueva queda a la vista (con copiar) hasta la próxima acción.
+  const [saved, setSaved] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const run = (fn: () => Promise<ActionResult>, okText: string) =>
+  const run = (fn: () => Promise<ActionResult>, onOk?: () => void) =>
     startTransition(async () => {
-      setMsg(null);
+      setError(null);
       const result = await fn();
-      setMsg(result.ok ? { ok: true, text: okText } : { ok: false, text: result.error });
-      if (result.ok) setMode("idle");
+      if (!result.ok) return setError(result.error);
+      setMode("idle");
+      onOk?.();
     });
+
+  const open = (next: "password" | "delete") => {
+    setSaved(null);
+    setError(null);
+    if (next === "password") setPassword(randomPassword());
+    setMode(next);
+  };
 
   return (
     <div className="account-actions">
@@ -97,64 +157,62 @@ function AccountActions({ account, name }: { account: ClientAccount; name: strin
           className="account-form"
           onSubmit={(e) => {
             e.preventDefault();
-            run(() => setClientAccountPassword(account.userId, password), `Contraseña cambiada: ${password}`);
+            const value = password;
+            run(() => setClientAccountPassword(account.userId, value), () => setSaved(value));
           }}
         >
           <PasswordInput value={password} onChange={setPassword} disabled={pending} />
-          <button type="submit" className="connect-btn" disabled={pending}>
-            Guardar
+          <button type="submit" className="btn-secondary btn-sm btn-primary" disabled={pending}>
+            {pending ? "Guardando…" : "Guardar"}
           </button>
-          <button type="button" className="link-connect" onClick={() => setMode("idle")} disabled={pending}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setMode("idle")} disabled={pending}>
             Cancelar
           </button>
         </form>
       ) : mode === "delete" ? (
-        <div className="account-confirm">
-          <span>¿Borrar la cuenta de {name}? No se puede deshacer.</span>
-          <button
-            type="button"
-            className="link-danger"
-            disabled={pending}
-            onClick={() => run(() => deleteClientAccount(account.userId), "Cuenta borrada.")}
-          >
-            Sí, borrar
-          </button>
-          <button type="button" className="link-connect" onClick={() => setMode("idle")} disabled={pending}>
-            Cancelar
-          </button>
+        <div className="account-confirm" role="alertdialog" aria-label={`Borrar la cuenta de ${name}`}>
+          <span>
+            ¿Borrar la cuenta de <b>{name}</b>? No se puede deshacer.
+          </span>
+          <div className="account-buttons">
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setMode("idle")} disabled={pending}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-sm btn-danger"
+              disabled={pending}
+              onClick={() => run(() => deleteClientAccount(account.userId))}
+            >
+              {pending ? "Borrando…" : "Sí, borrar"}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="account-buttons">
-          <button
-            type="button"
-            className="link-connect"
-            disabled={pending}
-            onClick={() => {
-              setPassword(randomPassword());
-              setMode("password");
-            }}
-          >
-            Cambiar contraseña
+          <button type="button" className="btn-secondary btn-sm" disabled={pending} onClick={() => open("password")}>
+            <Icon name="key" size={15} />
+            Contraseña
           </button>
           <button
             type="button"
-            className="link-connect"
+            className="icon-btn icon-btn-sm icon-btn-danger"
+            aria-label={`Borrar la cuenta de ${name}`}
+            title="Borrar cuenta"
             disabled={pending}
-            onClick={() =>
-              run(
-                () => setClientAccountActive(account.userId, !account.active),
-                account.active ? "Cuenta desactivada." : "Cuenta activada.",
-              )
-            }
+            onClick={() => open("delete")}
           >
-            {account.active ? "Desactivar" : "Activar"}
-          </button>
-          <button type="button" className="link-danger" disabled={pending} onClick={() => setMode("delete")}>
-            Borrar
+            <Icon name="trash" size={16} />
           </button>
         </div>
       )}
-      {msg && <p className={`${msg.ok ? "form-ok" : "form-error"} form-msg`}>{msg.text}</p>}
+      {saved && (
+        <p className="form-ok form-msg account-saved">
+          Nueva contraseña: <code>{saved}</code>
+          <CopyButton text={saved} />
+        </p>
+      )}
+      {error && <p className="form-error form-msg">{error}</p>}
     </div>
   );
 }
@@ -201,15 +259,7 @@ export function ClientAccounts({ clients, accounts }: { clients: Client[]; accou
                       </div>
                     </td>
                     <td>{account ? account.email : <span className="muted">Sin cuenta</span>}</td>
-                    <td>
-                      {account ? (
-                        account.active ? (
-                          <Pill variant="activo">Activa</Pill>
-                        ) : (
-                          <Pill variant="pausado">Desactivada</Pill>
-                        )
-                      ) : null}
-                    </td>
+                    <td>{account ? <ActiveToggle account={account} /> : null}</td>
                     <td>
                       {account ? (
                         <AccountActions account={account} name={c.name} />

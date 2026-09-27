@@ -35,6 +35,7 @@ const CLIENT_NAV = (
     { suffix: "/web", label: "WEB", area: "clientes" },
     { suffix: "/tareas", label: "Tareas", area: "tareas" },
     { suffix: "/portal", label: "Portal del cliente", area: "clientes" },
+    { suffix: "/equipo", label: "Equipo", area: "clientes" },
   ] satisfies ClientNavItem[]
 ).filter((item) => SHOW_TASKS || item.suffix !== "/tareas");
 
@@ -58,7 +59,7 @@ export function Sidebar({
         <div className="brand">
           {/* Ambos logos se renderizan y el CSS muestra el del tema activo (sin flash al hidratar). */}
           <Image className="logo logo-light" src="/Logo-nuevo.png" alt="Qualita" width={130} height={34} unoptimized priority />
-          <Image className="logo logo-dark" src="/qualita-logo-blanco.svg" alt="Qualita" width={112} height={46} unoptimized priority />
+          <Image className="logo logo-dark" src="/Logo-Nuevo-Blanco.png" alt="Qualita" width={130} height={34} unoptimized priority />
           <div className="brand-tag">INTRANET</div>
         </div>
 

@@ -7,7 +7,7 @@ import { AREAS, type AreaKey, type Role } from "@/lib/auth-shared";
 import type { TeamMember } from "@/lib/data";
 import { addMember, updateUserAccess } from "./actions";
 
-type Patch = { id: string; role?: Role; areas?: Record<AreaKey, boolean>; active?: boolean };
+type Patch = { id: string; role?: Role; areas?: Record<AreaKey, boolean>; active?: boolean; jobTitle?: string | null };
 
 const fullAreas = (m: TeamMember) =>
   Object.fromEntries(AREAS.map(([k]) => [k, m.areas?.[k] === true])) as Record<AreaKey, boolean>;
@@ -47,9 +47,11 @@ export function UsersAdmin({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-  const [optimistic, applyOptimistic] = useOptimistic(members, (state, { id, role, areas, active }: Patch) =>
+  const [optimistic, applyOptimistic] = useOptimistic(members, (state, { id, role, areas, active, jobTitle }: Patch) =>
     state.map((m) =>
-      m.id === id ? { ...m, role: role ?? m.role, areas: areas ?? m.areas, active: active ?? m.active } : m,
+      m.id === id
+        ? { ...m, role: role ?? m.role, areas: areas ?? m.areas, active: active ?? m.active, jobTitle: jobTitle === undefined ? m.jobTitle : jobTitle }
+        : m,
     ),
   );
 
@@ -69,7 +71,7 @@ export function UsersAdmin({
 
       <Card
         title="Usuarios y accesos"
-        hint={canEdit ? "Activá o desactivá el acceso a cada área. El rol Admin ve todo." : "Solo un usuario con rol Admin puede editar."}
+        hint={canEdit ? "Definí el puesto de cada uno y activá o desactivá el acceso a cada área. El rol Admin ve todo." :"Solo un usuario con rol Admin puede editar."}
       >
         {error && <p className="form-error">{error}</p>}
         <div className="table-wrap">
@@ -77,6 +79,7 @@ export function UsersAdmin({
             <thead>
               <tr>
                 <th>Usuario</th>
+                <th>Puesto</th>
                 <th>Rol</th>
                 <th>Estado</th>
                 <th>Acceso a áreas</th>
@@ -97,6 +100,23 @@ export function UsersAdmin({
                           <span>{m.email}</span>
                         </div>
                       </div>
+                    </td>
+                    <td>
+                      {/* key: si el guardado falla y el optimista vuelve atrás, el input se resetea. */}
+                      <input
+                        key={m.jobTitle ?? ""}
+                        className="role-sel job-input"
+                        defaultValue={m.jobTitle ?? ""}
+                        placeholder={canEdit ? "Sin puesto" : "—"}
+                        maxLength={60}
+                        aria-label={`Puesto de ${m.name}`}
+                        disabled={!canEdit}
+                        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                        onBlur={(e) => {
+                          const value = e.currentTarget.value.trim().replace(/\s+/g, " ");
+                          if (value !== (m.jobTitle ?? "")) save({ id: m.id, jobTitle: value || null });
+                        }}
+                      />
                     </td>
                     <td>
                       <select

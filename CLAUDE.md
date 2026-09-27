@@ -118,6 +118,14 @@ No hay framework de tests configurado todavía.
   modelo client-safe. El **estado solo lo mueve un admin**, y eso no se puede
   expresar con RLS (una política no ve el valor anterior de la fila): va como
   trigger `forum_status_guard_intranet`.
+- Puesto (`intranet_profiles.job_title`, `docs/sql/2026-09-26-perfil-puesto.sql`):
+  texto libre que define el admin en `/admin` (Diseñador/a, Project manager…), **solo
+  para mostrar**; los permisos siguen siendo `role` + `areas`. `getTeam()` lo expone
+  como `jobTitle` y selecciona `*` para no romper si la columna todavía no existe.
+- Pestaña Equipo de cada cliente (`/clientes/[slug]/equipo` y `/mi-empresa/equipo`,
+  misma `EquipoView`): los miembros activos de `intranet_client_assignments`, vía
+  `getClientTeam()` con service_role (la cuenta del cliente no ve asignaciones ni
+  perfiles por RLS).
 - Tablas que todavía no se crearon: chequear con `isMissingTable()` de
   `lib/supabase/server.ts`. PostgREST responde **`PGRST205`** (no la encuentra en su
   schema cache), no el `42P01` de Postgres; mirar solo uno deja el otro sin cubrir.

@@ -12,6 +12,8 @@ import { greeting, longToday, money } from "@/lib/format";
 
 // Período del gasto en Meta que muestra la tabla de clientes.
 const META_DAYS = 30;
+// Clientes a cargo que entran como accesos directos en el saludo; el resto va como "+N más".
+const WELCOME_CLIENTS = 5;
 
 export default async function InicioPage() {
   const session = await getAreaSession("inicio");
@@ -38,7 +40,8 @@ export default async function InicioPage() {
 
   // El saludo es personal: solo lo que tiene a cargo quien está mirando. Los KPIs
   // de abajo son del estudio, por eso el texto dice "tenés".
-  const mine = clients.filter((c) => c.assigneeIds.includes(session.user.id)).length;
+  const mine = clients.filter((c) => c.assigneeIds.includes(session.user.id));
+  const seesClients = canAccess(session.profile, "clientes");
 
   const load = activeMembers
     .map((m) => ({ member: m, count: clients.filter((c) => c.assigneeIds.includes(m.id)).length }))
@@ -51,7 +54,9 @@ export default async function InicioPage() {
       <Topbar crumb="Qualita" title="Inicio" />
       <section className="view">
         <div className="card welcome mb-4">
-          <UserAvatar className="welcome-av" name={session.user.name} avatarUrl={session.user.avatarUrl} />
+          <span className="welcome-ring">
+            <UserAvatar className="welcome-av" name={session.user.name} avatarUrl={session.user.avatarUrl} />
+          </span>
           <div className="welcome-txt">
             <h2>
               {greeting()}, <span className="welcome-name">{session.user.name.split(" ")[0]}</span>
@@ -59,11 +64,44 @@ export default async function InicioPage() {
             <p>
               <span className="welcome-date">{longToday()}</span>
               {" · "}
-              {mine === 0
+              {mine.length === 0
                 ? "No tenés clientes a cargo."
-                : `Tenés ${mine} cliente${mine === 1 ? "" : "s"} a cargo.`}
+                : `Tenés ${mine.length} cliente${mine.length === 1 ? "" : "s"} a cargo.`}
             </p>
           </div>
+          {/* Accesos directos a los clientes a cargo: pastillas con logo y nombre. */}
+          {mine.length > 0 && (
+            <ul className="welcome-clients" aria-label="Tus clientes">
+              {mine.slice(0, WELCOME_CLIENTS).map((c) => {
+                const body = (
+                  <>
+                    <span aria-hidden>
+                      <ClientAvatar client={c} />
+                    </span>
+                    <span className="welcome-pill-name">{c.name}</span>
+                  </>
+                );
+                return (
+                  <li key={c.id}>
+                    {seesClients ? (
+                      <Link href={`/clientes/${c.slug}`} className="welcome-pill">
+                        {body}
+                      </Link>
+                    ) : (
+                      <span className="welcome-pill">{body}</span>
+                    )}
+                  </li>
+                );
+              })}
+              {mine.length > WELCOME_CLIENTS && (
+                <li>
+                  <span className="welcome-pill more" title={`${mine.length - WELCOME_CLIENTS} clientes más`}>
+                    +{mine.length - WELCOME_CLIENTS}
+                  </span>
+                </li>
+              )}
+            </ul>
+          )}
         </div>
 
         <div className="grid g4 mb-4">
