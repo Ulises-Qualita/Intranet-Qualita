@@ -30,6 +30,8 @@ const LEAD_FIELDS = [
   "priority",
   "active",
   "create_date",
+  // Último cambio de etapa: da el tiempo de respuesta Nuevo → Contactado.
+  "date_last_stage_update",
   "tag_ids",
   // Propiedades del lead: ahí va el "Ticket" que cargan los vendedores.
   "lead_properties",
@@ -47,6 +49,7 @@ type OdooLeadRow = {
   priority?: string | false;
   active?: boolean;
   create_date?: string;
+  date_last_stage_update?: string | false;
   tag_ids?: number[];
   lead_properties?: OdooProperty[] | false;
 };
@@ -187,6 +190,8 @@ export async function getOdooOpportunities(session: OdooSession): Promise<CrmLea
     tags: (r.tag_ids ?? []).map((id) => tagName.get(id)).filter((t): t is string => !!t),
     temperature: temperatureOf(r.priority, r.probability),
     createdAt: r.create_date ? `${r.create_date.replace(" ", "T")}Z` : new Date().toISOString(),
+    // Odoo devuelve las fechas en UTC y sin zona.
+    stageChangedAt: r.date_last_stage_update ? `${r.date_last_stage_update.replace(" ", "T")}Z` : null,
     // En Odoo las perdidas se archivan (active = false) y las ganadas quedan con
     // probabilidad 100. Ojo: si después se las mueve a una etapa posterior (en
     // fábrica, entregado…), Odoo les recalcula la probabilidad y dejan de figurar

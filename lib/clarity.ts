@@ -135,20 +135,39 @@ export type ClarityDay = {
   script_errors: number;
   error_clicks: number;
   devices: { name: string; sessions: number }[];
+  // Origen del tráfico: la URL de referencia (instagram.com, l.facebook.com…).
+  sources: { name: string; sessions: number }[];
   raw: ClarityMetric[];
 };
 
 export type ClarityPage = { url: string; sessions: number };
 
-function toDay(overall: ClarityMetric[], devices: ClarityMetric[]): ClarityDay {
-  const traffic = findMetric(overall, "Traffic")?.information ?? [];
-  const sum = (key: string) => traffic.reduce((total, row) => total + (toNumber(row[key]) ?? 0), 0);
+// Un campo de la fila sin importar mayúsculas: Clarity no es consistente
+// (distinctUserCount, pagesPerSessionPercentage…).
+const field = (row: Record<string, unknown> | undefined, name: string) =>
+  row ? Object.entries(row).find(([key]) => clean(key) === clean(name))?.[1] : undefined;
 
-  return {
+// Las listas que la respuesta general ya trae armadas (Device, ReferrerUrl,
+// PopularPages…): [{ name|url, sessionsCount|visitsCount }], de mayor a menor.
+function ranking(metrics: ClarityMetric[], metric: string, nameKey: string, countKey: string, fallback: string) {
+  return (findMetric(metrics, metric)?.information ?? [])
+    .map((row) => ({ name: String(field(row, nameKey) ?? fallback), sessions: toNumber(field(row, countKey)) ?? 0 }))
+    .filter((d) => d.sessions > 0)
+    .sort((a, b) => b.sessions - a.sessions);
+}
+
+// La foto del día sale entera de la respuesta general. También se usa para
+// recalcular días viejos a partir de la columna raw.
+export function parseClarityDay(overall: ClarityMetric[]): { day: ClarityDay; pages: ClarityPage[] } {
+  const traffic = findMetric(overall, "Traffic")?.information ?? [];
+  const sum = (key: string) => traffic.reduce((total, row) => total + (toNumber(field(row, key)) ?? 0), 0);
+
+  const day: ClarityDay = {
     sessions: sum("totalSessionCount"),
     bot_sessions: sum("totalBotSessionCount"),
-    distinct_users: sum("distantUserCount"),
-    pages_per_session: toNumber(traffic[0]?.PagesPerSessionPercentage),
+    distinct_users: sum("distinctUserCount"),
+    // Pese al nombre, es la cantidad de páginas por sesión (p. ej. 1,39).
+    pages_per_session: toNumber(field(traffic[0], "pagesPerSessionPercentage")),
     scroll_depth: metricValue(overall, "ScrollDepth", ["averageScrollDepth", "scrollDepth"]),
     total_time: metricValue(overall, "EngagementTime", ["totalTime", "totalEngagementTime"]),
     active_time: metricValue(overall, "EngagementTime", ["activeTime", "activeEngagementTime"]),
@@ -158,30 +177,25 @@ function toDay(overall: ClarityMetric[], devices: ClarityMetric[]): ClarityDay {
     quickbacks: metricTotal(overall, "QuickbackClick", ["sessionsWithQuickbackClick", "subTotal", "sessionsCount"]),
     script_errors: metricTotal(overall, "ScriptErrorCount", ["sessionsWithScriptErrors", "subTotal", "sessionsCount"]),
     error_clicks: metricTotal(overall, "ErrorClickCount", ["sessionsWithErrorClicks", "subTotal", "sessionsCount"]),
-    devices: (findMetric(devices, "Traffic")?.information ?? [])
-      .map((row) => ({ name: String(row.Device ?? "Otro"), sessions: toNumber(row.totalSessionCount) ?? 0 }))
-      .filter((d) => d.sessions > 0)
-      .sort((a, b) => b.sessions - a.sessions),
+    devices: ranking(overall, "Device", "name", "sessionsCount", "Otro"),
+    // Sin referencia = entró directo (URL tipeada, favorito, app que no la informa).
+    sources: ranking(overall, "ReferrerUrl", "name", "sessionsCount", "Directo"),
     raw: overall,
   };
+
+  // Visitas por página: la unidad es visitas, no sesiones (una sesión puede ver varias).
+  const pages = ranking(overall, "PopularPages", "url", "visitsCount", "")
+    .filter((p) => p.name)
+    .slice(0, 25)
+    .map((p) => ({ url: p.name, sessions: p.sessions }));
+
+  return { day, pages };
 }
 
-// Foto del día: tres llamadas de las diez diarias, y quedan siete de margen para
-// reintentos. Si una de las de corte falla, la general igual se guarda.
+// Foto del día: una sola llamada de las diez diarias. La respuesta general ya trae
+// dispositivos, referencias y páginas; los cortes por dimensión no hacen falta.
 export async function getClarityDay(token: string): Promise<{ day: ClarityDay; pages: ClarityPage[] }> {
-  const overall = await query(token, {});
-  const [devices, urls] = await Promise.all([
-    query(token, { dimension1: "Device" }).catch(() => [] as ClarityMetric[]),
-    query(token, { dimension1: "URL" }).catch(() => [] as ClarityMetric[]),
-  ]);
-
-  const pages = (findMetric(urls, "Traffic")?.information ?? [])
-    .map((row) => ({ url: String(row.URL ?? ""), sessions: toNumber(row.totalSessionCount) ?? 0 }))
-    .filter((p) => p.url && p.sessions > 0)
-    .sort((a, b) => b.sessions - a.sessions)
-    .slice(0, 25);
-
-  return { day: toDay(overall, devices), pages };
+  return parseClarityDay(await query(token, {}));
 }
 
 // Valida el token contra la API antes de guardarlo, para no dejar una integración

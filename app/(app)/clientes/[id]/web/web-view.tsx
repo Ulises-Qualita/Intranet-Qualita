@@ -5,6 +5,7 @@ import { Card, EmptyState, Kpi, MissingIntegration } from "@/components/ui";
 import { getClaritySecrets } from "@/lib/clarity";
 import { type Client, getClarityDaily, getClarityPages } from "@/lib/data";
 import { compact, integer, orDash, percent, relativeTime, safeDiv, shortDate } from "@/lib/format";
+import { PagesTable } from "./pages-table";
 import { RefreshClarity } from "./refresh-button";
 
 // Segundos a "2m 34s": Clarity informa tiempos por sesión y en segundos crudos no
@@ -50,6 +51,9 @@ export async function WebView({ client, base, internal }: { client: Client; base
 
   const sum = (pick: (d: (typeof daily)[number]) => number) => daily.reduce((total, d) => total + pick(d), 0);
   const sessions = sum((d) => d.sessions);
+  // Clarity cuenta visitas por página (una sesión puede ver varias): el share va
+  // sobre el total de visitas, no de sesiones.
+  const visits = pages.reduce((total, p) => total + p.sessions, 0);
   const last = daily.at(-1);
   const period = daily.length ? `${shortDate(daily[0].as_of)} – ${shortDate(daily.at(-1)!.as_of)}` : "";
 
@@ -68,7 +72,6 @@ export async function WebView({ client, base, internal }: { client: Client; base
     { name: "Clics muertos", value: sum((d) => d.dead_clicks) },
     { name: "Scroll excesivo", value: sum((d) => d.excessive_scroll) },
     { name: "Vueltas rápidas", value: sum((d) => d.quickbacks) },
-    { name: "Errores de script", value: sum((d) => d.script_errors) },
     { name: "Clics con error", value: sum((d) => d.error_clicks) },
   ].filter((f) => f.value > 0);
 
@@ -102,7 +105,12 @@ export async function WebView({ client, base, internal }: { client: Client; base
           <>
             <div className="grid g4 mb-4">
               <Kpi label="Sesiones" icon="reach" value={compact(sessions)} sub={period} hero />
-              <Kpi label="Usuarios distintos" icon="users" value={compact(sum((d) => d.distinct_users))} sub={period} />
+              <Kpi
+                label="Scroll"
+                icon="eye"
+                value={orDash(average((d) => d.scroll_depth), (v) => percent(v, 0))}
+                sub="Profundidad promedio por página"
+              />
               <Kpi
                 label="Páginas por sesión"
                 icon="media"
@@ -117,50 +125,19 @@ export async function WebView({ client, base, internal }: { client: Client; base
               />
             </div>
 
-            <div className="grid mb-4">
-              <Card title="Sesiones por día" hint={period}>
+            {/* El gráfico comparte fila con Dispositivos: a todo el ancho, con pocos días,
+                quedaba estirado. */}
+            <div className="grid g-2-1 items-stretch mb-4">
+              <Card title="Sesiones por día" hint={period} className="fill-card">
                 <LineChart
                   id="clarity"
-                  height={260}
+                  height={240}
                   labels={daily.map((d) => shortDate(d.as_of))}
                   series={[
                     { label: "Sesiones", data: daily.map((d) => d.sessions), color: "#B50CC5", fillOpacity: 0.2 },
                     { label: "Bots", data: daily.map((d) => d.bot_sessions), color: "#FE6F61", fillOpacity: 0.14 },
                   ]}
                 />
-              </Card>
-            </div>
-
-            <div className="grid g-2-1 items-stretch mb-4">
-              <Card
-                title="Páginas más vistas"
-                hint={pages.length ? `${pages.length} páginas` : undefined}
-                className="fill-card"
-              >
-                {pages.length ? (
-                  <div className="table-wrap">
-                    <table className="ctable">
-                      <thead>
-                        <tr>
-                          <th>Página</th>
-                          <th>Sesiones</th>
-                          <th>Share</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pages.slice(0, 12).map((p) => (
-                          <tr key={p.url}>
-                            <td title={p.url}>{pagePath(p.url)}</td>
-                            <td>{integer(p.sessions)}</td>
-                            <td>{orDash(safeDiv(p.sessions * 100, sessions), (v) => percent(v))}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <EmptyState label="Sin datos">Todavía no hay páginas registradas en este período.</EmptyState>
-                )}
               </Card>
 
               <Card title="Dispositivos" hint={devices.size ? undefined : "Sin datos"} className="fill-card">
@@ -175,6 +152,21 @@ export async function WebView({ client, base, internal }: { client: Client; base
                 )}
               </Card>
             </div>
+
+            <Card title="Páginas más vistas" hint={pages.length ? `${pages.length} páginas` : undefined} className="mb-4">
+              {pages.length ? (
+                <PagesTable
+                  rows={pages.map((p) => ({
+                    url: p.url,
+                    path: pagePath(p.url),
+                    visits: integer(p.sessions),
+                    share: orDash(safeDiv(p.sessions * 100, visits), (v) => percent(v)),
+                  }))}
+                />
+              ) : (
+                <EmptyState label="Sin datos">Todavía no hay páginas registradas en este período.</EmptyState>
+              )}
+            </Card>
 
             <Card
               title="Señales de fricción"

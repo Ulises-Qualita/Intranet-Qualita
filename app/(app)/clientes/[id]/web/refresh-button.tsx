@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { Icon } from "@/components/icons";
 import { refreshClarity } from "./actions";
 
-// Sincronizar a mano gasta 3 de las 10 consultas diarias que Clarity permite por
+// Sincronizar a mano gasta 1 de las 10 consultas diarias que Clarity permite por
 // proyecto, así que el aviso va en el título del botón y no escondido.
 export function RefreshClarity({ clientId }: { clientId: string }) {
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export function RefreshClarity({ clientId }: { clientId: string }) {
         className="btn-secondary"
         onClick={refresh}
         disabled={pending}
-        title="Gasta 3 de las 10 consultas diarias que Clarity permite por proyecto"
+        title="Gasta 1 de las 10 consultas diarias que Clarity permite por proyecto"
       >
         <Icon name="refresh" size={15} strokeWidth={2} />
         {pending ? "Sincronizando…" : "Actualizar"}

@@ -9,7 +9,7 @@ import { Icon } from "./icons";
 // Por defecto el calendario nativo solo se abre desde su iconito: así se abre
 // con un click en cualquier parte del campo. showPicker puede tirar (navegador
 // viejo, o si no viene de un gesto del usuario); ahí queda el comportamiento normal.
-function openPicker(e: React.MouseEvent<HTMLInputElement>) {
+export function openPicker(e: React.MouseEvent<HTMLInputElement>) {
   try {
     e.currentTarget.showPicker?.();
   } catch {}

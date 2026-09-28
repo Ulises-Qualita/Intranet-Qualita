@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
         // En el finally: si la consulta se cortó a mitad de camino, los tokens de
         // las vueltas que sí corrieron ya se gastaron y tienen que quedar contados.
         if (tokens.input || tokens.output) {
-          await recordUsage(session.user.id, thread?.id ?? null, MODEL, tokens);
+          await recordUsage("agente", session.user.id, thread?.id ?? null, MODEL, tokens);
         }
         controller.close();
       }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
 import type { AreaKey } from "@/lib/auth-shared";
+import { isTabHidden, type TabKey } from "@/lib/client-tabs";
 import type { SessionUser } from "@/lib/auth";
 import type { Client } from "@/lib/data";
 import { SHOW_TASKS } from "@/lib/tasks";
@@ -25,17 +26,22 @@ const STUDIO_NAV: { href: string; label: string; icon: IconName; area: AreaKey |
 
 // Solo las vistas de consulta del cliente. Editar se entra desde la tabla de
 // /clientes: es una acción de gestión, no una solapa que se mire a diario.
-type ClientNavItem = { suffix: string; label: string; area: AreaKey };
+// tab: la clave con que se desactiva en "Editar cliente" (lib/client-tabs.ts);
+// Vista general no tiene, siempre se ve.
+type ClientNavItem = { suffix: string; label: string; area: AreaKey; tab?: TabKey };
 const CLIENT_NAV = (
   [
     { suffix: "", label: "Vista general", area: "clientes" },
-    { suffix: "/meta", label: "META", area: "meta" },
-    { suffix: "/crm", label: "CRM", area: "crm" },
+    { suffix: "/meta", label: "META", area: "meta", tab: "meta" },
+    { suffix: "/crm", label: "CRM", area: "crm", tab: "crm" },
     // Sin área propia: analítica del sitio, para quien ya ve el panel del cliente.
-    { suffix: "/web", label: "WEB", area: "clientes" },
-    { suffix: "/tareas", label: "Tareas", area: "tareas" },
-    { suffix: "/portal", label: "Portal del cliente", area: "clientes" },
-    { suffix: "/equipo", label: "Equipo", area: "clientes" },
+    { suffix: "/web", label: "WEB", area: "clientes", tab: "web" },
+    { suffix: "/reuniones", label: "Reuniones", area: "clientes", tab: "reuniones" },
+    // Solo en el panel del equipo: la cuenta del cliente no la tiene.
+    { suffix: "/reportes", label: "Reportes", area: "clientes", tab: "reportes" },
+    { suffix: "/tareas", label: "Tareas", area: "tareas", tab: "tareas" },
+    { suffix: "/portal", label: "Portal del cliente", area: "clientes", tab: "portal" },
+    { suffix: "/equipo", label: "Equipo", area: "clientes", tab: "equipo" },
   ] satisfies ClientNavItem[]
 ).filter((item) => SHOW_TASKS || item.suffix !== "/tareas");
 
@@ -88,7 +94,9 @@ export function Sidebar({
                   {/* El div interno es el que recorta: la animación va por la fila del grid. */}
                   <div className={`subnav${selected ? " open" : ""}`}>
                     <div className="subnav-in">
-                      {CLIENT_NAV.filter((item) => access[item.area]).map((item) => (
+                      {CLIENT_NAV.filter(
+                        (item) => access[item.area] && !(item.tab && isTabHidden(c.hiddenTabs, "team", item.tab)),
+                      ).map((item) => (
                         <Link
                           key={item.suffix}
                           href={base + item.suffix}

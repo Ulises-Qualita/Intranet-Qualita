@@ -14,6 +14,7 @@ const TAB_ICONS: Record<string, IconName> = {
   CRM: "funnel",
   WEB: "eye",
   Portal: "media",
+  Reuniones: "calendar",
   Equipo: "team",
 };
 

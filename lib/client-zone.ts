@@ -1,6 +1,8 @@
 // Zona de las cuentas de clientes (/mi-empresa). Solo server.
 import { cache } from "react";
 import { type ClientSession, getClientSession } from "./auth";
+import { calendarConfigured } from "./calendar";
+import { isTabHidden, type TabKey } from "./client-tabs";
 import { type Client, getAllClients } from "./data";
 
 export type ClientZone = { session: ClientSession; client: Client };
@@ -19,16 +21,20 @@ export const getClientZone = cache(async (): Promise<ClientZone | null> => {
 // aparecen pantallas vacías que dependen de algo que configura el equipo.
 export const CLIENT_BASE = "/mi-empresa";
 
+// Además, el equipo puede desactivar cualquiera (menos Vista general) desde
+// "Editar cliente"; esas no aparecen aunque la integración esté conectada.
 export function clientTabs(client: Client) {
-  return [
+  const tabs: { href: string; label: string; show: boolean; tab?: TabKey }[] = [
     { href: CLIENT_BASE, label: "Vista general", show: true },
-    { href: `${CLIENT_BASE}/meta`, label: "META", show: client.conn.meta },
-    { href: `${CLIENT_BASE}/crm`, label: "CRM", show: client.conn.crm },
-    { href: `${CLIENT_BASE}/web`, label: "WEB", show: client.conn.clarity },
-    { href: `${CLIENT_BASE}/portal`, label: "Portal", show: client.conn.notion },
+    { href: `${CLIENT_BASE}/meta`, label: "META", show: client.conn.meta, tab: "meta" },
+    { href: `${CLIENT_BASE}/crm`, label: "CRM", show: client.conn.crm, tab: "crm" },
+    { href: `${CLIENT_BASE}/web`, label: "WEB", show: client.conn.clarity, tab: "web" },
+    { href: `${CLIENT_BASE}/portal`, label: "Portal", show: client.conn.notion, tab: "portal" },
+    { href: `${CLIENT_BASE}/reuniones`, label: "Reuniones", show: calendarConfigured(), tab: "reuniones" },
     // Siempre visible: si no hay nadie asignado, la vista lo dice.
-    { href: `${CLIENT_BASE}/equipo`, label: "Equipo", show: true },
-  ]
-    .filter((t) => t.show)
+    { href: `${CLIENT_BASE}/equipo`, label: "Equipo", show: true, tab: "equipo" },
+  ];
+  return tabs
+    .filter((t) => t.show && !(t.tab && isTabHidden(client.hiddenTabs, "client", t.tab)))
     .map(({ href, label }) => ({ href, label }));
 }

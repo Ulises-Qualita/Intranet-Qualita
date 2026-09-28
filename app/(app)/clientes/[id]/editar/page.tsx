@@ -7,6 +7,7 @@ import { getClient, getTeam } from "@/lib/data";
 import { AssigneesPicker } from "./assignees-picker";
 import { ClientEditForm } from "./client-edit-form";
 import { LogoUploader } from "./logo-uploader";
+import { TabsPicker } from "./tabs-picker";
 
 export default async function EditarClientePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -37,7 +38,10 @@ export default async function EditarClientePage({ params }: { params: Promise<{ 
             <ClientEditForm client={client} />
             <AssigneesPicker clientId={client.id} team={activeTeam} assigneeIds={client.assigneeIds} />
           </div>
-          <LogoUploader client={client} />
+          <div className="grid">
+            <LogoUploader client={client} />
+            <TabsPicker clientId={client.id} hiddenTabs={client.hiddenTabs} />
+          </div>
         </div>
       </section>
     </>

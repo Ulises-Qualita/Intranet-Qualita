@@ -2,7 +2,7 @@
 // cliente.
 //
 // Una foto por día y nada más. Clarity permite 10 llamadas por proyecto por día y
-// cada foto usa 3, así que correrlo más seguido no aporta: las ventanas de 24 h se
+// cada foto usa 1, pero correrlo más seguido no aporta: las ventanas de 24 h se
 // solaparían y habría que decidir cuál pisa a cuál para no contar sesiones dos
 // veces. La vista lee siempre de las tablas, nunca de la API.
 import { randomUUID } from "node:crypto";
@@ -21,9 +21,16 @@ export async function syncClarityClient(clientId: string): Promise<ClaritySyncRe
     const db = createAdminClient();
     const as_of = todayISO();
 
-    const { error } = await db
-      .from("intranet_clarity_daily")
-      .upsert({ client_id: clientId, as_of, ...day, synced_at: new Date().toISOString() }, { onConflict: "client_id,as_of" });
+    const upsertDay = (row: Record<string, unknown>) =>
+      db.from("intranet_clarity_daily").upsert(row, { onConflict: "client_id,as_of" });
+    const row = { client_id: clientId, as_of, ...day, synced_at: new Date().toISOString() };
+    let { error } = await upsertDay(row);
+    // Sin la columna sources (docs/sql/2026-09-28-reportes.sql) se guarda el resto.
+    if (error?.code === "42703" || error?.code === "PGRST204") {
+      const rest: Record<string, unknown> = { ...row };
+      delete rest.sources;
+      ({ error } = await upsertDay(rest));
+    }
     if (error) throw error;
 
     if (pages.length) {

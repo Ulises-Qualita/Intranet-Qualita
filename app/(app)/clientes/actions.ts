@@ -3,6 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getAreaSession } from "@/lib/auth";
 import { isClientStatus } from "@/lib/client-status";
+import { isTabKey, parseHiddenTabs, tabInZone, type TabZone } from "@/lib/client-tabs";
 import { crmProviderLabel, isCrmProvider } from "@/lib/crm-shared";
 import { deleteCrmSecrets, getCrmSecrets, saveCrmSecrets, syncCrmClient } from "@/lib/crm-sync";
 import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
@@ -128,6 +129,38 @@ export async function setClientAssignee(clientId: string, userId: string, assign
     : await supabase.from("intranet_client_assignments").delete().eq("client_id", clientId).eq("user_id", userId);
 
   if (error) return { ok: false, error: dbError(error.code, "No se pudo actualizar el responsable.") };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// Activa o desactiva una solapa del cliente para el equipo o para la cuenta del
+// cliente. Se lee y se reescribe la lista de esa fila: dos clics seguidos sobre
+// solapas distintas no se pisan porque cada uno parte de lo que hay guardado.
+export async function setClientTab(clientId: string, zone: TabZone, tab: string, visible: boolean): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if ((zone !== "team" && zone !== "client") || !isTabKey(tab) || !tabInZone(tab, zone)) {
+    return { ok: false, error: "Solapa inválida." };
+  }
+
+  const supabase = await createClient();
+  const { data: row, error: readError } = await supabase
+    .from("intranet_clients")
+    .select("hidden_tabs")
+    .eq("id", clientId)
+    .maybeSingle<{ hidden_tabs: unknown }>();
+  if (readError?.code === "42703") return { ok: false, error: "Falta correr docs/sql/2026-09-28-solapas-cliente.sql en Supabase." };
+  if (readError || !row) return { ok: false, error: dbError(readError?.code, "No se encontró el cliente.") };
+
+  const hidden = parseHiddenTabs(row.hidden_tabs);
+  hidden[zone] = visible ? hidden[zone].filter((k) => k !== tab) : [...new Set([...hidden[zone], tab])];
+
+  const { data, error } = await supabase
+    .from("intranet_clients")
+    .update({ hidden_tabs: hidden, updated_at: new Date().toISOString() })
+    .eq("id", clientId)
+    .select("id");
+  if (error || !data?.length) return { ok: false, error: dbError(error?.code, "No se pudo guardar el cambio.") };
 
   revalidatePath("/", "layout");
   return { ok: true, error: null };

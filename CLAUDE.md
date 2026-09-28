@@ -68,7 +68,11 @@ No hay framework de tests configurado todavía.
   grabaciones). `lib/clarity.ts` (API + secrets), `lib/clarity-sync.ts`. Ojo:
   la doc de Microsoft solo detalla los campos de la métrica `Traffic`; el parser
   prueba nombres candidatos y guarda la respuesta cruda en `raw` para poder corregir
-  el mapeo sin perder datos.
+  el mapeo sin perder datos. Los nombres de campo no son consistentes en mayúsculas
+  (`distinctUserCount`, `pagesPerSessionPercentage`): se leen sin distinguirlas. La
+  respuesta general ya trae `Device`, `ReferrerUrl` y `PopularPages`, así que la foto
+  diaria es **una sola consulta** (`parseClarityDay`; los cortes por dimensión volvían
+  vacíos). `docs/sql/2026-09-28-clarity-recalculo.sql` recalcula los días viejos desde `raw`.
 - Notion: fuente de verdad de las **tareas**, en **solo lectura** y **en vivo** (no se
   espeja en Supabase). Integración *interna* del workspace: un único `NOTION_TOKEN` (env,
   server), no OAuth por cliente. Dos niveles de config:
@@ -109,7 +113,10 @@ No hay framework de tests configurado todavía.
   dice. `lib/agent/usage.ts` registra tokens y costo estimado por consulta en
   `intranet_agent_usage` (precios por millón en una tabla del módulo; el costo se
   guarda ya convertido para que las filas viejas no cambien de valor), y alimenta
-  las cards de gasto de `/admin`.
+  las cards de gasto de `/admin`. La misma tabla registra todo el consumo de IA,
+  separado por `kind` (`agente` | `reporte` | `analisis`, lista en `USAGE_KINDS`;
+  `docs/sql/2026-09-28-uso-por-tipo.sql`): `recordUsage(kind, …)` y `getAiUsage()`,
+  y `/admin` muestra un bloque por tipo.
 - Foro (`/foro`, solapa del sidebar sin área propia, como el agente): mensajes con
   tipo (error/mejora/pregunta), estado y respuestas, en `intranet_forum_posts` /
   `intranet_forum_comments`. **Una sola pantalla**, sin ruta por mensaje:
@@ -126,6 +133,43 @@ No hay framework de tests configurado todavía.
   misma `EquipoView`): los miembros activos de `intranet_client_assignments`, vía
   `getClientTeam()` con service_role (la cuenta del cliente no ve asignaciones ni
   perfiles por RLS).
+- Pestaña Reuniones (`/clientes/[slug]/reuniones` y `/mi-empresa/reuniones`, misma
+  `ReunionesView`, área `clientes`): reuniones de Google Calendar reconocidas por la
+  nomenclatura `"<Cliente> & Qualita <motivo>"` (el nombre se compara con
+  `client.name`, sin distinguir mayúsculas ni tildes). Se leen **en vivo** los
+  calendarios de todo el equipo con una **cuenta de servicio con delegación de
+  dominio** (env `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_KEY`; scope
+  `calendar.events.readonly`, autorizado por un super admin en la consola de
+  Workspace). `lib/calendar.ts`: como con Notion, se cachea solo la consulta de todo
+  el estudio (`unstable_cache` 5 min, tag `calendar-meetings`) y el filtro por cliente
+  va afuera. Ventana: 90 días atrás, 60 adelante. La cuenta del cliente no ve la
+  descripción del evento; sin env, la solapa no aparece en `/mi-empresa`.
+- Pestaña Reportes (`/clientes/[slug]/reportes`, solo equipo, área `clientes`): genera
+  un HTML con el diseño de `docs/DML_reporte_mensual_5.html` para el período elegido
+  (máx. 90 días atrás, lo que guardan Meta y el CRM). `lib/report/data.ts` junta Meta,
+  CRM y Clarity (cada parte es null si no hay datos y la sección se omite; Google Ads
+  figura como pendiente); `lib/report/ai.ts` pide a Claude los textos con structured
+  outputs (registra consumo en `intranet_agent_usage`); `lib/report/html.ts` renderiza
+  en el server con el CSS copiado tal cual en `lib/report/styles.ts`. La generación
+  (`lib/report/generate.ts`) corre en `POST /api/reportes` por SSE: manda los pasos y
+  el razonamiento resumido de Claude, que el modal de la solapa muestra en vivo. Se guarda en
+  `intranet_client_reports` (`docs/sql/2026-09-28-reportes.sql`) y se sirve desde
+  `/api/reportes/[id]` con CSP `sandbox`. "Modificar" en el historial abre un chat
+  (`POST /api/reportes/[id]/editar`, SSE; `lib/report/edit.ts`): Claude recibe el HTML
+  sin las imágenes base64 (marcadores `__IMG_n__`) y devuelve reemplazos exactos
+  `find → replace` que se aplican todo o nada (reintenta hasta 2 veces si un fragmento
+  no coincide; se rechaza código ejecutable). Guarda la versión anterior en
+  `previous_html` para deshacer un nivel (`docs/sql/2026-09-28-reportes-edicion.sql`). La migración de reportes también agrega
+  `intranet_leads.stage_changed_at` (Odoo `date_last_stage_update`, para el tiempo de
+  respuesta) e `intranet_clarity_daily.sources` (origen del tráfico, de `ReferrerUrl`).
+- Solapas por cliente: en "Editar cliente" → Solapas se activa o desactiva cada una,
+  por separado para el equipo y para la cuenta del cliente (Vista general siempre se
+  ve). Catálogo en `lib/client-tabs.ts`; se guardan las **ocultas** en
+  `intranet_clients.hidden_tabs` (`docs/sql/2026-09-28-solapas-cliente.sql`), así una
+  solapa nueva aparece activa sin migrar. `Client.hiddenTabs` filtra el sidebar y
+  `clientTabs()`, y cada solapa tiene un `layout.tsx` con `TeamTabGate` /
+  `ClientTabGate` (`components/tab-gate.tsx`) para que no se pueda entrar por URL.
+  Una solapa nueva del cliente tiene que sumarse a `CLIENT_TABS` y llevar ese layout.
 - Tablas que todavía no se crearon: chequear con `isMissingTable()` de
   `lib/supabase/server.ts`. PostgREST responde **`PGRST205`** (no la encuentra en su
   schema cache), no el `42P01` de Postgres; mirar solo uno deja el otro sin cubrir.

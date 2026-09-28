@@ -179,6 +179,8 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
         amount: parseAmount(fieldOf(r.custom_fields_values, TICKET_FIELD)) ?? parseAmount(r.price),
         temperature: "new",
         createdAt: new Date(r.created_at * 1000).toISOString(),
+        // Kommo no guarda cuándo cambió la etapa (updated_at cambia con cualquier edición).
+        stageChangedAt: null,
         lost,
         wonByCrm: won,
       });

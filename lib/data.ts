@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { initialsOf, type Profile } from "./auth-shared";
 import type { ClientStatus } from "./client-status";
+import { type HiddenTabs, parseHiddenTabs } from "./client-tabs";
 import { INTEGRATIONS, type Integration, type IntegrationState } from "./integrations";
 import { localDate } from "./format";
 import { LOGOS_BUCKET, LOGOS_TAG } from "./logos";
@@ -30,6 +31,8 @@ export type Client = {
   assigneeIds: string[];
   conn: Record<Integration, boolean>;
   integrations: Record<Integration, IntegrationState>;
+  // Solapas desactivadas en "Editar cliente", por zona (lib/client-tabs.ts).
+  hiddenTabs: HiddenTabs;
 };
 
 type ClientRow = {
@@ -42,7 +45,11 @@ type ClientRow = {
   status: ClientStatus;
   intranet_client_integrations: { provider: string; connected: boolean; account_ref: string | null; connected_at: string | null }[];
   intranet_client_assignments: { user_id: string }[];
+  hidden_tabs?: unknown;
 };
+
+const CLIENT_COLUMNS =
+  "id, slug, name, sector, website, active, status, intranet_client_integrations(provider, connected, account_ref, connected_at), intranet_client_assignments(user_id)";
 
 // Logo de cada cliente: un objeto por cliente en el bucket, con nombre = client id.
 // El bucket es público para leer; listar requiere service_role. El listado no
@@ -75,19 +82,14 @@ const toDomain = (website: string | null) =>
 // Usa la sesión del usuario: la RLS de intranet_clients decide qué ve cada uno.
 export const getAllClients = cache(async (): Promise<Client[]> => {
   const supabase = await createClient();
-  const [{ data, error }, logos] = await Promise.all([
-    supabase
-      .from("intranet_clients")
-      .select(
-        "id, slug, name, sector, website, active, status, intranet_client_integrations(provider, connected, account_ref, connected_at), intranet_client_assignments(user_id)",
-      )
-      .order("name", { ascending: true })
-      .returns<ClientRow[]>(),
-    getLogoUrls(),
-  ]);
+  const read = (columns: string) =>
+    supabase.from("intranet_clients").select(columns).order("name", { ascending: true }).returns<ClientRow[]>();
+  const [first, logos] = await Promise.all([read(`${CLIENT_COLUMNS}, hidden_tabs`), getLogoUrls()]);
+  // hidden_tabs llega con docs/sql/2026-09-28-solapas-cliente.sql: sin ella, todas visibles.
+  const { data, error } = first.error?.code === "42703" ? await read(CLIENT_COLUMNS) : first;
   if (error) throw error;
 
-  return (data ?? []).map(({ intranet_client_integrations: integrations, intranet_client_assignments: assignments, ...row }) => {
+  return (data ?? []).map(({ intranet_client_integrations: integrations, intranet_client_assignments: assignments, hidden_tabs, ...row }) => {
     const state = Object.fromEntries(
       INTEGRATIONS.map(({ value }) => {
         const row = integrations.find((i) => i.provider === value);
@@ -102,6 +104,7 @@ export const getAllClients = cache(async (): Promise<Client[]> => {
       assigneeIds: assignments.map((a) => a.user_id),
       integrations: state,
       conn: Object.fromEntries(INTEGRATIONS.map(({ value }) => [value, state[value].connected])) as Record<Integration, boolean>,
+      hiddenTabs: parseHiddenTabs(hidden_tabs),
     };
   });
 });
@@ -435,13 +438,15 @@ export type Lead = {
   // Etiquetas del CRM. null = la base todavía no tiene la columna: no es lo
   // mismo que una oportunidad sin etiquetas, y el agente tiene que distinguirlo.
   tags: string[] | null;
+  // Último cambio de etapa (solo Odoo); null si el CRM no lo informa.
+  stage_changed_at: string | null;
 };
 
 const LEAD_COLUMNS = "id, name, source, amount, stage, temperature, created_at";
 // Columnas agregadas después (ver docs/sql/), de a tandas y de la más vieja a la
 // más nueva: mientras la base no tenga alguna, se lee sin ella (y sin las
 // posteriores) en vez de romper.
-const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"]];
+const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"], ["stage_changed_at"]];
 
 export async function getLeads(clientId: string): Promise<Lead[]> {
   const supabase = await createClient();
@@ -470,6 +475,7 @@ export async function getLeads(clientId: string): Promise<Lead[]> {
     owner: l.owner ?? null,
     ad: l.ad ?? null,
     tags: l.tags ?? null,
+    stage_changed_at: l.stage_changed_at ?? null,
     amount: l.amount === null ? null : Number(l.amount),
   }));
 }

@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { Topbar } from "@/components/topbar";
 import { NoAccess } from "@/components/ui";
-import { getAgentUsage } from "@/lib/agent/usage";
+import { getAiUsage } from "@/lib/agent/usage";
 import { getAreaSession } from "@/lib/auth";
 import { getClientAccounts, getClients, getTeam } from "@/lib/data";
-import { AgentUsageCards } from "./agent-usage";
+import { AiUsageCards } from "./agent-usage";
 import { ClientAccounts } from "./client-accounts";
 import { UsersAdmin } from "./users-admin";
 
@@ -23,7 +23,7 @@ export default async function AdminPage() {
   const isAdmin = session.profile?.role === "admin";
   const [members, usage, clients, accounts] = await Promise.all([
     getTeam(),
-    getAgentUsage(),
+    getAiUsage(),
     isAdmin ? getClients() : [],
     isAdmin ? getClientAccounts() : null,
   ]);
@@ -40,7 +40,7 @@ export default async function AdminPage() {
         </div>
         <UsersAdmin members={members} currentUserId={session.user.id} canEdit={isAdmin} />
         {isAdmin && <ClientAccounts clients={clients} accounts={accounts} />}
-        <AgentUsageCards usage={usage} members={members} />
+        <AiUsageCards usage={usage} members={members} />
       </section>
     </>
   );

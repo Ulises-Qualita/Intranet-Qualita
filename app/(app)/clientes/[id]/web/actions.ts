@@ -92,7 +92,7 @@ export async function disconnectClarity(clientId: string): Promise<ActionResult>
   return { ok: true, error: null };
 }
 
-// Sincronizar a mano. Cada foto gasta 3 de las 10 llamadas diarias del proyecto,
+// Sincronizar a mano. Cada foto gasta 1 de las 10 llamadas diarias del proyecto,
 // así que la pantalla lo avisa antes de que alguien lo use de más.
 export async function refreshClarity(clientId: string): Promise<ActionResult> {
   const session = await getAreaSession("clientes");

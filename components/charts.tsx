@@ -22,9 +22,10 @@ export function LineChart({
   const area = (a: number[]) => `${line(a)} L ${x(a.length - 1)} ${H - pad} L ${x(0)} ${H - pad} Z`;
 
   // El SVG se estira al ancho de la tarjeta (preserveAspectRatio="none"), así que
-  // los círculos salen ovalados: con muchos puntos, además, se amontonan. La línea
-  // no sufre porque usa vectorEffect.
-  const dots = len <= 14;
+  // un <circle> saldría ovalado. Los puntos son trazos de largo cero con punta
+  // redonda y vectorEffect: el trazo no se escala y quedan siempre redondos. Con
+  // más de un mes de puntos se amontonan, así que ahí va solo la línea.
+  const dots = len <= 31;
   // Con muchas fechas, una marca intermedia en el eje ubica mejor.
   const axis = labels && labels.length > 8 ? [labels[0], labels[(labels.length - 1) >> 1], labels.at(-1)!] : labels;
 
@@ -50,7 +51,20 @@ export function LineChart({
           <path key={`l${i}`} d={line(s.data)} fill="none" stroke={s.color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
         ))}
         {dots &&
-          series.map((s, i) => s.data.map((v, j) => <circle key={`c${i}-${j}`} cx={x(j)} cy={y(v)} r="3" fill={s.color} />))}
+          series.map((s, i) =>
+            s.data.map((v, j) => (
+              <path
+                key={`c${i}-${j}`}
+                d={`M${x(j).toFixed(1)} ${y(v).toFixed(1)}h0`}
+                stroke={s.color}
+                strokeWidth="7"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              >
+                <title>{`${labels?.[j] ? `${labels[j]} · ` : ""}${s.label}: ${v.toLocaleString("es-AR")}`}</title>
+              </path>
+            )),
+          )}
       </svg>
       {axis && axis.length > 1 && (
         <div className="chart-axis">

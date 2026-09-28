@@ -121,6 +121,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         owner: l.owner,
         ad: l.ad,
         tags: l.tags,
+        stage_changed_at: l.stageChangedAt,
       }));
 
       // Se sacan de a tandas, de la más nueva a la más vieja, así una migración
@@ -136,9 +137,15 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
       // y el segundo tiene que actualizarlo en vez de fallar.
       const upsert = (batch: Record<string, unknown>[]) =>
         db.from("intranet_leads").upsert(batch, { onConflict: "client_id,external_id" });
+      // Columna inexistente: 42703 si responde Postgres, PGRST204 si PostgREST no
+      // la tiene en su schema cache.
+      const faltaColumna = (e: { code?: string } | null) => e?.code === "42703" || e?.code === "PGRST204";
       let { error } = await upsert(rows);
-      if (error?.code === "42703") ({ error } = await upsert(sinColumnas(["tags"])));
-      if (error?.code === "42703") ({ error } = await upsert(sinColumnas(["tags", "status", "owner", "ad"])));
+      if (faltaColumna(error)) ({ error } = await upsert(sinColumnas(["stage_changed_at"])));
+      if (faltaColumna(error)) ({ error } = await upsert(sinColumnas(["stage_changed_at", "tags"])));
+      if (faltaColumna(error)) {
+        ({ error } = await upsert(sinColumnas(["stage_changed_at", "tags", "status", "owner", "ad"])));
+      }
       if (error) throw error;
     }
 

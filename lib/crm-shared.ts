@@ -41,6 +41,8 @@ export type CrmLead = {
   amount: number | null;
   temperature: string;
   createdAt: string;
+  // Último cambio de etapa, si el CRM lo informa (Odoo sí, Kommo no).
+  stageChangedAt: string | null;
   // Cerrada como perdida (en Odoo, archivada).
   lost: boolean;
   // Lo que el propio CRM considera ganado, cuando no hay etapas elegidas a mano.
