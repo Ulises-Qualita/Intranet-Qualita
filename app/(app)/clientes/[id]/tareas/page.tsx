@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { Icon } from "@/components/icons";
-import { Topbar } from "@/components/topbar";
+import { SyncStatus } from "@/components/sync-status";
 import { ConnectState, NoAccess } from "@/components/ui";
 import { UserAvatar } from "@/components/user-avatar";
 import { getAreaSession } from "@/lib/auth";
@@ -66,7 +66,6 @@ export default async function ClienteTareasPage({ params }: { params: Promise<{ 
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Tareas" />
         <NoAccess />
       </>
     );
@@ -85,7 +84,6 @@ export default async function ClienteTareasPage({ params }: { params: Promise<{ 
   if (!c.conn.notion && clientTasks.length === 0) {
     return (
       <>
-        <Topbar crumb={c.name} title="Tareas" />
         <section className="view">
           <ConnectState kind="notion" client={c} />
         </section>
@@ -95,16 +93,14 @@ export default async function ClienteTareasPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <Topbar crumb={c.name} title="Tareas" />
       <section className="view">
-        {c.conn.notion && (
-          <div className="view-actions">
-            <span className="muted">Tickets de Notion, en modo lectura.</span>
+        {c.conn.notion ? (
+          <SyncStatus source="Notion" live error={notionError} internal>
             <RefreshNotionButton />
-          </div>
+          </SyncStatus>
+        ) : (
+          notionError && <p className="form-error">{notionError}</p>
         )}
-
-        {notionError && <p className="form-error">{notionError}</p>}
 
         <div className="task-cols">
           {COLUMNS.map((col) => {

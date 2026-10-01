@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { Topbar } from "@/components/topbar";
 import { NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { canAccess } from "@/lib/auth-shared";
@@ -20,7 +19,6 @@ export default async function ClienteCrmPage({
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="CRM y ventas" />
         <NoAccess />
       </>
     );

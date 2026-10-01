@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Topbar } from "@/components/topbar";
 import { Card, NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { getClient } from "@/lib/data";
@@ -26,7 +25,6 @@ export default async function ConectarMetaPage({
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Conectar Meta" />
         <NoAccess />
       </>
     );
@@ -53,7 +51,6 @@ export default async function ConectarMetaPage({
 
   return (
     <>
-      <Topbar crumb={client.name} title="Conectar Meta" />
       <section className="view">
         <p className="back-link">
           <Link href={`/clientes/${client.slug}/meta`}>← Volver a META</Link>

@@ -6,6 +6,7 @@ import { isClientStatus } from "@/lib/client-status";
 import { isTabKey, parseHiddenTabs, tabInZone, type TabZone } from "@/lib/client-tabs";
 import { crmProviderLabel, isCrmProvider } from "@/lib/crm-shared";
 import { deleteCrmSecrets, getCrmSecrets, saveCrmSecrets, syncCrmClient } from "@/lib/crm-sync";
+import { driveErrorMessage, getItem, isDriveId } from "@/lib/drive";
 import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
 import { LOGO_MAX_BYTES, LOGO_TYPES, LOGOS_BUCKET, LOGOS_TAG } from "@/lib/logos";
 import { deleteMetaSecrets, getAdAccount, getMetaSecrets, saveMetaSecrets } from "@/lib/meta";
@@ -356,6 +357,28 @@ export async function connectNotionProject(clientId: string, pageId: string): Pr
   // El cliente nuevo cambia qué tickets se muestran: hay que releer Notion.
   if (result.ok) revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
   return result;
+}
+
+// Vincula el cliente con su carpeta de Google Drive. Se valida contra Drive que
+// la carpeta exista y que la cuenta de Drive la vea antes de guardarla.
+export async function connectDriveFolder(clientId: string, folderId: string): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!isDriveId(folderId)) return { ok: false, error: "Elegí una carpeta de Drive." };
+
+  try {
+    const folder = await getItem(folderId);
+    if (!folder.isFolder) return { ok: false, error: "Eso no es una carpeta." };
+  } catch (e) {
+    return { ok: false, error: driveErrorMessage(e) };
+  }
+
+  const now = new Date().toISOString();
+  return writeIntegration(clientId, "drive", {
+    connected: true,
+    account_ref: folderId,
+    connected_at: now,
+    updated_at: now,
+  });
 }
 
 // Fuerza una lectura fresca de Notion sin esperar a que venza el cache.

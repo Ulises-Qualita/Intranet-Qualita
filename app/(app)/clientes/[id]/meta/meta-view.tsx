@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { LineChart } from "@/components/charts";
 import { RangePicker } from "@/components/range-picker";
+import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, MissingIntegration } from "@/components/ui";
 import { type Client, getMetaCampaigns, getMetaDaily } from "@/lib/data";
-import { compact, integer, money, orDash, percent, relativeTime, safeDiv, shortDate, todayISO } from "@/lib/format";
+import { compact, integer, money, orDash, percent, safeDiv, shortDate, todayISO } from "@/lib/format";
 import { META_HISTORY_DAYS, type Period, periodPhrase, shiftDate } from "@/lib/period";
 import { prepareMetaView } from "@/lib/meta-sync";
 import { CampaignTable } from "./campaign-table";
@@ -29,7 +30,7 @@ export async function MetaView({
   if (!c.conn.meta) {
     return (
       <>
-        <Topbar crumb={c.name} title="Métricas de META" />
+        {!internal && <Topbar crumb={c.name} title="Métricas de META" />}
         <section className="view">
           <MissingIntegration kind="meta" client={c} internal={internal} />
         </section>
@@ -53,24 +54,36 @@ export async function MetaView({
   const clicks = sum("clicks");
   const period = daily.length ? `${shortDate(daily[0].date)} – ${shortDate(daily.at(-1)!.date)}` : "sin datos";
 
-  const updated = secrets?.synced_at ? relativeTime(secrets.synced_at) : null;
 
   return (
     <>
-      <Topbar crumb={c.name} title="Métricas de META">
-        <RangePicker basePath={`${base}/meta`} period={range} />
-      </Topbar>
+      {/* El equipo tiene el encabezado, las solapas y el período en clientes/[id]/layout.tsx. */}
+      {!internal && (
+        <Topbar crumb={c.name} title="Métricas de META">
+          <RangePicker basePath={`${base}/meta`} period={range} />
+        </Topbar>
+      )}
       <section className="view">
-        {internal && secrets?.sync_error && <p className="form-error">{secrets.sync_error}</p>}
+        {/* Sin secrets = la sesión de Facebook venció (prepareMetaView). */}
+        <SyncStatus
+          source="Meta Ads"
+          at={secrets?.synced_at}
+          error={
+            secrets ? (
+              secrets.sync_error
+            ) : (
+              <>
+                La sesión de Facebook venció.{" "}
+                <Link href={`/clientes/${c.slug}/meta/conectar`}>Volvé a conectar Meta</Link> para seguir actualizando las
+                métricas.
+              </>
+            )
+          }
+          internal={internal}
+        />
         {beforeHistory && (
           <p className="hint-text mb-4">
             Meta guarda los últimos {META_HISTORY_DAYS} días: antes de esa fecha no hay datos para mostrar.
-          </p>
-        )}
-        {internal && !secrets && (
-          <p className="form-error">
-            La sesión de Facebook venció. <Link href={`/clientes/${c.slug}/meta/conectar`}>Volvé a conectar Meta</Link> para
-            seguir actualizando las métricas.
           </p>
         )}
 
@@ -108,7 +121,7 @@ export async function MetaView({
         </Card>
 
         {daily.length > 0 && (
-          <Card title="Gasto diario en anuncios" hint={updated ? `${period} · actualizado ${updated}` : period}>
+          <Card title="Gasto diario en anuncios" hint={period}>
             <LineChart
               id="spend"
               labels={daily.map((d) => shortDate(d.date))}

@@ -13,6 +13,100 @@ const PATHS = {
       <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
     </>
   ),
+  // Tipos de archivo (solapa Drive).
+  file: (
+    <>
+      <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" />
+      <path d="M14 3v5h5" />
+    </>
+  ),
+  "file-text": (
+    <>
+      <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6M9 17h6M9 9h2" />
+    </>
+  ),
+  table: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M4 10h16M4 15h16M10 4v16" />
+    </>
+  ),
+  slides: (
+    <>
+      <rect x="3" y="5" width="18" height="12" rx="2" />
+      <path d="M12 17v3M8.5 20h7" />
+    </>
+  ),
+  image: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <circle cx="9" cy="9.5" r="1.6" />
+      <path d="M20.5 16l-5-5L6 19.5" />
+    </>
+  ),
+  play: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="3" />
+      <path d="M10 9.2v5.6l4.7-2.8z" />
+    </>
+  ),
+  music: (
+    <>
+      <path d="M9 18V6l11-2v12" />
+      <circle cx="6.5" cy="18" r="2.5" />
+      <circle cx="17.5" cy="16" r="2.5" />
+    </>
+  ),
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="5" rx="1.5" />
+      <path d="M5 9v9a2 2 0 002 2h10a2 2 0 002-2V9" />
+      <path d="M10 13h4" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M20 20l-4.3-4.3" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+    </>
+  ),
+  list: (
+    <>
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
+    </>
+  ),
+  folder: <path d="M3 7.5A1.5 1.5 0 014.5 6h4.4l2 2.2h8.6A1.5 1.5 0 0121 9.7v8.8a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18.5z" />,
+  upload: (
+    <>
+      <path d="M12 15V4" />
+      <path d="M7.5 8.5L12 4l4.5 4.5" />
+      <path d="M4 15v3.5A1.5 1.5 0 005.5 20h13a1.5 1.5 0 001.5-1.5V15" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+    </>
+  ),
+  "arrow-out": (
+    <>
+      <path d="M8 16L16 8" />
+      <path d="M9.5 8H16v6.5" />
+    </>
+  ),
   eye: (
     <>
       <circle cx="12" cy="12" r="2.5" />

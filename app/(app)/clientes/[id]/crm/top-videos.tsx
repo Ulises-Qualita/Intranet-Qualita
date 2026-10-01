@@ -7,9 +7,12 @@ type Metric = [label: string, value: string];
 
 function metrics(v: VideoPerformance, by: "crm" | "meta", showWon: boolean): Metric[] {
   const ctr = orDash(safeDiv(v.clicks * 100, v.impressions), (x) => percent(x));
+  // Siempre, también en $0: lo que se mira de cada video es si trajo ventas.
+  const billed: Metric = ["Facturado", money(v.ticketTotal)];
   if (by === "meta") {
     return [
       ["Leads (Meta)", integer(v.metaLeads)],
+      billed,
       ["CPL", orDash(safeDiv(v.spend, v.metaLeads), (x) => money(x, 2))],
       ["Gasto", money(v.spend)],
       ["CTR", ctr],
@@ -19,7 +22,7 @@ function metrics(v: VideoPerformance, by: "crm" | "meta", showWon: boolean): Met
   return [
     ["Oportunidades", integer(v.crmLeads)],
     ...(showWon ? [["Ganadas", integer(v.won)] as Metric] : []),
-    ["Facturado", v.ticketTotal ? money(v.ticketTotal) : "—"],
+    billed,
     ["Gasto", money(v.spend)],
     ["Costo por oportunidad", orDash(safeDiv(v.spend, v.crmLeads), (x) => money(x, 2))],
     ["CTR", ctr],

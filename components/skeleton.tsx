@@ -10,6 +10,23 @@ export function ViewSkeleton() {
           <div className="skel" style={{ width: 220, height: 26, marginTop: 10 }} />
         </div>
       </div>
+      <ContentSkeleton />
+    </div>
+  );
+}
+
+// Solo el área de contenido: para las solapas de un cliente, donde el encabezado,
+// las solapas y el período son del layout y no se tocan al navegar.
+export function TabSkeleton() {
+  return (
+    <div role="status" aria-busy="true" aria-label="Cargando">
+      <ContentSkeleton />
+    </div>
+  );
+}
+
+function ContentSkeleton() {
+  return (
       <section className="view">
         <div className="grid g4 mb-4">
           {[0, 1, 2, 3].map((i) => (
@@ -25,6 +42,5 @@ export function ViewSkeleton() {
           <div className="skel" style={{ width: "100%", height: 240, marginTop: 20, borderRadius: 12 }} />
         </div>
       </section>
-    </div>
   );
 }

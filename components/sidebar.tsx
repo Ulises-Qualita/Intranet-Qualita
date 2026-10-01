@@ -5,10 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
 import type { AreaKey } from "@/lib/auth-shared";
-import { isTabHidden, type TabKey } from "@/lib/client-tabs";
 import type { SessionUser } from "@/lib/auth";
 import type { Client } from "@/lib/data";
-import { SHOW_TASKS } from "@/lib/tasks";
 import { ClientAvatar } from "./client-avatar";
 import { Icon, type IconName } from "./icons";
 import { UserAvatar } from "./user-avatar";
@@ -24,37 +22,16 @@ const STUDIO_NAV: { href: string; label: string; icon: IconName; area: AreaKey |
   { href: "/admin", label: "Administración", icon: "settings", area: "admin" },
 ];
 
-// Solo las vistas de consulta del cliente. Editar se entra desde la tabla de
-// /clientes: es una acción de gestión, no una solapa que se mire a diario.
-// tab: la clave con que se desactiva en "Editar cliente" (lib/client-tabs.ts);
-// Vista general no tiene, siempre se ve.
-type ClientNavItem = { suffix: string; label: string; area: AreaKey; tab?: TabKey };
-const CLIENT_NAV = (
-  [
-    { suffix: "", label: "Vista general", area: "clientes" },
-    { suffix: "/meta", label: "META", area: "meta", tab: "meta" },
-    { suffix: "/crm", label: "CRM", area: "crm", tab: "crm" },
-    // Sin área propia: analítica del sitio, para quien ya ve el panel del cliente.
-    { suffix: "/web", label: "WEB", area: "clientes", tab: "web" },
-    { suffix: "/reuniones", label: "Reuniones", area: "clientes", tab: "reuniones" },
-    // Solo en el panel del equipo: la cuenta del cliente no la tiene.
-    { suffix: "/reportes", label: "Reportes", area: "clientes", tab: "reportes" },
-    { suffix: "/tareas", label: "Tareas", area: "tareas", tab: "tareas" },
-    { suffix: "/portal", label: "Portal del cliente", area: "clientes", tab: "portal" },
-    { suffix: "/equipo", label: "Equipo", area: "clientes", tab: "equipo" },
-  ] satisfies ClientNavItem[]
-).filter((item) => SHOW_TASKS || item.suffix !== "/tareas");
-
+// Las solapas de cada cliente no van acá: están arriba del contenido
+// (app/(app)/clientes/[id]/layout.tsx).
 export function Sidebar({
   user,
   access,
   clients,
-  openTasksByClient,
 }: {
   user: SessionUser;
   access: Record<AreaKey, boolean>;
   clients: Client[];
-  openTasksByClient: Record<string, number>;
 }) {
   const pathname = usePathname();
 
@@ -85,34 +62,15 @@ export function Sidebar({
               const base = `/clientes/${c.slug}`;
               const selected = pathname === base || pathname.startsWith(`${base}/`);
               return (
-                <div key={c.id}>
-                  <Link href={base} className={`client-btn${selected ? " sel" : ""}`}>
-                    <ClientAvatar client={c} />
-                    <span className="cn">{c.name}</span>
-                    <Icon name="chevron" size={15} strokeWidth={2} className="chev" />
-                  </Link>
-                  {/* El div interno es el que recorta: la animación va por la fila del grid. */}
-                  <div className={`subnav${selected ? " open" : ""}`}>
-                    <div className="subnav-in">
-                      {CLIENT_NAV.filter(
-                        (item) => access[item.area] && !(item.tab && isTabHidden(c.hiddenTabs, "team", item.tab)),
-                      ).map((item) => (
-                        <Link
-                          key={item.suffix}
-                          href={base + item.suffix}
-                          className={`sb${pathname === base + item.suffix ? " active" : ""}`}
-                          tabIndex={selected ? undefined : -1}
-                        >
-                          <span className="ln">·</span>
-                          {item.label}
-                          {item.suffix === "/tareas" && openTasksByClient[c.id] > 0 && (
-                            <span className="sb-badge">{openTasksByClient[c.id]}</span>
-                          )}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <Link
+                  key={c.id}
+                  href={base}
+                  className={`client-btn${selected ? " sel" : ""}`}
+                  aria-current={selected ? "page" : undefined}
+                >
+                  <ClientAvatar client={c} />
+                  <span className="cn">{c.name}</span>
+                </Link>
               );
             })}
           </>

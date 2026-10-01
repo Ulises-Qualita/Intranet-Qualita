@@ -13,7 +13,7 @@ export async function EquipoView({ client, internal }: { client: Client; interna
 
   return (
     <>
-      <Topbar crumb={client.name} title="Equipo" />
+      {!internal && <Topbar crumb={client.name} title="Equipo" />}
       <section className="view">
         {team.length === 0 ? (
           <Card title="Equipo asignado">

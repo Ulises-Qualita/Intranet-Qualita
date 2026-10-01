@@ -79,9 +79,9 @@ const isEmptyCell = (cell: DbCell) =>
 // Calendario mensual, un mes a la vez como la vista de Notion. Los meses se arman
 // acá (server) y el componente cliente solo navega.
 function DbCalendar({ db, dateColumn }: { db: EmbeddedDb; dateColumn: number }) {
-  const { months, initial } = buildCalendar(db, dateColumn, todayISO());
+  const { months, initial, twoLines } = buildCalendar(db, dateColumn, todayISO());
   if (!months.length) return <p className="nd-unsupported">Ninguna fila tiene fecha todavía.</p>;
-  return <NotionCalendar months={months} initial={initial} />;
+  return <NotionCalendar months={months} initial={initial} twoLines={twoLines} />;
 }
 
 // Tablero: una columna por grupo, en el orden y color de Notion. Las tarjetas
@@ -357,7 +357,7 @@ function Block({ node }: { node: BlockNode }) {
             <p className="nd-unsupported">
               Es una vista enlazada de Notion. La API no puede leerla; embebé la database directamente en la página.
             </p>
-          ) : node.db.rows.length === 0 ? (
+          ) : node.db.rows.length === 0 && !node.db.extraEvents?.length ? (
             <p className="nd-unsupported">Todavía no tiene filas.</p>
           ) : (
             <DbViews db={node.db} />

@@ -143,7 +143,46 @@ No hay framework de tests configurado todavía.
   Workspace). `lib/calendar.ts`: como con Notion, se cachea solo la consulta de todo
   el estudio (`unstable_cache` 5 min, tag `calendar-meetings`) y el filtro por cliente
   va afuera. Ventana: 90 días atrás, 60 adelante. La cuenta del cliente no ve la
-  descripción del evento; sin env, la solapa no aparece en `/mi-empresa`.
+  descripción del evento; sin env, la solapa no aparece en `/mi-empresa`. La vista es
+  mitad y mitad (`meetings-calendar.tsx`): el mes con las reuniones escritas en cada
+  día y, a la derecha, las próximas como cards separadas por semana (fotos de Google
+  del equipo cruzadas por mail con `getTeam`; los de afuera, iniciales). Tocando un
+  día se ven sus reuniones; las pasadas llevan una descripción que escribe el equipo
+  y la cuenta del cliente solo lee (además, en el Portal las reuniones se suman
+  como eventos al calendario de la database de Notion embebida: `withExtraEvents`
+  de `lib/notion-blocks.ts` las agrega a `db.extraEvents` fuera del cache, y solo
+  las dibuja la vista calendario; no aparecen si la solapa Reuniones está
+  desactivada): `intranet_meeting_notes` (clave = `Meeting.key`,
+  `docs/sql/2026-09-30-reuniones-notas.sql`), `lib/meeting-notes.ts`,
+  `saveMeetingNote` valida que la clave sea de una reunión pasada del cliente.
+- Cuenta de servicio de Google: `lib/google.ts` (token por usuario + scope) la
+  comparten Calendar y Drive. La delegación en admin.google.com tiene que tener los
+  dos scopes: `calendar.events.readonly` y `drive` (al editarla se reemplaza la lista).
+- Pestaña Drive (`/clientes/[slug]/drive` y `/mi-empresa/drive`, misma `DriveView`,
+  área `clientes`): la carpeta de cada cliente, **en vivo** (no se espeja). El estudio
+  **no usa una unidad compartida**: son carpetas sueltas (de clientes o del equipo)
+  compartidas como editor con `GOOGLE_DRIVE_USER` (env; hoy ulises@). Integración
+  provider `drive`, `account_ref` = id de la carpeta, elegida en
+  `/clientes/[slug]/drive/conectar` (desde "Compartido conmigo", "Mi unidad", unidades
+  compartidas o buscando por nombre; no se puede elegir la raíz de un Drive entero).
+  Subir por los padres de una carpeta compartida termina en un 404 (padres que la
+  cuenta no ve): `pathFrom` lo toma como fin del camino. `lib/drive.ts` (API),
+  `lib/drive-access.ts` (qué cliente y qué raíz según la sesión: la cuenta del
+  cliente siempre la suya, el equipo por slug con RLS). **Regla de seguridad**: todo
+  id que llega se valida con `isInside(raíz, id)`, que sube por los padres. Se puede
+  ver, descargar y subir; **no** borrar ni crear carpetas. Descarga por dos rutas con
+  el mismo código (`lib/drive-download.ts`): `/api/drive/[fileId]?cliente=` (equipo) y
+  `/mi-empresa/drive/archivo/[fileId]` (cliente; proxy.ts no lo deja salir de
+  `/mi-empresa`). Los Docs/Slides se exportan a PDF y los Sheets a xlsx. La subida
+  va del navegador directo a Google con una sesión reanudable que abre el server
+  (`createDriveUpload`, con el `Origin` para el CORS), tope 1 GB, y queda en la
+  descripción quién subió. Migración: `docs/sql/2026-09-30-drive-provider.sql`.
+  La vista (`drive-browser.tsx`) imita Google Drive: ruta, buscador en la carpeta,
+  cuadrícula (carpetas + archivos con miniatura) o lista ordenable; la vista elegida
+  va en `localStorage("drive-view")`. Las miniaturas no validan la carpeta en cada
+  pedido: `DriveView` firma un link por archivo con HMAC (`lib/drive-thumb.ts`,
+  clave derivada de `GOOGLE_SERVICE_ACCOUNT_KEY`, vence a la hora redondeada) y
+  `/api/drive/thumb/[token]` o `/mi-empresa/drive/thumb/[token]` solo verifican la firma.
 - Pestaña Reportes (`/clientes/[slug]/reportes`, solo equipo, área `clientes`): genera
   un HTML con el diseño de `docs/DML_reporte_mensual_5.html` para el período elegido
   (máx. 90 días atrás, lo que guardan Meta y el CRM). `lib/report/data.ts` junta Meta,
@@ -166,10 +205,23 @@ No hay framework de tests configurado todavía.
   por separado para el equipo y para la cuenta del cliente (Vista general siempre se
   ve). Catálogo en `lib/client-tabs.ts`; se guardan las **ocultas** en
   `intranet_clients.hidden_tabs` (`docs/sql/2026-09-28-solapas-cliente.sql`), así una
-  solapa nueva aparece activa sin migrar. `Client.hiddenTabs` filtra el sidebar y
+  solapa nueva aparece activa sin migrar. `Client.hiddenTabs` filtra la barra de solapas del cliente (`app/(app)/clientes/[id]/layout.tsx`, arriba del contenido y con el selector de período, que es uno solo para todas las solapas y viaja en sus links) y
   `clientTabs()`, y cada solapa tiene un `layout.tsx` con `TeamTabGate` /
   `ClientTabGate` (`components/tab-gate.tsx`) para que no se pueda entrar por URL.
-  Una solapa nueva del cliente tiene que sumarse a `CLIENT_TABS` y llevar ese layout.
+  Una solapa nueva del cliente tiene que sumarse a `CLIENT_TABS` (y a `CLIENT_NAV` del
+  layout del cliente) y llevar ese layout.
+- Panel del cliente (equipo): el encabezado (nombre, solapas, período) es de
+  `app/(app)/clientes/[id]/layout.tsx` y no se desmonta al navegar; solo cambia lo de
+  abajo. Reglas para no romperlo: ninguna página bajo `clientes/[id]` dibuja `Topbar`
+  (las vistas compartidas con `/mi-empresa` lo hacen solo con `!internal`); los
+  `loading.tsx` de ahí usan `TabSkeleton`; las solapas con período (Vista general,
+  META, CRM) **no** llevan `loading.tsx` propio, porque `?dias=` lo reiniciaría y
+  vaciaría la pantalla; por eso Vista general vive en `clientes/[id]/(general)/`. El
+  período navega con `useTransition` y la vista anterior queda atenuada mientras carga.
+  Cada solapa con fuente externa abre con `SyncStatus` (`components/sync-status.tsx`):
+  punto verde/rojo/gris con la fuente y "Actualizado hoy a las 08:12 hs" (`syncedAt`
+  de `lib/format.ts`, a partir de `synced_at`/`sync_error` de los secrets) o "En vivo"
+  para Notion y Calendar. El detalle del error solo lo ve el equipo.
 - Tablas que todavía no se crearon: chequear con `isMissingTable()` de
   `lib/supabase/server.ts`. PostgREST responde **`PGRST205`** (no la encuentra en su
   schema cache), no el `42P01` de Postgres; mirar solo uno deja el otro sin cubrir.

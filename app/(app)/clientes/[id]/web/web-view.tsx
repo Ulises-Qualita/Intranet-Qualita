@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { LineChart, StageBars } from "@/components/charts";
+import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, MissingIntegration } from "@/components/ui";
 import { getClaritySecrets } from "@/lib/clarity";
 import { type Client, getClarityDaily, getClarityPages } from "@/lib/data";
-import { compact, integer, orDash, percent, relativeTime, safeDiv, shortDate } from "@/lib/format";
+import { compact, integer, orDash, percent, safeDiv, shortDate } from "@/lib/format";
 import { PagesTable } from "./pages-table";
 import { RefreshClarity } from "./refresh-button";
 
@@ -35,7 +36,7 @@ export async function WebView({ client, base, internal }: { client: Client; base
   if (!client.conn.clarity) {
     return (
       <>
-        <Topbar crumb={client.name} title="WEB" />
+        {!internal && <Topbar crumb={client.name} title="WEB" />}
         <section className="view">
           <MissingIntegration kind="clarity" client={client} internal={internal} />
         </section>
@@ -77,17 +78,13 @@ export async function WebView({ client, base, internal }: { client: Client; base
 
   return (
     <>
-      <Topbar crumb={client.name} title="WEB" />
+      {!internal && <Topbar crumb={client.name} title="WEB" />}
 
       <section className="view">
-        <div className="view-actions">
-          <span className="muted">
-            {secrets?.synced_at ? `Última foto ${relativeTime(secrets.synced_at)} · una por día` : "Todavía sin sincronizar"}
-          </span>
+        {/* Clarity entrega una foto por día (ver lib/clarity-sync.ts). */}
+        <SyncStatus source="Microsoft Clarity" at={secrets?.synced_at} error={secrets?.sync_error} internal={internal}>
           {internal && <RefreshClarity clientId={client.id} />}
-        </div>
-
-        {internal && secrets?.sync_error && <p className="form-error mb-4">{secrets.sync_error}</p>}
+        </SyncStatus>
 
         {!daily.length ? (
           <Card title="Sin datos todavía">

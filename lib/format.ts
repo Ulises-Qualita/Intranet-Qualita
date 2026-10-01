@@ -35,6 +35,32 @@ export function shortDate(isoDate: string) {
     .replace(".", "");
 }
 
+// Tamaño de un archivo: "840 KB", "12,4 MB".
+export function fileSize(bytes: number | null) {
+  if (bytes === null || !Number.isFinite(bytes)) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${num(value, value < 10 ? 1 : 0)} ${units[unit]}`;
+}
+
+const clock = new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: TZ });
+
+// Momento de una sincronización, en hora de Argentina: "hoy a las 08:12 hs",
+// "ayer a las 23:40 hs" o "el 12 sept a las 08:12 hs".
+export function syncedAt(iso: string) {
+  const day = localDate(iso);
+  const today = todayISO();
+  const yesterday = localDate(new Date(Date.parse(`${today}T12:00:00Z`) - 86_400_000).toISOString());
+  const when = day === today ? "hoy" : day === yesterday ? "ayer" : `el ${shortDate(day)}`;
+  return `${when} a las ${clock.format(new Date(iso))} hs`;
+}
+
 // Con año: para fechas que pueden estar lejos, como los hitos de un roadmap.
 export function longDate(isoDate: string) {
   return new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })

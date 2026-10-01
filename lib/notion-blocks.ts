@@ -49,7 +49,8 @@ export type Tag = { name: string; color: string };
 
 export type DbCell =
   | { kind: "text"; text: string }
-  | { kind: "date"; text: string }
+  // end: fin de un rango de Notion (inicio → fin); sin rango, no viene.
+  | { kind: "date"; text: string; end?: string }
   | { kind: "tags"; tags: Tag[] }
   | { kind: "check"; checked: boolean };
 
@@ -84,6 +85,10 @@ export type EmbeddedDb = {
   // Nunca vacío: si Notion no devuelve las vistas, se arma una por defecto
   // (calendario si hay fecha, si no tabla).
   views: DbView[];
+  // Eventos que no son filas de Notion y solo muestra el calendario (las
+  // reuniones de Google Calendar en el portal). No vienen de Notion: los suma
+  // withExtraEvents después de leer la página, fuera del cache.
+  extraEvents?: ExtraEvent[];
 };
 
 // Lo mínimo que se usa de la API de vistas y del schema del data source.
@@ -270,6 +275,14 @@ export const plainOf = (text?: RichText[]) => (text ?? []).map((t) => t.text).jo
 const HIDDEN_DB_TYPES = new Set(["relation", "rollup", "created_by", "last_edited_by", "button", "unique_id"]);
 
 type RawDbProp = Record<string, unknown> & { type: string };
+type NotionDate = { start?: string | null; end?: string | null };
+
+// Fecha de Notion, con el fin si es un rango (y solo si cae después del inicio).
+function dateCell(date: NotionDate | null): DbCell {
+  const start = (date?.start ?? "").slice(0, 10);
+  const end = (date?.end ?? "").slice(0, 10);
+  return start && end > start ? { kind: "date", text: start, end } : { kind: "date", text: start };
+}
 
 export function toDbCell(prop: RawDbProp): DbCell {
   const p = prop as Record<string, never> & RawDbProp;
@@ -289,7 +302,7 @@ export function toDbCell(prop: RawDbProp): DbCell {
         tags: ((p.multi_select ?? []) as Tag[]).map((o) => ({ name: o.name, color: o.color ?? "default" })),
       };
     case "date":
-      return { kind: "date", text: ((p.date as { start?: string } | null)?.start ?? "").slice(0, 10) };
+      return dateCell(p.date as NotionDate | null);
     case "checkbox":
       return { kind: "check", checked: Boolean(p.checkbox) };
     case "number":
@@ -306,8 +319,8 @@ export function toDbCell(prop: RawDbProp): DbCell {
     case "phone_number":
       return { kind: "text", text: (p[prop.type] as string) ?? "" };
     case "formula": {
-      const f = p.formula as { type: string; string?: string; number?: number; date?: { start?: string } } | undefined;
-      if (f?.type === "date") return { kind: "date", text: (f.date?.start ?? "").slice(0, 10) };
+      const f = p.formula as { type: string; string?: string; number?: number; date?: NotionDate } | undefined;
+      if (f?.type === "date") return dateCell(f.date ?? null);
       if (f?.type === "number") return { kind: "text", text: f.number == null ? "" : String(f.number) };
       return { kind: "text", text: f?.string ?? "" };
     }
@@ -473,12 +486,117 @@ export function buildBoard(db: EmbeddedDb, view: DbView): BoardColumn[] {
 
 // ---------- Calendario ----------
 
-export type CalEvent = { id: string; title: string; color: string };
-export type CalDay = { iso: string; day: number; inMonth: boolean; isToday: boolean; events: CalEvent[] };
-export type CalMonth = { key: string; label: string; weeks: CalDay[][] };
+export type CalEvent = {
+  id: string;
+  title: string;
+  color: string;
+  // Lo que muestra el detalle al tocar el evento: las propiedades de la fila de
+  // Notion (o horario y participantes de una reunión), ya en texto.
+  details: { label: string; value: string }[];
+  // Segunda línea del evento en el calendario: el "Entregable" de la tarea como
+  // badges de color (Desarrollo, Manual de marca…), o un texto (el horario de una
+  // reunión, o un Entregable que en Notion es texto y no una opción).
+  badges?: Tag[];
+  subtitle?: string;
+  // Solo en los eventos extra (reuniones): hora de inicio, el link para entrar si
+  // todavía no pasó, y la descripción que escribe el equipo si ya pasó.
+  kind?: "meeting";
+  time?: string;
+  href?: string | null;
+  notes?: string | null;
+  // Reunión que ya pasó (se dibuja apagada).
+  done?: boolean;
+};
+export type ExtraEvent = CalEvent & { day: string };
+
+// Suma `events` a todas las databases con calendario de la página, sin tocar
+// sus filas: la tabla y el tablero no los muestran. Devuelve una copia.
+export function withExtraEvents(nodes: BlockNode[], events: ExtraEvent[]): BlockNode[] {
+  if (!events.length) return nodes;
+  return nodes.map((node) => {
+    const db = node.db && node.db.views.some((v) => v.kind === "calendar") ? { ...node.db, extraEvents: events } : node.db;
+    const children = node.children ? withExtraEvents(node.children, events) : node.children;
+    return db === node.db && children === node.children ? node : { ...node, db, children };
+  });
+}
+// Un evento dentro de una semana: una sola barra de `span` días desde la columna
+// `col` (0 = lunes), en su carril. Un rango que cruza de semana es una barra por
+// semana; `fromPrev` / `toNext` dicen si viene de la anterior o sigue en la próxima.
+export type CalBar = {
+  event: CalEvent;
+  // Rango completo del evento (para el detalle).
+  start: string;
+  end: string;
+  col: number;
+  span: number;
+  lane: number;
+  fromPrev: boolean;
+  toNext: boolean;
+};
+export type CalDay = { iso: string; day: number; inMonth: boolean; isToday: boolean };
+// `lanes`: carriles que usa la semana (el alto de la fila depende de eso).
+export type CalWeek = { days: CalDay[]; bars: CalBar[]; lanes: number };
+export type CalMonth = { key: string; label: string; weeks: CalWeek[] };
 
 const MS_DAY = 86_400_000;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+const dayFmt = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+
+// Nombre de columna comparable: sin mayúsculas, tildes ni espacios de más.
+const normalizeLabel = (s: string) =>
+  s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+
+// Colores para los entregables que en Notion no tienen color: se reparten en
+// orden de aparición dentro del calendario, así dos entregables distintos no
+// comparten color hasta agotar la paleta, y cada uno conserva el suyo en todo el mes.
+const BADGE_COLORS = ["blue", "green", "orange", "purple", "pink", "yellow", "red", "brown"];
+
+const hasOwnColor = (tag: Tag) => Boolean(tag.color) && tag.color !== "default" && tag.color !== "gray";
+
+// `taken`: colores que ya usan en Notion otras opciones de la misma columna;
+// se usan últimos, así un entregable sin color no se confunde con uno que sí tiene.
+function badgePalette(taken: Set<string>) {
+  const order = [...BADGE_COLORS.filter((c) => !taken.has(c)), ...BADGE_COLORS.filter((c) => taken.has(c))];
+  const assigned = new Map<string, string>();
+  return (tag: Tag) => {
+    if (hasOwnColor(tag)) return tag.color;
+    if (!assigned.has(tag.name)) assigned.set(tag.name, order[assigned.size % order.length]);
+    return assigned.get(tag.name)!;
+  };
+}
+
+// El Entregable de una fila: badges si es una opción de Notion, texto si no.
+function deliverableOf(cell: DbCell | undefined, color: (tag: Tag) => string): Pick<CalEvent, "badges" | "subtitle"> {
+  if (!cell) return {};
+  if (cell.kind === "tags") return { badges: cell.tags.map((t) => ({ name: t.name, color: color(t) })) };
+  return { subtitle: cellText(cell) || undefined };
+}
+
+// Una celda en texto para el detalle del evento; "" si está vacía.
+function cellText(cell: DbCell | undefined): string {
+  if (!cell) return "";
+  switch (cell.kind) {
+    case "tags":
+      return cell.tags.map((t) => t.name).join(", ");
+    case "date": {
+      if (!cell.text) return "";
+      const day = (d: string) => dayFmt.format(new Date(`${d}T12:00:00Z`));
+      return cell.end ? `${day(cell.text)} → ${day(cell.end)}` : day(cell.text);
+    }
+    case "check":
+      return cell.checked ? "Sí" : "No";
+    default:
+      return cell.text;
+  }
+}
+
+// Propiedades de una fila con valor, en el orden de las columnas (sin `skip`).
+function rowDetails(db: EmbeddedDb, row: DbRow, skip: number[]) {
+  return db.columns
+    .map((label, i) => ({ label, value: skip.includes(i) ? "" : cellText(row.cells[i]) }))
+    .filter((d) => d.value);
+}
 
 // El color del chip sale de la primera etiqueta de la fila que tenga color, así
 // el calendario hereda la paleta que ya usás en Notion.
@@ -491,6 +609,36 @@ function eventColor(row: DbRow, skip: number[]): string {
   return "default";
 }
 
+// Ubica los tramos que tocan esta semana, cada uno en el primer carril libre en
+// todos sus días (los tramos llegan ordenados por inicio). Así una barra de varios
+// días queda a la misma altura de punta a punta, como en Notion.
+function placeWeek(days: CalDay[], spans: { event: CalEvent; start: string; end: string }[]): CalWeek {
+  const first = days[0].iso;
+  const last = days[days.length - 1].iso;
+  const bars: CalBar[] = [];
+  // Por carril, el último día (índice en la semana) que ya está ocupado.
+  const busyUntil: number[] = [];
+  for (const s of spans) {
+    if (s.start > last || s.end < first) continue;
+    const from = days.findIndex((d) => d.iso >= s.start);
+    const to = days.findLastIndex((d) => d.iso <= s.end);
+    let lane = busyUntil.findIndex((until) => until < from);
+    if (lane < 0) lane = busyUntil.length;
+    busyUntil[lane] = to;
+    bars.push({
+      event: s.event,
+      start: s.start,
+      end: s.end,
+      col: from,
+      span: to - from + 1,
+      lane,
+      fromPrev: s.start < first,
+      toNext: s.end > last,
+    });
+  }
+  return { days, bars, lanes: busyUntil.length };
+}
+
 // Meses corridos del primero al último que tienen filas (uno vacío en el medio se
 // muestra igual, así pasar de mes avanza de a uno como en Notion), cada uno con su
 // grilla de semanas de lunes a domingo. `initial` es el mes en el que abre la
@@ -501,21 +649,51 @@ export function buildCalendar(
   db: EmbeddedDb,
   dateColumn: number,
   today: string,
-): { months: CalMonth[]; initial: number } {
-  const byDay = new Map<string, CalEvent[]>();
+): { months: CalMonth[]; initial: number; twoLines: boolean } {
+  // La propiedad "Entregable(s)" va como segunda línea de cada evento, si existe.
+  const deliverable = db.columns.findIndex((c) => /^entregables?$/.test(normalizeLabel(c)));
+  const badgeColor = badgePalette(
+    new Set(
+      db.rows.flatMap((r) => {
+        const cell = r.cells[deliverable];
+        return cell?.kind === "tags" ? cell.tags.filter(hasOwnColor).map((t) => t.color) : [];
+      }),
+    ),
+  );
+
+  // Cada evento es un tramo de días: una fila con rango (inicio → fin) o de un
+  // solo día; las reuniones siempre de un día.
+  const spans: { event: CalEvent; start: string; end: string }[] = [];
   const monthKeys = new Set<string>();
 
   for (const row of db.rows) {
-    const dateCell = row.cells[dateColumn];
-    const date = dateCell?.kind === "date" ? dateCell.text : "";
-    if (!date) continue;
+    const cell = row.cells[dateColumn];
+    if (cell?.kind !== "date" || !cell.text) continue;
 
     const titleCell = db.titleColumn >= 0 ? row.cells[db.titleColumn] : undefined;
     const title = titleCell && "text" in titleCell ? titleCell.text : "Sin título";
-    const event: CalEvent = { id: row.id, title, color: eventColor(row, [dateColumn, db.titleColumn]) };
-    byDay.set(date, [...(byDay.get(date) ?? []), event]);
-    monthKeys.add(date.slice(0, 7));
+    const event: CalEvent = {
+      id: row.id,
+      title,
+      color: eventColor(row, [dateColumn, db.titleColumn]),
+      details: rowDetails(db, row, [db.titleColumn]),
+      ...deliverableOf(row.cells[deliverable], badgeColor),
+    };
+    spans.push({ event, start: cell.text, end: cell.end ?? cell.text });
   }
+  // Las reuniones también extienden el rango de meses: una fuera del roadmap igual se ve.
+  for (const { day, ...event } of db.extraEvents ?? []) spans.push({ event, start: day, end: day });
+
+  for (const s of spans) {
+    monthKeys.add(s.start.slice(0, 7));
+    monthKeys.add(s.end.slice(0, 7));
+  }
+  // Primero lo que empieza antes y, a igual inicio, lo más largo: así las barras
+  // largas quedan arriba. Las reuniones del mismo día, por hora.
+  spans.sort(
+    (a, b) =>
+      a.start.localeCompare(b.start) || b.end.localeCompare(a.end) || (a.event.time ?? "").localeCompare(b.event.time ?? ""),
+  );
 
   const sorted = [...monthKeys].sort();
   const keys: string[] = [];
@@ -539,20 +717,15 @@ export function buildCalendar(
     const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const cells = Math.ceil((offset + daysInMonth) / 7) * 7;
 
-    const weeks: CalDay[][] = [];
+    const weekDays: CalDay[][] = [];
     for (let i = 0; i < cells; i++) {
       const date = new Date(start.getTime() + i * MS_DAY);
       const key2 = iso(date);
-      const day: CalDay = {
-        iso: key2,
-        day: date.getUTCDate(),
-        inMonth: date.getUTCMonth() === m - 1,
-        isToday: key2 === today,
-        events: byDay.get(key2) ?? [],
-      };
-      if (i % 7 === 0) weeks.push([]);
-      weeks[weeks.length - 1].push(day);
+      const day: CalDay = { iso: key2, day: date.getUTCDate(), inMonth: date.getUTCMonth() === m - 1, isToday: key2 === today };
+      if (i % 7 === 0) weekDays.push([]);
+      weekDays[weekDays.length - 1].push(day);
     }
+    const weeks = weekDays.map((days) => placeWeek(days, spans));
 
     // Mes y año por separado: es-AR formatea "agosto de 2026" y el "de" sobra.
     const month = new Intl.DateTimeFormat("es-AR", { month: "long", timeZone: "UTC" }).format(firstOfMonth);
@@ -563,7 +736,9 @@ export function buildCalendar(
   const found = keys.indexOf(current);
   const initial = found >= 0 ? found : current > keys[keys.length - 1] ? keys.length - 1 : 0;
 
-  return { months, initial };
+  // Dos líneas si la database tiene Entregable: todos los eventos miden lo mismo
+  // para que los carriles sigan alineados.
+  return { months, initial, twoLines: deliverable >= 0 };
 }
 
 export const WEEKDAYS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];

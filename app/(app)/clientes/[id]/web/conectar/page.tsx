@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Topbar } from "@/components/topbar";
 import { Card, NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { getClaritySecrets } from "@/lib/clarity";
@@ -14,7 +13,6 @@ export default async function ConectarClarityPage({ params }: { params: Promise<
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Conectar Clarity" />
         <NoAccess />
       </>
     );
@@ -28,7 +26,6 @@ export default async function ConectarClarityPage({ params }: { params: Promise<
 
   return (
     <>
-      <Topbar crumb={client.name} title="Conectar Clarity" />
       <section className="view view-column">
         <p className="back-link">
           <Link href={`/clientes/${client.slug}/web`}>← Volver a WEB</Link>

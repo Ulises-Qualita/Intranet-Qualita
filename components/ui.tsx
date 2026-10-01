@@ -66,7 +66,7 @@ export function KpiLocked({
   );
 }
 
-type ConnectKind = "meta" | "crm" | "notion" | "clarity";
+type ConnectKind = "meta" | "crm" | "notion" | "clarity" | "drive";
 
 const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: string; cta: string }> = {
   notion: {
@@ -92,6 +92,12 @@ const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: s
     title: "Conectá Microsoft Clarity",
     desc: "Vinculá el proyecto de Clarity del sitio de este cliente para ver sesiones, páginas más vistas y las señales de fricción: rage clicks, clics muertos y errores.",
     cta: "Conectar Clarity",
+  },
+  drive: {
+    icon: "folder",
+    title: "Elegí la carpeta de Drive",
+    desc: "Vinculá la carpeta de este cliente en la unidad compartida. El cliente solo va a ver esa carpeta: puede navegarla, descargar y subir archivos.",
+    cta: "Elegir carpeta",
   },
 };
 
@@ -124,6 +130,7 @@ const NOT_CONNECTED: Record<ConnectKind, string> = {
   meta: "Las métricas de Meta todavía no están conectadas.",
   crm: "El CRM todavía no está conectado.",
   clarity: "La analítica del sitio todavía no está conectada.",
+  drive: "La carpeta de archivos todavía no está disponible.",
 };
 
 export function NotConnected({ kind }: { kind: ConnectKind }) {

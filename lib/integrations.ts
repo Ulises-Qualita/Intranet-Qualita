@@ -33,6 +33,14 @@ export const INTEGRATIONS = [
     help: "Proyecto de Microsoft Clarity del sitio del cliente, de donde salen las métricas de la solapa WEB.",
   },
   {
+    value: "drive",
+    label: "Drive",
+    title: "Google Drive",
+    refLabel: "Carpeta de Drive",
+    placeholder: "",
+    help: "Carpeta del cliente en la unidad compartida del estudio. El cliente la ve, descarga y sube archivos desde su cuenta.",
+  },
+  {
     value: "whatsapp",
     label: "WhatsApp",
     title: "WhatsApp Business",
@@ -57,6 +65,7 @@ export const CONNECT_PAGES = {
   notion: { path: "notion/conectar", manualError: "Notion se conecta eligiendo el proyecto de la lista." },
   crm: { path: "crm/conectar", manualError: "El CRM se conecta cargando la cuenta y su clave de API." },
   clarity: { path: "web/conectar", manualError: "Clarity se conecta cargando el token de exportación del proyecto." },
+  drive: { path: "drive/conectar", manualError: "Drive se conecta eligiendo la carpeta del cliente." },
 } as const;
 
 export const hasConnectPage = (provider: Integration): provider is keyof typeof CONNECT_PAGES => provider in CONNECT_PAGES;

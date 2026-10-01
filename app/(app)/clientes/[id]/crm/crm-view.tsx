@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { StageBars } from "@/components/charts";
-import { Icon } from "@/components/icons";
 import { RangePicker } from "@/components/range-picker";
+import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, KpiLocked, MissingIntegration, Pill } from "@/components/ui";
+import { crmProviderLabel } from "@/lib/crm-shared";
 import { prepareCrmView } from "@/lib/crm-sync";
 import { type Client, crmPeriod, getCrmSnapshot, getLeads, getMetaCampaigns, leadFunnel, topVideoAds } from "@/lib/data";
 import { integer, money, percent, relativeTime } from "@/lib/format";
@@ -35,7 +35,7 @@ export async function CrmView({
   if (!c.conn.crm) {
     return (
       <>
-        <Topbar crumb={c.name} title="CRM y ventas" />
+        {!internal && <Topbar crumb={c.name} title="CRM y ventas" />}
         <section className="view">
           <MissingIntegration kind="crm" client={c} internal={internal} />
         </section>
@@ -61,19 +61,21 @@ export async function CrmView({
 
   return (
     <>
-      <Topbar crumb={c.name} title="CRM y ventas">
-        <RangePicker basePath={`${base}/crm`} period={range} />
-        {/* Ya conectado, la pantalla de conexión sigue siendo donde se elige qué
-            etapas cuentan como venta ganada. Solo para el equipo. */}
-        {internal && (
-          <Link href={`${base}/crm/conectar`} className="btn-secondary">
-            <Icon name="settings" size={15} strokeWidth={2} />
-            Configurar
-          </Link>
-        )}
-      </Topbar>
+      {/* El equipo tiene el encabezado, las solapas y el período en clientes/[id]/layout.tsx. */}
+      {!internal && (
+        <Topbar crumb={c.name} title="CRM y ventas">
+          <RangePicker basePath={`${base}/crm`} period={range} />
+        </Topbar>
+      )}
+      {/* "Configurar" (etapas que cuentan como venta ganada) está en la barra de
+          solapas del equipo: configHref en clientes/[id]/layout.tsx. */}
       <section className="view">
-        {internal && secrets?.sync_error && <p className="form-error">{secrets.sync_error}</p>}
+        <SyncStatus
+          source={secrets ? crmProviderLabel(secrets.provider) : "CRM"}
+          at={secrets?.synced_at}
+          error={secrets?.sync_error}
+          internal={internal}
+        />
 
         <div className="grid g4 mb-4">
           {snapshot ? (
@@ -117,11 +119,7 @@ export async function CrmView({
           <Card
             title="Etapas del embudo"
             className="funnel-card"
-            hint={
-              secrets?.synced_at
-                ? `${leads.length} oportunidades · ${periodo} · actualizado ${relativeTime(secrets.synced_at)}`
-                : `${leads.length} oportunidades · ${periodo}`
-            }
+            hint={`${leads.length} oportunidades · ${periodo}`}
           >
             {leads.length ? (
               <StageBars stages={leadFunnel(leads, secrets?.stage_order)} />

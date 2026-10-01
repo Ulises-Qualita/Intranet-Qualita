@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Topbar } from "@/components/topbar";
 import { Card, NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { getClient, getNotionConfig } from "@/lib/data";
@@ -15,7 +14,6 @@ export default async function ConectarNotionPage({ params }: { params: Promise<{
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Conectar Notion" />
         <NoAccess />
       </>
     );
@@ -44,7 +42,6 @@ export default async function ConectarNotionPage({ params }: { params: Promise<{
 
   return (
     <>
-      <Topbar crumb={client.name} title="Conectar Notion" />
       <section className="view">
         <p className="back-link">
           <Link href={`/clientes/${client.slug}/tareas`}>← Volver a Tareas</Link>

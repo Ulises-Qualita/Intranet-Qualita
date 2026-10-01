@@ -52,9 +52,12 @@ export async function OverviewView({
 
   return (
     <>
-      <Topbar crumb={c.name} title="Vista general">
-        <RangePicker basePath={base} period={range} />
-      </Topbar>
+      {/* El equipo tiene el encabezado, las solapas y el período en clientes/[id]/layout.tsx. */}
+      {!internal && (
+        <Topbar crumb={c.name} title="Vista general">
+          <RangePicker basePath={base} period={range} />
+        </Topbar>
+      )}
       <section className="view">
         <div className="grid g4 mb-4">
           {!c.conn.crm ? (

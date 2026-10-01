@@ -17,7 +17,17 @@ export function openPicker(e: React.MouseEvent<HTMLInputElement>) {
 
 // Rango elegido a mano: dos calendarios (el selector de fecha nativo del
 // navegador) y "Aplicar", que lleva el rango a la URL como ?desde=&hasta=.
-export function CustomRange({ basePath, period }: { basePath: string; period: Period }) {
+// `navigate` reemplaza al router.push directo: la barra de solapas del cliente lo
+// usa para navegar dentro de una transición y dejar la vista anterior a la vista.
+export function CustomRange({
+  basePath,
+  period,
+  navigate,
+}: {
+  basePath: string;
+  period: Period;
+  navigate?: (href: string) => void;
+}) {
   const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -55,7 +65,9 @@ export function CustomRange({ basePath, period }: { basePath: string; period: Pe
     if (!from || !to) return;
     const [since, until] = from <= to ? [from, to] : [to, from];
     setOpen(false);
-    router.push(`${basePath}?desde=${since}&hasta=${until}`);
+    const href = `${basePath}?desde=${since}&hasta=${until}`;
+    if (navigate) navigate(href);
+    else router.push(href);
   }
 
   return (

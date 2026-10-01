@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
-import { Topbar } from "@/components/topbar";
 import { NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { getClient } from "@/lib/data";
 import { readPeriod } from "@/lib/period";
-import { OverviewView } from "./overview-view";
+import { OverviewView } from "../overview-view";
 
 export default async function ClienteGeneralPage({
   params,
@@ -19,7 +18,6 @@ export default async function ClienteGeneralPage({
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Vista general" />
         <NoAccess />
       </>
     );

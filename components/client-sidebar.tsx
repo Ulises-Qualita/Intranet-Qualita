@@ -15,6 +15,7 @@ const TAB_ICONS: Record<string, IconName> = {
   WEB: "eye",
   Portal: "media",
   Reuniones: "calendar",
+  Drive: "folder",
   Equipo: "team",
 };
 

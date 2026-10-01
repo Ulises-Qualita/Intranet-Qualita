@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { Topbar } from "@/components/topbar";
 import { NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { getClient } from "@/lib/data";
@@ -13,7 +12,6 @@ export default async function ClienteEquipoPage({ params }: { params: Promise<{ 
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Equipo" />
         <NoAccess />
       </>
     );

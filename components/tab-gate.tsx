@@ -4,7 +4,6 @@ import { CLIENT_BASE, getClientZone } from "@/lib/client-zone";
 import { CLIENT_TABS, isTabHidden, type TabKey } from "@/lib/client-tabs";
 import { getClient } from "@/lib/data";
 import { Icon } from "./icons";
-import { Topbar } from "./topbar";
 
 // Barrera de las solapas que se desactivan en "Editar cliente". Va en el
 // layout.tsx de cada solapa: sacarla del sidebar no alcanza, se puede entrar por
@@ -20,7 +19,6 @@ export async function TeamTabGate({ slug, tab, children }: { slug: string; tab: 
   const label = CLIENT_TABS.find((t) => t.key === tab)?.team ?? tab;
   return (
     <>
-      <Topbar crumb={client.name} title={label} />
       <section className="view">
         <div className="card connect-state">
           <div className="cs-ico">

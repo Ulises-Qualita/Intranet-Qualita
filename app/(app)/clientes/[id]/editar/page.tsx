@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Topbar } from "@/components/topbar";
 import { NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { getClient, getTeam } from "@/lib/data";
@@ -15,7 +14,6 @@ export default async function EditarClientePage({ params }: { params: Promise<{ 
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Editar cliente" />
         <NoAccess />
       </>
     );
@@ -28,7 +26,6 @@ export default async function EditarClientePage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <Topbar crumb={client.name} title="Editar cliente" />
       <section className="view">
         <p className="back-link">
           <Link href="/clientes">← Volver a clientes</Link>

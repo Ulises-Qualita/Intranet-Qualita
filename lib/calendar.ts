@@ -9,13 +9,12 @@
 // "<Cliente> & Qualita <motivo>", p. ej. "Disegno Milano & Qualita - Revisión".
 // Igual que los tickets de Notion, se lee en vivo y se cachea solo la consulta
 // de todo el estudio; el filtro por cliente va fuera del cache, por request.
-import { createSign } from "node:crypto";
 import { unstable_cache } from "next/cache";
 import { isQualitaEmail } from "./auth-shared";
 import { getTeam } from "./data";
+import { GoogleAuthError, googleAccessToken, googleConfigured } from "./google";
 
 const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const API = "https://www.googleapis.com/calendar/v3";
 
 // Ventana que se muestra: el último trimestre y lo que viene.
@@ -24,58 +23,20 @@ const FUTURE_DAYS = 60;
 const CACHE_TTL = 300;
 export const MEETINGS_TAG = "calendar-meetings";
 
-export function calendarConfigured() {
-  return Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
-}
+export const calendarConfigured = googleConfigured;
 
 export class CalendarError extends Error {}
 
-// ---------- Token de la cuenta de servicio, actuando como cada miembro ----------
-
-const b64url = (value: string | Buffer) => Buffer.from(value).toString("base64url");
-
-// Por instancia del server: evita firmar y canjear un JWT por miembro en cada consulta.
-const tokens = new Map<string, { token: string; expires: number }>();
-
+// Token de la cuenta de servicio actuando como cada miembro (lib/google.ts).
 async function accessTokenFor(email: string) {
-  const cached = tokens.get(email);
-  if (cached && cached.expires > Date.now() + 60_000) return cached.token;
-
-  const now = Math.floor(Date.now() / 1000);
-  const unsigned = `${b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${b64url(
-    JSON.stringify({
-      iss: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      sub: email,
-      scope: CALENDAR_SCOPE,
-      aud: TOKEN_URL,
-      iat: now,
-      exp: now + 3600,
-    }),
-  )}`;
-  // En Vercel la clave suele cargarse con los saltos de línea escapados.
-  const key = process.env.GOOGLE_SERVICE_ACCOUNT_KEY!.replace(/\\n/g, "\n");
-  const signature = createSign("RSA-SHA256").update(unsigned).sign(key, "base64url");
-
-  const res = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: `${unsigned}.${signature}`,
-    }),
-    cache: "no-store",
-  });
-  const body = await res.json().catch(() => null);
-  if (!res.ok || !body?.access_token) {
-    // unauthorized_client = falta autorizar la delegación en la consola de Workspace.
-    throw new CalendarError(
-      body?.error === "unauthorized_client"
-        ? "La cuenta de servicio no tiene la delegación de dominio autorizada para Calendar."
-        : (body?.error_description ?? `Google respondió ${res.status}`),
-    );
+  try {
+    return await googleAccessToken(email, CALENDAR_SCOPE);
+  } catch (e) {
+    if (e instanceof GoogleAuthError && e.code === "unauthorized_client") {
+      throw new CalendarError("La cuenta de servicio no tiene la delegación de dominio autorizada para Calendar.");
+    }
+    throw new CalendarError(e instanceof Error ? e.message : "No se pudo autenticar con Google.");
   }
-  tokens.set(email, { token: body.access_token, expires: Date.now() + body.expires_in * 1000 });
-  return body.access_token as string;
 }
 
 // ---------- Reuniones ----------
@@ -104,6 +65,17 @@ type RawEvent = {
 
 const EVENT_FIELDS =
   "nextPageToken,items(iCalUID,summary,start,end,hangoutLink,conferenceData/entryPoints(entryPointType,uri),attendees(email,displayName,resource))";
+
+// Nombre de un participante para mostrar: mayúscula al principio de cada palabra
+// (sin tocar el resto: "mcDonald" queda) y, sin nombre en Calendar, el mail:
+// "juan.perez@…" → "Juan Perez".
+export function attendeeName(a: { email: string; name: string | null }) {
+  const raw = a.name?.trim() || a.email.split("@")[0].replace(/[._-]+/g, " ");
+  return raw
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toLocaleUpperCase("es-AR") + w.slice(1))
+    .join(" ");
+}
 
 // Para comparar nombres sin que molesten mayúsculas, tildes ni espacios de más.
 export const normalizeName = (s: string) =>

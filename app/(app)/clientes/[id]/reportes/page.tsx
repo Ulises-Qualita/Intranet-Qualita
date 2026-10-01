@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { Icon } from "@/components/icons";
-import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { getClient, getTeam } from "@/lib/data";
@@ -29,7 +28,6 @@ export default async function ClienteReportesPage({ params }: { params: Promise<
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Reportes" />
         <NoAccess />
       </>
     );
@@ -59,7 +57,6 @@ export default async function ClienteReportesPage({ params }: { params: Promise<
 
   return (
     <>
-      <Topbar crumb={client.name} title="Reportes" />
       <section className="view report-view">
         <Card title="Nuevo reporte" hint="Mismo formato que el reporte mensual">
           {missingTable ? (

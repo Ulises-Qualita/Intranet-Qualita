@@ -2,6 +2,7 @@
 import { cache } from "react";
 import { type ClientSession, getClientSession } from "./auth";
 import { calendarConfigured } from "./calendar";
+import { driveConfigured } from "./drive";
 import { isTabHidden, type TabKey } from "./client-tabs";
 import { type Client, getAllClients } from "./data";
 
@@ -31,6 +32,7 @@ export function clientTabs(client: Client) {
     { href: `${CLIENT_BASE}/web`, label: "WEB", show: client.conn.clarity, tab: "web" },
     { href: `${CLIENT_BASE}/portal`, label: "Portal", show: client.conn.notion, tab: "portal" },
     { href: `${CLIENT_BASE}/reuniones`, label: "Reuniones", show: calendarConfigured(), tab: "reuniones" },
+    { href: `${CLIENT_BASE}/drive`, label: "Drive", show: client.conn.drive && driveConfigured(), tab: "drive" },
     // Siempre visible: si no hay nadie asignado, la vista lo dice.
     { href: `${CLIENT_BASE}/equipo`, label: "Equipo", show: true, tab: "equipo" },
   ];

@@ -1,11 +1,55 @@
 import Link from "next/link";
 import { NotionContent } from "@/components/notion-content";
+import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, MissingIntegration, NotConnected } from "@/components/ui";
 import { type Client, getNotionConfig } from "@/lib/data";
 import { getPortal, notionConfigured, notionErrorMessage, type Portal } from "@/lib/notion";
 import { isPortalConfigured } from "@/lib/notion-map";
+import { attendeeName, calendarConfigured, getClientMeetings } from "@/lib/calendar";
+import { getMeetingNotes } from "@/lib/meeting-notes";
+import { isTabHidden } from "@/lib/client-tabs";
+import { type ExtraEvent, withExtraEvents } from "@/lib/notion-blocks";
 import { RefreshPortalButton } from "./refresh-button";
+
+const TZ = "America/Argentina/Buenos_Aires";
+const hour = new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: TZ });
+const localDay = new Intl.DateTimeFormat("en-CA", { timeZone: TZ });
+
+// Reuniones con el cliente (Google Calendar) para sumar al calendario del
+// portal. Nada si Calendar no está configurado, si la solapa Reuniones está
+// desactivada para quien mira, o si falla la lectura: el portal no depende de esto.
+async function portalMeetings(client: Client, internal: boolean): Promise<ExtraEvent[]> {
+  if (!calendarConfigured() || isTabHidden(client.hiddenTabs, internal ? "team" : "client", "reuniones")) return [];
+  const [{ upcoming, past, error }, notes] = await Promise.all([
+    getClientMeetings(client.name),
+    getMeetingNotes(client.id),
+  ]);
+  if (error) return [];
+  return [
+    ...past.map((m) => ({ m, href: null, done: true })),
+    ...upcoming.map((m) => ({ m, href: m.meetUrl, done: false })),
+  ].map(({ m, href, done }) => {
+    const people = m.attendees.map(attendeeName);
+    return {
+      id: `meet-${m.key}`,
+      kind: "meeting" as const,
+      title: m.reason ?? "Reunión",
+      color: "default",
+      day: m.allDay ? m.start.slice(0, 10) : localDay.format(new Date(m.start)),
+      time: m.allDay ? undefined : hour.format(new Date(m.start)),
+      subtitle: m.allDay ? "Todo el día" : `${hour.format(new Date(m.start))} – ${hour.format(new Date(m.end))} hs`,
+      href,
+      done,
+      details: [
+        { label: "Horario", value: m.allDay ? "Todo el día" : `${hour.format(new Date(m.start))} – ${hour.format(new Date(m.end))} hs` },
+        ...(people.length ? [{ label: "Participantes", value: people.join(", ") }] : []),
+      ],
+      // Solo las ya hechas tienen descripción (la escribe el equipo en Reuniones).
+      notes: done ? (notes.byKey[m.key]?.notes ?? null) : null,
+    };
+  });
+}
 
 // Portal del cliente (la página de Notion vinculada al proyecto): la intranet baja
 // los bloques por la API y los dibuja con su propio diseño. Anda con la página sin
@@ -25,7 +69,7 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
   if (!projectId) {
     return (
       <>
-        <Topbar crumb={c.name} title={title} />
+        {!internal && <Topbar crumb={c.name} title={title} />}
         <section className="view">
           <MissingIntegration kind="notion" client={c} internal={internal} />
         </section>
@@ -37,7 +81,7 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
     if (!internal) {
       return (
         <>
-          <Topbar crumb={c.name} title={title} />
+          {!internal && <Topbar crumb={c.name} title={title} />}
           <section className="view">
             <NotConnected kind="notion" />
           </section>
@@ -46,7 +90,7 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
     }
     return (
       <>
-        <Topbar crumb={c.name} title={title} />
+        {!internal && <Topbar crumb={c.name} title={title} />}
         <section className="view">
           <Card title="Portal del cliente" className="notion-connect">
             <div className="connect-state">
@@ -67,6 +111,8 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
     );
   }
 
+  // En paralelo con Notion; nunca tira (sin reuniones, el portal sale igual).
+  const meetingsPromise = portalMeetings(c, internal);
   let portal: Portal | null = null;
   let loadError: string | null = null;
   try {
@@ -75,37 +121,28 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
     console.error("[notion] getPortal", e);
     loadError = notionErrorMessage(e);
   }
+  const meetings = await meetingsPromise;
 
   const ok = portal?.state === "ok" ? portal : null;
 
   return (
     <>
-      <Topbar crumb={c.name} title={title} />
+      {!internal && <Topbar crumb={c.name} title={title} />}
       <section className="view">
-        {/* Solo el equipo: el link lleva al workspace de Notion de Qualita, que el
-            cliente no puede abrir, y actualizar es una acción del equipo. */}
-        {internal && (
-          <div className="view-actions">
-            <span className="muted">
-              Página de Notion, en modo lectura.
+        {/* Abrir y actualizar solo para el equipo: el link lleva al workspace de
+            Notion de Qualita, que el cliente no puede abrir. */}
+        <SyncStatus source="Notion" live error={loadError} internal={internal}>
+          {internal && (
+            <>
               {ok && (
-                <>
-                  {" "}
-                  <a href={ok.url} target="_blank" rel="noreferrer" className="link-connect-inline">
-                    Abrir en Notion
-                  </a>
-                </>
+                <a href={ok.url} target="_blank" rel="noreferrer" className="link-connect-inline">
+                  Abrir en Notion
+                </a>
               )}
-            </span>
-            <RefreshPortalButton />
-          </div>
-        )}
-
-        {loadError && (
-          <p className="form-error">
-            {internal ? loadError : "No se pudo cargar el portal. Probá de nuevo en un rato."}
-          </p>
-        )}
+              <RefreshPortalButton />
+            </>
+          )}
+        </SyncStatus>
 
         {!internal && (portal?.state === "missing" || portal?.state === "unreachable") && (
           <EmptyState label="Pendiente">El portal todavía no está disponible.</EmptyState>
@@ -149,7 +186,7 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
             {ok.blocks.length === 0 ? (
               <EmptyState label="Vacío">La página existe pero todavía no tiene contenido.</EmptyState>
             ) : (
-              <NotionContent blocks={ok.blocks} />
+              <NotionContent blocks={withExtraEvents(ok.blocks, meetings)} />
             )}
           </article>
         )}

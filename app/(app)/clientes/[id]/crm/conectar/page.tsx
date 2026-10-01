@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Topbar } from "@/components/topbar";
 import { Card, NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { crmProviderLabel } from "@/lib/crm-shared";
@@ -17,7 +16,6 @@ export default async function ConectarCrmPage({ params }: { params: Promise<{ id
   if (!session) {
     return (
       <>
-        <Topbar crumb="Clientes" title="Conectar CRM" />
         <NoAccess />
       </>
     );
@@ -31,7 +29,6 @@ export default async function ConectarCrmPage({ params }: { params: Promise<{ id
 
   return (
     <>
-      <Topbar crumb={client.name} title="Conectar CRM" />
       <section className="view">
         <p className="back-link">
           <Link href={`/clientes/${client.slug}/crm`}>← Volver a CRM</Link>
