@@ -1,5 +1,6 @@
 import { Card, EmptyState } from "@/components/ui";
-import { type ChatEvent, chatStats, duration, NO_OWNER } from "@/lib/crm-chats";
+import { type ChatEvent, chatStats, duration, NO_OWNER, WORK_HOURS } from "@/lib/crm-chats";
+import type { Lead } from "@/lib/data";
 import { integer, percent } from "@/lib/format";
 import { type Period, periodPhrase } from "@/lib/period";
 
@@ -22,19 +23,25 @@ const isHiddenOwner = (name: string) => name === NO_OWNER || /^admin(istrador|is
 const time = (seconds: number | null) => (seconds === null ? "—" : duration(seconds));
 const share = (value: number | null) => (value === null ? "—" : percent(value * 100, 0));
 
-// Atención por chat del CRM (solo equipo, solo Kommo): tiempos de respuesta,
-// volumen por responsable y conversaciones esperando. Sale del registro de
-// mensajes sin texto (lib/crm-chats.ts); los límites de esa fuente se aclaran al
-// pie para que nadie lea de más en los números.
+// Atención por chat del CRM (solo equipo, solo Kommo): cuánto tarda la primera
+// respuesta a cada lead nuevo, por responsable, y qué conversaciones quedaron
+// esperando. Sale del registro de mensajes sin texto (lib/crm-chats.ts); los
+// límites de esa fuente se aclaran al pie para que nadie lea de más en los números.
 //
-// `events`: null si falta crear la tabla. `leadUrl`: arma el link al lead en el CRM.
+// `events`: null si falta crear la tabla. `leads`: las oportunidades que cuentan.
+// `storedSince`: desde cuándo hay mensajes guardados. `leadUrl`: arma el link al
+// lead en el CRM.
 export function ChatMonitor({
   events,
+  leads,
+  storedSince,
   range,
   error,
   leadUrl,
 }: {
   events: ChatEvent[] | null;
+  leads: Lead[];
+  storedSince: string | null;
   range: Period;
   error: string | null;
   leadUrl: (leadId: string) => string;
@@ -47,7 +54,7 @@ export function ChatMonitor({
     );
   }
 
-  const { total, groups: allGroups, waiting, fromKommo } = chatStats(events);
+  const { total, groups: allGroups, waiting, fromKommo } = chatStats(events, { leads, period: range, storedSince });
   const groups = allGroups.filter((g) => !isHiddenOwner(g.name));
   const hiddenTalks = allGroups.filter((g) => isHiddenOwner(g.name)).reduce((n, g) => n + g.talks, 0);
 
@@ -63,24 +70,28 @@ export function ChatMonitor({
           <>
             <div className="usage-rows mb-4">
               <div>
-                <span>Conversaciones</span>
-                <b>{integer(total.talks)}</b>
+                <span>Leads nuevos que escribieron</span>
+                <b>{integer(total.leads)}</b>
               </div>
               <div>
-                <span>Mensajes recibidos</span>
-                <b>{integer(total.incoming)}</b>
-              </div>
-              <div>
-                <span>Respuesta (mediana)</span>
+                <span>Primera respuesta (mediana)</span>
                 <b>{time(total.medianResponse)}</b>
               </div>
               <div>
-                <span>Respondidas en 15 min</span>
+                <span>En horario de atención</span>
+                <b>{time(total.medianInHours)}</b>
+              </div>
+              <div>
+                <span>Fuera de horario</span>
+                <b>{time(total.medianOffHours)}</b>
+              </div>
+              <div>
+                <span>Respondidos en 15 min</span>
                 <b>{share(total.fastShare)}</b>
               </div>
               <div>
-                <span>Esperando respuesta</span>
-                <b>{integer(total.waiting)}</b>
+                <span>Sin respuesta</span>
+                <b>{integer(total.unanswered)}</b>
               </div>
             </div>
 
@@ -89,12 +100,13 @@ export function ChatMonitor({
                 <thead>
                   <tr>
                     <th>Responsable</th>
-                    <th>Conversaciones</th>
-                    <th>Recibidos</th>
-                    <th>Enviados</th>
-                    <th>Respuesta</th>
+                    <th>Leads nuevos</th>
+                    <th>1.ª respuesta</th>
+                    <th>En horario</th>
+                    <th>Fuera de horario</th>
                     <th>En 15 min</th>
-                    <th>Esperando</th>
+                    <th>Sin respuesta</th>
+                    <th>Conversaciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -103,12 +115,13 @@ export function ChatMonitor({
                       <td>
                         <b>{g.name}</b>
                       </td>
-                      <td className="num">{integer(g.talks)}</td>
-                      <td className="num">{integer(g.incoming)}</td>
-                      <td className="num">{integer(g.outgoing)}</td>
+                      <td className="num">{integer(g.leads)}</td>
                       <td className="num">{time(g.medianResponse)}</td>
+                      <td className="num">{time(g.medianInHours)}</td>
+                      <td className="num">{time(g.medianOffHours)}</td>
                       <td className="num">{share(g.fastShare)}</td>
-                      <td className="num">{integer(g.waiting)}</td>
+                      <td className="num">{integer(g.unanswered)}</td>
+                      <td className="num">{integer(g.talks)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -116,10 +129,13 @@ export function ChatMonitor({
             </div>
 
             <p className="hint-text chat-notes">
-              Agrupado por el responsable del lead en el CRM, no por quién escribió: {integer(fromKommo)} de{" "}
-              {integer(total.outgoing)} mensajes enviados salieron de un usuario de Kommo; el resto no trae autor (app de
-              WhatsApp del teléfono o automatizaciones). El tiempo de respuesta corre también fuera de horario, y sin el
-              texto no se distingue una consulta de un «gracias».
+              La primera respuesta va del primer mensaje de cada lead nuevo {periodPhrase(range)} al primer mensaje que
+              recibió después, con reloj corrido; se separa según el lead haya escrito dentro o fuera del horario de
+              atención ({WORK_HOURS.label}). No entran los clientes que ya estaban ni las charlas ya empezadas. Va
+              agrupado por el responsable del lead en el CRM, no por quién escribió: {integer(fromKommo)} de{" "}
+              {integer(total.outgoing)} mensajes enviados salieron de un usuario de Kommo; el resto son respuestas desde
+              la app de WhatsApp del teléfono, que llegan sin autor. En total hubo {integer(total.talks)} conversaciones
+              con {integer(total.incoming)} mensajes recibidos.
               {hiddenTalks > 0 &&
                 ` Los totales incluyen ${integer(hiddenTalks)} ${hiddenTalks === 1 ? "conversación" : "conversaciones"} sin responsable o a nombre del administrador, que no se listan en la tabla.`}
             </p>

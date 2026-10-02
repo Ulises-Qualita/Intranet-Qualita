@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { initialsOf, type Profile } from "./auth-shared";
 import type { ClientStatus } from "./client-status";
+import { type CrmExclusion, isCrmExclusion } from "./crm-shared";
 import { type HiddenTabs, parseHiddenTabs } from "./client-tabs";
 import { INTEGRATIONS, type Integration, type IntegrationState } from "./integrations";
 import { localDate } from "./format";
@@ -438,6 +439,8 @@ export async function getCrmSnapshot(clientId: string): Promise<CrmSnapshot | nu
 
 export type Lead = {
   id: string;
+  // Id de la oportunidad en el CRM: cruza con los chats (intranet_crm_chat_events).
+  external_id: string | null;
   name: string;
   source: string | null;
   amount: number | null;
@@ -457,26 +460,30 @@ export type Lead = {
   stage_changed_at: string | null;
 };
 
-const LEAD_COLUMNS = "id, name, source, amount, stage, temperature, created_at";
+const LEAD_COLUMNS = "id, external_id, name, source, amount, stage, temperature, created_at";
 // Columnas agregadas después (ver docs/sql/), de a tandas y de la más vieja a la
 // más nueva: mientras la base no tenga alguna, se lee sin ella (y sin las
 // posteriores) en vez de romper.
-const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"], ["stage_changed_at"]];
+const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"], ["stage_changed_at"], ["excluded"]];
 
-export async function getLeads(clientId: string): Promise<Lead[]> {
+// Fila como está guardada: `excluded` trae el motivo de los leads que no cuentan
+// como oportunidad nueva (crmExclusions en lib/crm-shared.ts).
+type LeadRow = Lead & { excluded?: string | null };
+
+const readLeadRows = cache(async (clientId: string): Promise<LeadRow[]> => {
   const supabase = await createClient();
   const read = (columns: string) =>
-    readAll<Lead>((from, to) =>
+    readAll<LeadRow>((from, to) =>
       supabase
         .from("intranet_leads")
         .select(columns)
         .eq("client_id", clientId)
         .order("created_at", { ascending: false })
         .range(from, to)
-        .returns<Lead[]>(),
+        .returns<LeadRow[]>(),
     );
 
-  let data: Lead[] | null = null;
+  let data: LeadRow[] | null = null;
   for (let tandas = LEAD_EXTRA_COLUMNS.length; data === null; tandas--) {
     const columns = [LEAD_COLUMNS, ...LEAD_EXTRA_COLUMNS.slice(0, tandas).flat()].join(", ");
     data = await read(columns).catch((e) => {
@@ -484,6 +491,22 @@ export async function getLeads(clientId: string): Promise<Lead[]> {
       return null;
     });
   }
+  return data;
+});
+
+// Leads que el CRM tiene cargados pero no cuentan como oportunidad nueva, con el
+// motivo: la vista de CRM avisa cuántos quedaron afuera del período.
+export async function getExcludedLeads(clientId: string): Promise<{ created_at: string; excluded: CrmExclusion }[]> {
+  return (await readLeadRows(clientId)).flatMap((l) =>
+    isCrmExclusion(l.excluded) ? [{ created_at: l.created_at, excluded: l.excluded }] : [],
+  );
+}
+
+// Las oportunidades del cliente. Solo las que cuentan: pruebas internas, leads
+// anteriores al arranque del CRM, clientes que ya estaban y duplicados quedan
+// afuera de todas las vistas, del agente y de los reportes.
+export async function getLeads(clientId: string): Promise<Lead[]> {
+  const data = (await readLeadRows(clientId)).filter((l) => !l.excluded);
   return data.map((l) => ({
     ...l,
     status: l.status ?? null,

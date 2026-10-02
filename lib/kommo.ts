@@ -131,8 +131,47 @@ type KommoLead = {
   custom_fields_values: KommoField[] | null;
   _embedded?: {
     tags?: { name: string }[];
+    // Solo si se pide with=contacts.
+    contacts?: { id: number; is_main?: boolean }[];
   };
 };
+
+type KommoContact = { id: number; created_at: number; custom_fields_values: KommoField[] | null };
+
+// Ids por pedido (viajan en la URL) y pedidos a la vez: Kommo admite 7 por segundo.
+const ID_BATCH = 50;
+const ID_PARALLEL = 4;
+
+// Alta y teléfono de los contactos de los leads, por id. Con eso se distingue un
+// lead nuevo de un contacto que ya estaba en la cuenta (lib/crm-shared.ts).
+async function getContacts(creds: KommoCredentials, ids: number[]) {
+  const found = new Map<number, { createdAt: string; phoneKey: string | null }>();
+  const batches: number[][] = [];
+  for (let i = 0; i < ids.length; i += ID_BATCH) batches.push(ids.slice(i, i + ID_BATCH));
+
+  for (let i = 0; i < batches.length; i += ID_PARALLEL) {
+    const bodies = await Promise.all(
+      batches.slice(i, i + ID_PARALLEL).map((batch) =>
+        api<{ _embedded: { contacts: KommoContact[] } }>(creds, "contacts", {
+          limit: PAGE_LIMIT,
+          ...Object.fromEntries(batch.map((id, n) => [`filter[id][${n}]`, id])),
+        }),
+      ),
+    );
+    for (const body of bodies) {
+      for (const c of body?._embedded.contacts ?? []) {
+        // Kommo guarda "+5491131899549"; a mano lo cargan de cualquier forma. Los
+        // últimos 10 dígitos son el número sin prefijos.
+        const digits = String(fieldOf(c.custom_fields_values, /^phone$/i) ?? "").replace(/\D/g, "");
+        found.set(c.id, {
+          createdAt: new Date(c.created_at * 1000).toISOString(),
+          phoneKey: digits.length >= 8 ? digits.slice(-10) : null,
+        });
+      }
+    }
+  }
+  return found;
+}
 
 // Por nombre o por código: los campos de seguimiento traen field_code (UTM_SOURCE)
 // aunque alguien les cambie el nombre visible.
@@ -152,10 +191,13 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
   const since = Math.floor(Date.now() / 1000) - LEAD_DAYS * 86_400;
 
   const leads: CrmLead[] = [];
+  // Contacto principal de cada lead; sus datos se piden al final, todos juntos.
+  const contactOf = new Map<string, number>();
   for (let page = 1; page <= MAX_PAGES; page++) {
     const body = await api<{ _embedded: { leads: KommoLead[] } }>(creds, "leads", {
       page,
       limit: PAGE_LIMIT,
+      with: "contacts",
       "order[created_at]": "desc",
     });
     const rows = body?._embedded.leads ?? [];
@@ -165,6 +207,10 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
       const lost = r.status_id === LOST_STATUS;
       // Las cerradas viejas no suman al período; las abiertas se traen siempre.
       if ((won || lost) && r.created_at < since) continue;
+
+      const contacts = r._embedded?.contacts ?? [];
+      const contact = contacts.find((c) => c.is_main) ?? contacts[0];
+      if (contact) contactOf.set(String(r.id), contact.id);
 
       leads.push({
         externalId: String(r.id),
@@ -181,11 +227,22 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
         createdAt: new Date(r.created_at * 1000).toISOString(),
         // Kommo no guarda cuándo cambió la etapa (updated_at cambia con cualquier edición).
         stageChangedAt: null,
+        // Se completan abajo, con los contactos.
+        contactCreatedAt: null,
+        phoneKey: null,
         lost,
         wonByCrm: won,
       });
     }
     if (rows.length < PAGE_LIMIT) break;
+  }
+
+  const contacts = await getContacts(creds, [...new Set(contactOf.values())]);
+  for (const lead of leads) {
+    const contact = contacts.get(contactOf.get(lead.externalId) ?? -1);
+    if (!contact) continue;
+    lead.contactCreatedAt = contact.createdAt;
+    lead.phoneKey = contact.phoneKey;
   }
 
   return { leads, stages: pipelines.order };

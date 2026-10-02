@@ -5,9 +5,10 @@ import { getAreaSession } from "@/lib/auth";
 import { crmProviderLabel } from "@/lib/crm-shared";
 import { getCrmSecrets } from "@/lib/crm-sync";
 import { getClient } from "@/lib/data";
-import { relativeTime } from "@/lib/format";
+import { relativeTime, todayISO } from "@/lib/format";
 import { CrmForm } from "./crm-form";
 import { DisconnectCrmButton } from "./disconnect-button";
+import { LeadBase } from "./lead-base";
 import { WonStages } from "./won-stages";
 
 export default async function ConectarCrmPage({ params }: { params: Promise<{ id: string }> }) {
@@ -65,6 +66,28 @@ export default async function ConectarCrmPage({ params }: { params: Promise<{ id
               post venta). Tildá todas las etapas que ya significan venta cerrada.
             </p>
             <WonStages clientId={client.id} stages={secrets.stage_order} selected={secrets.won_stages ?? []} />
+          </Card>
+        ) : null}
+
+        {secrets?.stage_order?.length ? (
+          <Card
+            title="Qué leads se cuentan"
+            hint="Afecta todas las métricas del CRM"
+            className="mt-4"
+          >
+            <p className="modal-lead">
+              No todo lo que el CRM tiene cargado es una consulta nueva. Indicá desde qué día el registro es completo (lo
+              anterior no se cuenta) y qué etapas son pruebas o uso interno. Además se dejan afuera solos los leads de
+              contactos que ya estaban en el CRM antes del lead (clientes anteriores que volvieron a escribir) y los
+              repetidos con el mismo teléfono.
+            </p>
+            <LeadBase
+              clientId={client.id}
+              stages={secrets.stage_order}
+              since={secrets.since ?? ""}
+              excluded={secrets.excluded_stages ?? []}
+              today={todayISO()}
+            />
           </Card>
         ) : null}
       </section>

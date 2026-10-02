@@ -493,6 +493,33 @@ export async function setCrmWonStages(clientId: string, stages: string[]): Promi
   return { ok: true, error: null };
 }
 
+// Qué leads del CRM cuentan como oportunidad nueva: desde qué día el registro es
+// completo y qué etapas quedan afuera (pruebas internas). Los contactos que ya
+// estaban y los duplicados se detectan solos (crmExclusions en lib/crm-shared.ts).
+export async function setCrmLeadBase(clientId: string, since: string, stages: string[]): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+
+  const secrets = await getCrmSecrets(clientId);
+  if (!secrets) return { ok: false, error: "El cliente no tiene un CRM conectado." };
+  if (since && (!/^\d{4}-\d{2}-\d{2}$/.test(since) || Number.isNaN(Date.parse(since)))) {
+    return { ok: false, error: "La fecha no es válida." };
+  }
+
+  const known = new Set(secrets.stage_order ?? []);
+  await saveCrmSecrets(clientId, {
+    ...secrets,
+    since: since || undefined,
+    excluded_stages: stages.filter((s) => known.has(s)),
+  });
+
+  // Cambia qué oportunidades cuentan: hay que volver a marcarlas.
+  const result = await syncCrmClient(clientId);
+  if (!result.ok) return { ok: false, error: result.error ?? "No se pudo releer el CRM." };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
 // Fuerza una lectura fresca del portal del cliente.
 export async function refreshPortal(): Promise<FormState> {
   if (!(await getAreaSession("clientes"))) return NO_ACCESS;

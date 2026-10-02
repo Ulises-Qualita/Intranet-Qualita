@@ -43,6 +43,11 @@ export type CrmLead = {
   createdAt: string;
   // Último cambio de etapa, si el CRM lo informa (Odoo sí, Kommo no).
   stageChangedAt: string | null;
+  // Cuándo se creó en el CRM el contacto del lead, si el CRM lo informa (Kommo sí).
+  contactCreatedAt: string | null;
+  // Teléfono del contacto reducido a sus últimos 10 dígitos: solo para detectar
+  // duplicados durante el sync, no se guarda.
+  phoneKey: string | null;
   // Cerrada como perdida (en Odoo, archivada).
   lost: boolean;
   // Lo que el propio CRM considera ganado, cuando no hay etapas elegidas a mano.
@@ -74,4 +79,57 @@ export function crmStatusOf(lead: CrmLead, wonStages: string[] | undefined): Crm
   if (lead.lost) return "lost";
   const won = wonStages?.length ? Boolean(lead.stage && wonStages.includes(lead.stage)) : lead.wonByCrm;
   return won ? "won" : "open";
+}
+
+// ---------- Qué leads cuentan como oportunidad nueva ----------
+
+// No todo lo que el CRM tiene cargado como lead es una consulta nueva. Lo que cae
+// en alguno de estos motivos se guarda igual (los chats lo necesitan), pero no
+// entra en ninguna métrica:
+// - stage: está en una etapa que el equipo marcó para no contar (pruebas internas).
+// - before_start: se creó antes de que el cliente empezara a usar el CRM de
+//   verdad; ese tramo está incompleto y sus etapas se cargaron después.
+// - returning: el contacto ya existía en el CRM antes del lead. Al conectar un
+//   WhatsApp, Kommo importa la agenda del teléfono: cuando uno de esos contactos
+//   vuelve a escribir, nace un "lead nuevo" de alguien que ya era cliente.
+// - duplicate: hay un lead anterior con el mismo teléfono.
+export const CRM_EXCLUSIONS = ["stage", "before_start", "returning", "duplicate"] as const;
+export type CrmExclusion = (typeof CRM_EXCLUSIONS)[number];
+
+export const isCrmExclusion = (value: unknown): value is CrmExclusion =>
+  CRM_EXCLUSIONS.includes(value as CrmExclusion);
+
+export type CrmLeadBase = {
+  // Día (YYYY-MM-DD, Argentina) desde el que el registro del CRM es completo.
+  since?: string;
+  excludedStages?: string[];
+};
+
+// Margen entre el alta del contacto y la del lead para tomarlo como un contacto
+// que ya estaba: en un lead nuevo las dos altas salen juntas.
+const RETURNING_GAP_MS = 24 * 60 * 60 * 1000;
+
+// Motivo por el que cada lead no cuenta, por id del CRM. Los que cuentan no figuran.
+export function crmExclusions(leads: CrmLead[], base: CrmLeadBase): Map<string, CrmExclusion> {
+  const start = base.since ? Date.parse(`${base.since}T00:00:00-03:00`) : null;
+  const excludedStages = new Set(base.excludedStages ?? []);
+
+  // El primer lead de cada teléfono: los demás son el mismo cliente otra vez.
+  const firstByPhone = new Map<string, CrmLead>();
+  for (const lead of leads) {
+    if (!lead.phoneKey) continue;
+    const first = firstByPhone.get(lead.phoneKey);
+    if (!first || lead.createdAt < first.createdAt) firstByPhone.set(lead.phoneKey, lead);
+  }
+
+  const excluded = new Map<string, CrmExclusion>();
+  for (const lead of leads) {
+    const created = Date.parse(lead.createdAt);
+    if (lead.stage && excludedStages.has(lead.stage)) excluded.set(lead.externalId, "stage");
+    else if (start !== null && created < start) excluded.set(lead.externalId, "before_start");
+    else if (lead.contactCreatedAt && created - Date.parse(lead.contactCreatedAt) > RETURNING_GAP_MS) {
+      excluded.set(lead.externalId, "returning");
+    } else if (lead.phoneKey && firstByPhone.get(lead.phoneKey) !== lead) excluded.set(lead.externalId, "duplicate");
+  }
+  return excluded;
 }

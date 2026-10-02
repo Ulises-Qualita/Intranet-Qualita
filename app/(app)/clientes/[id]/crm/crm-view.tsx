@@ -3,12 +3,21 @@ import { RangePicker } from "@/components/range-picker";
 import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, KpiLocked, MissingIntegration, Pill } from "@/components/ui";
-import { getChatEvents } from "@/lib/crm-chats";
-import { crmProviderLabel } from "@/lib/crm-shared";
+import { getChatEvents, getChatStart } from "@/lib/crm-chats";
+import { type CrmExclusion, crmProviderLabel } from "@/lib/crm-shared";
 import { prepareCrmView } from "@/lib/crm-sync";
-import { type Client, crmPeriod, getCrmSnapshot, getLeads, getMetaCampaigns, leadFunnel, topVideoAds } from "@/lib/data";
+import {
+  type Client,
+  crmPeriod,
+  getCrmSnapshot,
+  getExcludedLeads,
+  getLeads,
+  getMetaCampaigns,
+  leadFunnel,
+  topVideoAds,
+} from "@/lib/data";
 import { compare } from "@/lib/compare";
-import { integer, localDate, money, percent, relativeTime, todayISO } from "@/lib/format";
+import { integer, localDate, money, percent, relativeTime, shortDate, todayISO } from "@/lib/format";
 import { CRM_HISTORY_DAYS, type Period, periodPhrase, periodQuery, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
 import { AdsTable } from "./ads-table";
 import { ChatMonitor } from "./chat-monitor";
@@ -17,6 +26,33 @@ import { TopVideos } from "./top-videos";
 // Color del chip de etapa según cómo terminó la oportunidad: ganada, perdida o
 // todavía abierta.
 const stagePill = (status: string | null) => (status === "won" ? "activo" : status === "lost" ? "pausado" : "neg");
+
+// Cómo se nombra cada motivo en el aviso, en singular y en plural.
+const EXCLUSION_LABELS: Record<CrmExclusion, [string, string]> = {
+  returning: ["de un contacto que ya estaba en el CRM", "de contactos que ya estaban en el CRM"],
+  duplicate: ["repetido (mismo teléfono que otro lead)", "repetidos (mismo teléfono que otro lead)"],
+  stage: ["en una etapa que no se cuenta", "en etapas que no se cuentan"],
+  before_start: ["anterior al registro completo", "anteriores al registro completo"],
+};
+
+// "No se cuentan 133 leads del período: 108 de contactos que ya estaban…". null si
+// en el período no quedó nada afuera.
+function excludedNote(excluded: { created_at: string; excluded: CrmExclusion }[], range: Period, since: string | undefined) {
+  const counts = new Map<CrmExclusion, number>();
+  for (const lead of excluded) {
+    const day = localDate(lead.created_at);
+    if (day >= range.since && day <= range.until) counts.set(lead.excluded, (counts.get(lead.excluded) ?? 0) + 1);
+  }
+  const total = [...counts.values()].reduce((sum, n) => sum + n, 0);
+  if (!total) return null;
+
+  const parts = Object.entries(EXCLUSION_LABELS).flatMap(([reason, [one, many]]) => {
+    const n = counts.get(reason as CrmExclusion);
+    return n ? [`${integer(n)} ${n === 1 ? one : many}`] : [];
+  });
+  const start = since && range.since < since ? ` El registro del CRM es completo desde el ${shortDate(since)}.` : "";
+  return `No ${total === 1 ? "se cuenta 1 lead" : `se cuentan ${integer(total)} leads`} del período: ${parts.join(", ")}.${start}`;
+}
 
 // CRM de un cliente. La usan el equipo (/clientes/[slug]/crm) y la cuenta del
 // propio cliente (/mi-empresa/crm): quien la llama ya validó el acceso.
@@ -53,12 +89,18 @@ export async function CrmView({
   const showVideos = c.conn.meta && seesMeta;
   // Atención por chat: solo el equipo y solo Kommo, que es el que registra los mensajes.
   const kommoUrl = internal && secrets?.provider === "kommo" ? secrets.kommo?.url : undefined;
-  const [snapshot, all, campaigns, chatEvents] = await Promise.all([
+  const [snapshot, all, excluded, campaigns, chatEvents, chatStart] = await Promise.all([
     getCrmSnapshot(c.id),
     getLeads(c.id),
+    internal ? getExcludedLeads(c.id) : [],
     showVideos ? getMetaCampaigns(c.id, range) : null,
     kommoUrl ? getChatEvents(c.id, range) : undefined,
+    kommoUrl ? getChatStart(c.id) : null,
   ]);
+
+  // Lo que el CRM tiene cargado en el período pero no es una oportunidad nueva
+  // (solo lo ve el equipo): cuántos quedaron afuera y por qué.
+  const left = excludedNote(excluded, range, secrets?.since);
 
   // Todo el bloque se recorta por fecha de creación, según el selector del topbar.
   const { leads, won, tickets, ticketAvg, ticketTotal, sellers, sources, wonSources, ads } = crmPeriod(all, range);
@@ -74,7 +116,12 @@ export async function CrmView({
   // lo que trae el CRM, ni antes de la primera oportunidad cargada (un CRM recién
   // estrenado daría una suba que es solo el arranque).
   const firstDay = all.length ? localDate(all.reduce((min, l) => (l.created_at < min ? l.created_at : min), all[0].created_at)) : null;
-  const comparable = !!firstDay && firstDay <= previous.since && previous.since >= shiftDate(todayISO(), CRM_HISTORY_DAYS);
+  // Tampoco antes del día desde el que el registro del CRM es completo.
+  const comparable =
+    !!firstDay &&
+    firstDay <= previous.since &&
+    previous.since >= shiftDate(todayISO(), CRM_HISTORY_DAYS) &&
+    (!secrets?.since || previous.since >= secrets.since);
   const before = comparable ? crmPeriod(all, previous) : null;
   const versus = versusLabel(range);
   const antes = `Antes (${previous.label})`;
@@ -99,6 +146,7 @@ export async function CrmView({
           error={secrets?.sync_error}
           internal={internal}
         />
+        {left && <p className="hint-text crm-base-note">{left}</p>}
 
         <div className="grid g4 mb-4">
           {snapshot ? (
@@ -269,6 +317,8 @@ export async function CrmView({
         {kommoUrl && chatEvents !== undefined && (
           <ChatMonitor
             events={chatEvents}
+            leads={all}
+            storedSince={chatStart}
             range={range}
             error={secrets?.chat_error ?? null}
             leadUrl={(leadId) => `${kommoUrl}/leads/detail/${leadId}`}

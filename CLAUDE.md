@@ -279,14 +279,34 @@ No hay framework de tests configurado todavía.
   `listAccessibleCustomers` responden, pero las consultas a cuentas reales dan
   `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION` hasta que Google apruebe el acceso
   (se pide en el Centro de API de la MCC). Todavía no hay `lib/` que lea la API.
+- Qué leads del CRM cuentan (contexto de Arteplac en `docs/contexto-kommo.md`): no todo
+  lead es una consulta nueva. `crmExclusions` de `lib/crm-shared.ts` marca en el sync los
+  que no cuentan y el motivo va a `intranet_leads.excluded`
+  (`docs/sql/2026-10-02-crm-leads-base.sql`): `stage` (etapas excluidas, p. ej. "Equipo
+  interno"), `before_start` (anteriores al día desde el que el registro es completo),
+  `returning` (el contacto existía en el CRM más de un día antes que el lead: al conectar
+  un WhatsApp, Kommo importa la agenda y cada cliente viejo que escribe nace como lead
+  nuevo; se detecta con `contact_created_at`) y `duplicate` (mismo teléfono que un lead
+  anterior; el teléfono no se guarda). `getLeads()` ya los deja afuera, así que vistas,
+  agente y reportes quedan corregidos sin tocarlos; `getExcludedLeads()` alimenta el
+  aviso de la solapa CRM (solo equipo). La fecha y las etapas se eligen por cliente en
+  `/clientes/[slug]/crm/conectar` → "Qué leads se cuentan" (`since` y `excluded_stages`
+  en los secrets del CRM). En Odoo solo aplican esas dos. Lo que **no** se resuelve: las
+  ventas de Arteplac (etapa CONFIRMADO y "Presupuesto $") no son confiables en Kommo;
+  la fuente oficial es su planilla, que la intranet no lee.
 - Atención por chat en la solapa CRM (solo equipo, solo Kommo): `intranet_crm_chat_events`
   (`docs/sql/2026-10-01-crm-chats.sql`) guarda un registro por mensaje **sin el texto**,
   de la API de eventos de Kommo (`incoming_chat_message` / `outgoing_chat_message`).
   `lib/crm-chat-sync.ts` corre dentro de `syncCrmClient`: trae lo nuevo y completa
   hacia atrás hasta 30 días, 16 páginas por corrida (el cron tiene 60 s); un fallo ahí
   va a `secrets.chat_error`, no rompe el sync de oportunidades. `lib/crm-chats.ts`
-  (`getChatEvents`, `chatStats`) y `crm/chat-monitor.tsx` arman tiempo de respuesta
-  (mediana, reloj corrido), respondidas en 15 min y conversaciones esperando. Se
+  (`getChatEvents`, `chatStats`) y `crm/chat-monitor.tsx` arman el tiempo de la
+  **primera respuesta por lead nuevo** del período (del primer entrante al primer
+  saliente posterior, solo leads que cuentan; mediana con reloj corrido, separada
+  según el lead haya escrito dentro o fuera del horario de atención, `WORK_HOURS`:
+  lunes a viernes de 9 a 18, sin confirmar con Arteplac), respondidos en 15 min, sin
+  respuesta y conversaciones esperando. No se mide cada ida y vuelta: daba 4 minutos
+  por el ping-pong de charlas ya empezadas. Se
   agrupa por el **responsable del lead** y no por quién escribió: en Arteplac casi
   todos los salientes llegan sin usuario (`created_by` 0, responden desde la app de
   WhatsApp). El texto de los mensajes existe en `GET /api/v4/talks/{id}/messages`,

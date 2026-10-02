@@ -5,7 +5,7 @@
 // Cada cliente puede usar un CRM distinto; el proveedor sale de los secrets.
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
-import { crmStatusOf, type CrmLead, type CrmProvider } from "./crm-shared";
+import { crmExclusions, crmStatusOf, type CrmLead, type CrmProvider } from "./crm-shared";
 import { todayISO } from "./format";
 import { syncKommoChats } from "./crm-chat-sync";
 import { readKommo, type KommoCredentials } from "./kommo";
@@ -29,6 +29,10 @@ export type CrmSecrets = {
   // seguir después del cierre (producción, entrega), y ahí el CRM ya no marca la
   // oportunidad como ganada.
   won_stages?: string[];
+  // Qué leads cuentan como oportunidad nueva (crmExclusions en lib/crm-shared.ts):
+  // desde qué día el registro del CRM es completo y qué etapas no se cuentan.
+  since?: string;
+  excluded_stages?: string[];
   synced_at?: string;
   sync_error?: string | null;
   // Actividad de los chats (solo Kommo): el motivo si la última lectura falló.
@@ -88,6 +92,9 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
 
     // Estado de cada oportunidad según las etapas que el equipo marcó como venta.
     const statuses = new Map(leads.map((l) => [l.externalId, crmStatusOf(l, secrets.won_stages)]));
+    // Los que no son una oportunidad nueva: se guardan marcados y no entran en las métricas.
+    const excluded = crmExclusions(leads, { since: secrets.since, excludedStages: secrets.excluded_stages });
+    const counted = leads.filter((l) => !excluded.has(l.externalId));
 
     // Se conserva el id de los leads que ya estaban (el CRM manda external_id).
     // PostgREST corta en 1000 filas sin avisar: se lee de a páginas, porque un lead
@@ -126,6 +133,8 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         ad: l.ad,
         tags: l.tags,
         stage_changed_at: l.stageChangedAt,
+        contact_created_at: l.contactCreatedAt,
+        excluded: excluded.get(l.externalId) ?? null,
       }));
 
       // Se sacan de a tandas, de la más nueva a la más vieja, así una migración
@@ -144,11 +153,10 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
       // Columna inexistente: 42703 si responde Postgres, PGRST204 si PostgREST no
       // la tiene en su schema cache.
       const faltaColumna = (e: { code?: string } | null) => e?.code === "42703" || e?.code === "PGRST204";
+      const tandas = [["contact_created_at", "excluded"], ["stage_changed_at"], ["tags"], ["status", "owner", "ad"]];
       let { error } = await upsert(rows);
-      if (faltaColumna(error)) ({ error } = await upsert(sinColumnas(["stage_changed_at"])));
-      if (faltaColumna(error)) ({ error } = await upsert(sinColumnas(["stage_changed_at", "tags"])));
-      if (faltaColumna(error)) {
-        ({ error } = await upsert(sinColumnas(["stage_changed_at", "tags", "status", "owner", "ad"])));
+      for (let n = 1; n <= tandas.length && faltaColumna(error); n++) {
+        ({ error } = await upsert(sinColumnas(tandas.slice(0, n).flat())));
       }
       if (error) throw error;
     }
@@ -164,16 +172,16 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
 
     // Snapshot del día: se reemplaza el de hoy si ya existía.
     const today = todayISO();
-    const cerradas = leads.filter((l) => statuses.get(l.externalId) !== "open").length;
-    const ganadas = leads.filter((l) => statuses.get(l.externalId) === "won").length;
+    const cerradas = counted.filter((l) => statuses.get(l.externalId) !== "open").length;
+    const ganadas = counted.filter((l) => statuses.get(l.externalId) === "won").length;
     await db.from("intranet_crm_snapshot").delete().eq("client_id", clientId).eq("as_of", today);
     const { error: snapshotError } = await db.from("intranet_crm_snapshot").insert({
       id: randomUUID(),
       client_id: clientId,
-      pipeline_value: leads
+      pipeline_value: counted
         .filter((l) => statuses.get(l.externalId) === "open")
         .reduce((total, l) => total + (l.amount ?? 0), 0),
-      leads_count: leads.length,
+      leads_count: counted.length,
       // Sobre las cerradas: qué porcentaje se ganó.
       conversion_rate: cerradas ? (ganadas * 100) / cerradas : 0,
       // WhatsApp es otra integración; acá no hay dato.
@@ -192,7 +200,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
       sync_error: null,
       chat_error: chats?.error ?? null,
     });
-    return { clientId, ok: true, leads: leads.length };
+    return { clientId, ok: true, leads: counted.length };
   } catch (e) {
     const detail = e instanceof Error ? e.message : ((e as { message?: string })?.message ?? "");
     console.error("[crm] sync", clientId, detail || e);
