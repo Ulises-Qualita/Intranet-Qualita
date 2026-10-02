@@ -87,7 +87,7 @@ export function AiUsageCards({ usage, members }: { usage: AiUsage; members: Team
   // de la segunda al aire.
   if (usage.sinTabla) {
     return (
-      <div className="grid mt-4">
+      <div className="grid">
         <Card title="Gasto de IA">
           <EmptyState label="Sin configurar">
             Falta crear la tabla de consumo: correr <code>docs/sql/2026-09-18-agente-uso.sql</code> en Supabase.
@@ -103,7 +103,7 @@ export function AiUsageCards({ usage, members }: { usage: AiUsage; members: Team
 
   return (
     <>
-      <div className="view-actions mt-4">
+      <div className="view-actions">
         <span className="muted">
           Gasto de IA de los últimos {usage.dias} días: <b>{usd(usage.total.costUsd)}</b>. Estimado a partir de los tokens
           que devuelve la API, al precio por millón del modelo; no es la factura de Anthropic.

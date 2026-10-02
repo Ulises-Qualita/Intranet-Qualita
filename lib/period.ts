@@ -11,6 +11,9 @@ export const RANGES = [7, 30, 90] as const;
 export const DEFAULT_RANGE = 30;
 // Meta guarda solo esta ventana (ver SYNC_DAYS en lib/meta-sync.ts).
 export const META_HISTORY_DAYS = 90;
+// El CRM trae las oportunidades abiertas y las cerradas de esta ventana (LEAD_DAYS
+// en lib/kommo.ts y lib/odoo.ts): más atrás, faltan las cerradas.
+export const CRM_HISTORY_DAYS = 90;
 
 export type Period = {
   since: string;
@@ -42,6 +45,18 @@ export function customPeriod(from: string, to: string): Period {
   if (since > until) since = until;
   return { since, until, days: null, label: `del ${shortDate(since)} al ${shortDate(until)}` };
 }
+
+// El período inmediatamente anterior, del mismo largo: contra el que se compara.
+// Los últimos 30 días se comparan con los 30 de antes; del 1 al 15, con los 15 previos.
+export function previousPeriod(p: Period): Period {
+  const length = Math.round((Date.parse(`${p.until}T12:00:00Z`) - Date.parse(`${p.since}T12:00:00Z`)) / 86_400_000);
+  const until = shiftDate(p.since, 1);
+  const since = shiftDate(until, length);
+  return { since, until, days: null, label: `del ${shortDate(since)} al ${shortDate(until)}` };
+}
+
+// Cómo nombrar ese período al lado del porcentaje: "vs. 30 días anteriores".
+export const versusLabel = (p: Period) => (p.days ? `vs. ${p.days} días anteriores` : "vs. período anterior");
 
 // Cualquier otro valor en la URL cae en el período por defecto.
 export function readPeriod({ dias, desde, hasta }: { dias?: string; desde?: string; hasta?: string }): Period {

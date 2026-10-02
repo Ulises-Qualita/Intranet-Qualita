@@ -94,6 +94,12 @@ export function parseMeetingTitle(title: string) {
   return { clientName, reason: reason || null };
 }
 
+// Instante de un `start` / `end`. Calendar los manda con el huso del calendario
+// ("…T11:00:00-03:00"), así que compararlos como texto contra un ISO en UTC corre
+// todo tres horas: una reunión de las 11 figuraba como pasada desde las 8. Los
+// eventos de todo el día traen solo la fecha, que se toma en horario de Argentina.
+export const meetingTime = (value: string) => Date.parse(value.length === 10 ? `${value}T00:00:00-03:00` : value);
+
 function toMeeting(e: RawEvent): Meeting | null {
   const parsed = e.summary ? parseMeetingTitle(e.summary) : null;
   const start = e.start?.dateTime ?? e.start?.date;
@@ -171,7 +177,7 @@ const getStudioMeetings = unstable_cache(
       });
     }
     if (emails.length && errors.length === emails.length) throw errors[0];
-    return [...byKey.values()].sort((a, b) => a.start.localeCompare(b.start));
+    return [...byKey.values()].sort((a, b) => meetingTime(a.start) - meetingTime(b.start));
   },
   ["calendar-meetings"],
   { revalidate: CACHE_TTL, tags: [MEETINGS_TAG] },
@@ -190,11 +196,11 @@ export async function getClientMeetings(clientName: string): Promise<ClientMeeti
       .sort();
     const target = normalizeName(clientName);
     const mine = (await getStudioMeetings(emails)).filter((m) => normalizeName(m.clientName) === target);
-    const now = new Date().toISOString();
+    const now = Date.now();
     // En curso cuenta como próxima: es la que tiene el link para entrar.
     return {
-      upcoming: mine.filter((m) => m.end >= now),
-      past: mine.filter((m) => m.end < now).reverse(),
+      upcoming: mine.filter((m) => meetingTime(m.end) >= now),
+      past: mine.filter((m) => meetingTime(m.end) < now).reverse(),
       error: null,
     };
   } catch (e) {

@@ -379,6 +379,9 @@ export type PortalIcon = { kind: "emoji"; emoji: string } | { kind: "image"; url
 export type Portal =
   | {
       state: "ok";
+      // Para armar los links estables de portada e ícono (lib/notion-image.ts).
+      // Opcional: las entradas cacheadas antes de agregarlo no lo traen.
+      pageId?: string;
       title: string;
       url: string;
       cover: string | null;
@@ -419,8 +422,17 @@ export const getPortal = unstable_cache(
         ? { kind: "image", url: iconUrl }
         : null;
 
-    return { state: "ok", title: pageTitle(page), url: page.url, cover: notionFileUrl(page.cover), icon, blocks };
+    return { state: "ok", pageId: page.id, title: pageTitle(page), url: page.url, cover: notionFileUrl(page.cover), icon, blocks };
   },
   ["notion-portal"],
   { revalidate: PORTAL_TTL, tags: [NOTION_PORTAL_TAG] },
 );
+
+// Urls firmadas (recién pedidas, valen 1 h) de la portada y el ícono de una
+// página, solo si son archivos subidos a Notion: los externos ya tienen una url
+// estable y no pasan por acá. Sin cache: lo llama la ruta de imágenes, que
+// necesita un link vigente.
+export async function getPageImageUrls(pageId: string): Promise<{ cover: string | null; icon: string | null }> {
+  const page = await notionFetch<NotionPage>(`/pages/${pageId}`);
+  return { cover: page.cover?.file?.url ?? null, icon: page.icon?.file?.url ?? null };
+}

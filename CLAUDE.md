@@ -113,10 +113,17 @@ No hay framework de tests configurado todavía.
   dice. `lib/agent/usage.ts` registra tokens y costo estimado por consulta en
   `intranet_agent_usage` (precios por millón en una tabla del módulo; el costo se
   guarda ya convertido para que las filas viejas no cambien de valor), y alimenta
-  las cards de gasto de `/admin`. La misma tabla registra todo el consumo de IA,
+  las cards de gasto de `/admin/gastos`. La misma tabla registra todo el consumo de IA,
   separado por `kind` (`agente` | `reporte` | `analisis`, lista en `USAGE_KINDS`;
   `docs/sql/2026-09-28-uso-por-tipo.sql`): `recordUsage(kind, …)` y `getAiUsage()`,
-  y `/admin` muestra un bloque por tipo.
+  y `/admin/gastos` muestra un bloque por tipo.
+- Administración en solapas con ruta propia, en el grupo `app/(app)/admin/(tabs)/`:
+  `/admin` (Usuarios y accesos), `/admin/cuentas` (Cuentas de clientes, solo rol
+  admin) y `/admin/gastos`. Mismo esquema que el panel del cliente: el `layout.tsx`
+  del grupo dibuja el `Topbar` y la barra (`admin-tabs.tsx`, con las clases
+  `client-tabbar` / `client-tab`), las páginas no dibujan `Topbar` y el `loading.tsx`
+  usa `TabSkeleton`. `/admin/notion` queda fuera del grupo. Las acciones de cuentas
+  revalidan `/admin/cuentas`.
 - Foro (`/foro`, solapa del sidebar sin área propia, como el agente): mensajes con
   tipo (error/mejora/pregunta), estado y respuestas, en `intranet_forum_posts` /
   `intranet_forum_comments`. **Una sola pantalla**, sin ruta por mensaje:
@@ -148,11 +155,13 @@ No hay framework de tests configurado todavía.
   día y, a la derecha, las próximas como cards separadas por semana (fotos de Google
   del equipo cruzadas por mail con `getTeam`; los de afuera, iniciales). Tocando un
   día se ven sus reuniones; las pasadas llevan una descripción que escribe el equipo
-  y la cuenta del cliente solo lee (además, en el Portal las reuniones se suman
-  como eventos al calendario de la database de Notion embebida: `withExtraEvents`
-  de `lib/notion-blocks.ts` las agrega a `db.extraEvents` fuera del cache, y solo
-  las dibuja la vista calendario; no aparecen si la solapa Reuniones está
-  desactivada): `intranet_meeting_notes` (clave = `Meeting.key`,
+  y la cuenta del cliente solo lee (además, en el Portal la database de Notion
+  embebida suma una solapa "Reuniones" al lado de sus vistas, con un calendario solo
+  de reuniones: `withExtraEvents` de `lib/notion-blocks.ts` las agrega a
+  `db.extraEvents` fuera del cache y `buildCalendar(…, "extra")` lo arma; la vista
+  calendario de Notion también las sigue mostrando, mezcladas con las filas, y la
+  solapa no aparece si no hay reuniones o si la
+  solapa Reuniones del cliente está desactivada): `intranet_meeting_notes` (clave = `Meeting.key`,
   `docs/sql/2026-09-30-reuniones-notas.sql`), `lib/meeting-notes.ts`,
   `saveMeetingNote` valida que la clave sea de una reunión pasada del cliente.
 - Cuenta de servicio de Google: `lib/google.ts` (token por usuario + scope) la
@@ -240,6 +249,65 @@ No hay framework de tests configurado todavía.
 - Consultar `node_modules/next/dist/docs/01-app/` antes de usar cualquier API.
 - El antiguo `middleware.ts` ahora es **`proxy.ts`** en la raíz (ver
   `01-getting-started/16-proxy.md`). El refresco de sesión de Supabase SSR va ahí.
+- `next.config.ts` fija `experimental.staleTimes` en 30 s (`dynamic` y `static`): el
+  navegador reusa por 30 s las pantallas ya visitadas o precargadas. Un cambio hecho
+  desde el cliente por una ruta `/api/…` (no por una Server Action) tiene que terminar
+  con `router.refresh()`, o la pantalla puede mostrar el dato viejo al volver.
+- Reuniones, solo equipo con el área `tareas`: al abrir en el calendario un día con
+  una reunión que viene (`meetings-calendar.tsx`), su card muestra, ya desplegadas,
+  las tareas abiertas del cliente (`getTasksResult()`: tickets de Notion + propias)
+  que vencen ese día o antes, incluidas las vencidas. En la lista "Próximas
+  reuniones" no aparecen. `ReunionesView` las manda todas en
+  `prep` y cada card filtra por su día. Las abiertas sin vencimiento solo se cuentan.
+  No depende de `SHOW_TASKS`. La cuenta del cliente no recibe `prep`.
+- Comparación contra el período anterior (META y CRM): `previousPeriod()` de
+  `lib/period.ts` da el período inmediatamente anterior del mismo largo, `compare()` de
+  `lib/compare.ts` arma el cambio (cada métrica declara si mejorar es subir, bajar o
+  ninguna: el gasto va sin color) y `Kpi` lo dibuja con `change` / `versus` en lugar de
+  `sub`. Solo se compara si el período anterior está entero dentro de lo guardado
+  (`getMetaFirstDate` en META; primera oportunidad y `CRM_HISTORY_DAYS` en CRM); si no,
+  queda el texto de antes. En CRM se comparan Oportunidades y Ticket promedio, **no**
+  Ganadas ni Total en tickets: todo se cuenta por fecha de creación y el período
+  anterior tuvo más tiempo para cerrar ventas (para compararlas habría que guardar la
+  fecha de cierre). Falta llevarlo a WEB y Vista general.
+- Google Ads (solapa GADS, `/clientes/[slug]/gads`, solo equipo, área `meta`): por ahora un
+  placeholder. La conexión es con la misma cuenta de servicio de Calendar y Drive
+  (`lib/google.ts`, scope `https://www.googleapis.com/auth/adwords` en la delegación de
+  dominio), sin OAuth por usuario. Env: `GOOGLE_ADS_DEVELOPER_TOKEN`,
+  `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (MCC, 10 dígitos), `GOOGLE_ADS_USER` (usuario a
+  impersonar). Probado el 2026-10-01 contra la API v25: el token y
+  `listAccessibleCustomers` responden, pero las consultas a cuentas reales dan
+  `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION` hasta que Google apruebe el acceso
+  (se pide en el Centro de API de la MCC). Todavía no hay `lib/` que lea la API.
+- Atención por chat en la solapa CRM (solo equipo, solo Kommo): `intranet_crm_chat_events`
+  (`docs/sql/2026-10-01-crm-chats.sql`) guarda un registro por mensaje **sin el texto**,
+  de la API de eventos de Kommo (`incoming_chat_message` / `outgoing_chat_message`).
+  `lib/crm-chat-sync.ts` corre dentro de `syncCrmClient`: trae lo nuevo y completa
+  hacia atrás hasta 30 días, 16 páginas por corrida (el cron tiene 60 s); un fallo ahí
+  va a `secrets.chat_error`, no rompe el sync de oportunidades. `lib/crm-chats.ts`
+  (`getChatEvents`, `chatStats`) y `crm/chat-monitor.tsx` arman tiempo de respuesta
+  (mediana, reloj corrido), respondidas en 15 min y conversaciones esperando. Se
+  agrupa por el **responsable del lead** y no por quién escribió: en Arteplac casi
+  todos los salientes llegan sin usuario (`created_by` 0, responden desde la app de
+  WhatsApp). El texto de los mensajes existe en `GET /api/v4/talks/{id}/messages`,
+  pero pide el alcance "External chat history" (Chats API add-on) y hoy da 403.
+- Portada e ícono del portal del cliente: no se usa la url firmada de Notion en el
+  `<img>` (cambia en cada consulta y el navegador nunca la guarda). `PortalView` arma
+  un link propio firmado con HMAC (`lib/notion-image.ts`, mismo esquema que las
+  miniaturas de Drive) con una huella del archivo, y `/api/notion/img/[token]` o
+  `/mi-empresa/portal/img/[token]` le piden a Notion un link vigente y devuelven la
+  imagen con cache de un año. Las imágenes del cuerpo del portal siguen directas.
+- Links de navegación (sidebar, solapas del cliente y de Administración): usar
+  `NavLink` (`components/nav-link.tsx`), no `Link`. Precarga la pantalla entera al
+  pasar el mouse, enfocar o tocar. Consecuencia: **una página se puede renderizar sin
+  que nadie entre**, así que no debe tener efectos al renderizar. Solo corre en
+  producción (`next build` + `next start`); en `npm run dev` Next no precarga.
+- `npx tsc --noEmit` no sirve si `.next/types/validator.ts` quedó corrupto: con errores
+  de sintaxis ahí, TypeScript no informa los de tipos del resto. `npx next build`
+  regenera los tipos y hace el chequeo completo.
+- Velocidad en local vs. producción: Supabase está en `us-east-1` y Vercel en `iad1`
+  (misma región, ~10–40 ms por consulta). Desde Argentina cada consulta tarda ~250 ms,
+  así que `npm run dev` siempre se siente más lento que producción.
 
 ### Skills del proyecto
 

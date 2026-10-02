@@ -1,19 +1,18 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
 import type { Client } from "@/lib/data";
 import { ClientAvatar } from "./client-avatar";
 import { Icon, type IconName } from "./icons";
+import { NavLink } from "./nav-link";
 
 const TAB_ICONS: Record<string, IconName> = {
   "Vista general": "home",
   META: "bolt",
   CRM: "funnel",
   WEB: "eye",
-  Portal: "media",
+  "Portal del cliente": "media",
   Reuniones: "calendar",
   Drive: "folder",
   Equipo: "team",
@@ -35,12 +34,7 @@ export function ClientSidebar({
   return (
     <aside className="sidebar">
       <div className="side-scroll">
-        <div className="brand">
-          {/* Ambos logos se renderizan y el CSS muestra el del tema activo (sin flash al hidratar). */}
-          <Image className="logo logo-light" src="/Logo-nuevo.png" alt="Qualita" width={130} height={34} unoptimized priority />
-          <Image className="logo logo-dark" src="/Logo-Nuevo-Blanco.png" alt="Qualita" width={130} height={34} unoptimized priority />
-        </div>
-
+        {/* Sin el logo de Qualita: acá la marca que se ve es la del cliente. */}
         <div className="client-zone-head">
           <ClientAvatar client={client} />
           <div>
@@ -50,10 +44,10 @@ export function ClientSidebar({
         </div>
 
         {tabs.map((t) => (
-          <Link key={t.href} href={t.href} className={`nav-btn${pathname === t.href ? " active" : ""}`}>
+          <NavLink key={t.href} href={t.href} className={`nav-btn${pathname === t.href ? " active" : ""}`}>
             <Icon name={TAB_ICONS[t.label] ?? "media"} />
             {t.label}
-          </Link>
+          </NavLink>
         ))}
       </div>
 

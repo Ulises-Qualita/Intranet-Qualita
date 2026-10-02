@@ -4,9 +4,10 @@ import { RangePicker } from "@/components/range-picker";
 import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, MissingIntegration } from "@/components/ui";
-import { type Client, getMetaCampaigns, getMetaDaily } from "@/lib/data";
+import { type Better, compare } from "@/lib/compare";
+import { type Client, getMetaCampaigns, getMetaDaily, getMetaFirstDate, type MetaDaily } from "@/lib/data";
 import { compact, integer, money, orDash, percent, safeDiv, shortDate, todayISO } from "@/lib/format";
-import { META_HISTORY_DAYS, type Period, periodPhrase, shiftDate } from "@/lib/period";
+import { META_HISTORY_DAYS, type Period, periodPhrase, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
 import { prepareMetaView } from "@/lib/meta-sync";
 import { CampaignTable } from "./campaign-table";
 
@@ -44,15 +45,37 @@ export async function MetaView({
 
   // Asegura datos la primera vez y programa el refresco si quedaron viejos.
   const secrets = await prepareMetaView(c.id, c.integrations.meta.accountRef);
-  const [daily, campaigns] = await Promise.all([getMetaDaily(c.id, range), getMetaCampaigns(c.id, range)]);
+  // Para comparar: el período anterior del mismo largo, y desde cuándo hay datos.
+  const previous = previousPeriod(range);
+  const [daily, campaigns, before, firstDate] = await Promise.all([
+    getMetaDaily(c.id, range),
+    getMetaCampaigns(c.id, range),
+    getMetaDaily(c.id, previous),
+    getMetaFirstDate(c.id),
+  ]);
 
-  const sum = (key: "spend" | "leads" | "impressions" | "clicks") =>
-    daily.reduce((acc, d) => acc + d[key], 0);
-  const spend = sum("spend");
-  const leads = sum("leads");
-  const impressions = sum("impressions");
-  const clicks = sum("clicks");
+  const totals = (rows: MetaDaily[]) => {
+    const sum = (key: "spend" | "leads" | "impressions" | "clicks") => rows.reduce((acc, d) => acc + d[key], 0);
+    const [spend, leads, impressions, clicks] = [sum("spend"), sum("leads"), sum("impressions"), sum("clicks")];
+    return {
+      spend,
+      leads,
+      impressions,
+      cpl: safeDiv(spend, leads),
+      ctr: safeDiv(clicks * 100, impressions),
+      cpm: safeDiv(spend * 1000, impressions),
+    };
+  };
+  const now = totals(daily);
   const period = daily.length ? `${shortDate(daily[0].date)} – ${shortDate(daily.at(-1)!.date)}` : "sin datos";
+
+  // Solo se compara si el período anterior está entero dentro de lo guardado: con
+  // la mitad de los días, cualquier número daría una suba que no existió.
+  const comparable = !!firstDate && firstDate <= previous.since && before.length > 0;
+  const then = comparable ? totals(before) : null;
+  const versus = versusLabel(range);
+  const change = (key: keyof typeof now, better: Better, format: (value: number) => string) =>
+    then ? compare(now[key], then[key], { better, format, versus: `Antes (${previous.label})` }) : null;
 
 
   return (
@@ -96,14 +119,22 @@ export async function MetaView({
         ) : (
           <>
             <div className="grid g3 mb-4">
-              <Kpi label="Gasto total" icon="money" value={money(spend)} sub={period} hero />
-              <Kpi label="Costo por lead (CPL)" icon="target" value={orDash(safeDiv(spend, leads), (v) => money(v, 2))} sub={period} />
-              <Kpi label="Leads generados" icon="users" value={integer(leads)} sub={period} />
+              {/* Gastar más no es mejor ni peor: el gasto va sin color. En CPL y CPM, bajar es mejorar. */}
+              <Kpi label="Gasto total" icon="money" value={money(now.spend)} sub={period} hero change={change("spend", "neutral", (v) => money(v))} versus={versus} />
+              <Kpi
+                label="Costo por lead (CPL)"
+                icon="target"
+                value={orDash(now.cpl, (v) => money(v, 2))}
+                sub={period}
+                change={change("cpl", "down", (v) => money(v, 2))}
+                versus={versus}
+              />
+              <Kpi label="Leads generados" icon="users" value={integer(now.leads)} sub={period} change={change("leads", "up", integer)} versus={versus} />
             </div>
             <div className="grid g3 mb-4">
-              <Kpi label="Impresiones" icon="eye" value={compact(impressions)} sub={period} />
-              <Kpi label="CTR" icon="reach" value={orDash(safeDiv(clicks * 100, impressions), (v) => percent(v))} sub={period} />
-              <Kpi label="CPM" icon="bolt" value={orDash(safeDiv(spend * 1000, impressions), (v) => money(v, 2))} sub={period} />
+              <Kpi label="Impresiones" icon="eye" value={compact(now.impressions)} sub={period} change={change("impressions", "up", compact)} versus={versus} />
+              <Kpi label="CTR" icon="reach" value={orDash(now.ctr, (v) => percent(v))} sub={period} change={change("ctr", "up", (v) => percent(v))} versus={versus} />
+              <Kpi label="CPM" icon="bolt" value={orDash(now.cpm, (v) => money(v, 2))} sub={period} change={change("cpm", "down", (v) => money(v, 2))} versus={versus} />
             </div>
           </>
         )}

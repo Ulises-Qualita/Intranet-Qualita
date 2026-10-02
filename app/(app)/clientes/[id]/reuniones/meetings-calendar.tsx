@@ -26,6 +26,41 @@ export type CalMeeting = {
   notesMeta: string | null;
 };
 
+// Tarea abierta del cliente con vencimiento, lista para dibujar (reuniones-view.tsx).
+export type MeetingTask = {
+  id: string;
+  title: string;
+  // Link a Notion; null en las tareas propias de la intranet.
+  url: string | null;
+  priority: "alta" | "media" | "baja";
+  status: "todo" | "doing" | "blocked" | "done";
+  // Vencimiento (YYYY-MM-DD): cada reunión toma las que vencen ese día o antes.
+  due: string;
+  dueLabel: string;
+  // Vencida o vence hoy.
+  late: boolean;
+  assignee: { name: string; avatarUrl: string | null } | null;
+};
+
+// Lo que hay que cerrar antes de las reuniones que vienen. Solo el equipo con el
+// área Tareas lo recibe; null = las cards no muestran tareas.
+export type MeetingPrep = {
+  tasks: MeetingTask[];
+  // Abiertas sin vencimiento: no entran en ninguna reunión, solo se avisan.
+  undated: number;
+  // Notion falló: se muestran las propias y el motivo.
+  error: string | null;
+  // Para vincular el proyecto de Notion; null si ya está vinculado.
+  connectHref: string | null;
+};
+
+const STATUS_LABEL: Record<MeetingTask["status"], string> = {
+  todo: "Pendiente",
+  doing: "En curso",
+  blocked: "Bloqueada",
+  done: "Completada",
+};
+
 const WEEKDAYS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
 // Reuniones escritas por celda; el resto va como "+N más".
 const PER_DAY = 2;
@@ -78,16 +113,20 @@ function weekTitle(monday: string, today: string) {
 // un día, la derecha muestra las de ese día (las pasadas con su descripción).
 // Los meses posibles son los de la ventana que se lee de Calendar.
 // `editSlug`: el equipo puede escribir la descripción de las pasadas (null = solo lectura).
+// `prep`: al abrir en el calendario un día con una reunión que viene, su card
+// muestra las tareas a cerrar antes. En la lista de próximas no aparecen.
 export function MeetingsCalendar({
   meetings,
   months,
   today,
   editSlug,
+  prep = null,
 }: {
   meetings: CalMeeting[];
   months: string[];
   today: string;
   editSlug: string | null;
+  prep?: MeetingPrep | null;
 }) {
   const initial = Math.max(0, months.indexOf(today.slice(0, 7)));
   const [index, setIndex] = useState(initial);
@@ -115,6 +154,12 @@ export function MeetingsCalendar({
     }
 
   const go = (i: number) => setIndex(Math.min(months.length - 1, Math.max(0, i)));
+  // Desde la lista de próximas: abre el día de esa reunión, como al tocarlo en el calendario.
+  const openDay = (day: string) => {
+    setPicked(day);
+    const i = months.indexOf(day.slice(0, 7));
+    if (i >= 0) setIndex(i);
+  };
   const backToToday = () => {
     setIndex(initial);
     setPicked(null);
@@ -215,7 +260,14 @@ export function MeetingsCalendar({
                   </h4>
                 )}
                 {list.map((m) => (
-                  <MeetingCard key={m.key} m={m} editSlug={editSlug} />
+                  // Las tareas solo al abrir un día del calendario, no en la lista de próximas.
+                  <MeetingCard
+                    key={m.key}
+                    m={m}
+                    editSlug={editSlug}
+                    prep={picked && m.status !== "past" ? prep : null}
+                    onOpen={picked ? undefined : () => openDay(m.day)}
+                  />
                 ))}
               </section>
             ))
@@ -226,10 +278,24 @@ export function MeetingsCalendar({
   );
 }
 
-function MeetingCard({ m, editSlug }: { m: CalMeeting; editSlug: string | null }) {
+// `onOpen`: en la lista de próximas, tocar la card la abre sola (con sus tareas).
+function MeetingCard({
+  m,
+  editSlug,
+  prep,
+  onOpen,
+}: {
+  m: CalMeeting;
+  editSlug: string | null;
+  prep: MeetingPrep | null;
+  onOpen?: () => void;
+}) {
   const date = utc(m.day);
+  const tasks = prep ? prep.tasks.filter((t) => t.due <= m.day) : [];
+
   return (
-    <article className={`mcard ${m.status}`}>
+    // Toda la card abre; el título es el mismo control para teclado y lectores de pantalla.
+    <article className={`mcard ${m.status}${onOpen ? " tappable" : ""}`} onClick={onOpen}>
       <div className="mcard-date" aria-hidden>
         <span>{clean(weekdayShort.format(date))}</span>
         <b>{date.getUTCDate()}</b>
@@ -238,7 +304,22 @@ function MeetingCard({ m, editSlug }: { m: CalMeeting; editSlug: string | null }
 
       <div className="mcard-body">
         <div className="mcard-top">
-          <h4>{m.title}</h4>
+          <h4>
+            {onOpen ? (
+              <button
+                type="button"
+                className="mcard-open"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen();
+                }}
+              >
+                {m.title}
+              </button>
+            ) : (
+              m.title
+            )}
+          </h4>
           {m.status === "live" ? (
             <span className="mcard-badge live">En curso</span>
           ) : (
@@ -270,10 +351,78 @@ function MeetingCard({ m, editSlug }: { m: CalMeeting; editSlug: string | null }
       </div>
 
       {m.status !== "past" && m.meetUrl && (
-        <a className="mcard-join" href={m.meetUrl} target="_blank" rel="noopener noreferrer" aria-label={`Unirse a ${m.title}`}>
+        <a
+          className="mcard-join"
+          href={m.meetUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Unirse a ${m.title}`}
+          onClick={(e) => e.stopPropagation()}
+        >
           <Icon name="media" size={15} strokeWidth={2} />
           Unirse
         </a>
+      )}
+
+      {/* Tareas a cerrar antes de esta reunión: a todo el ancho, debajo de la card. */}
+      {prep && (
+        <div className="mcard-prep">
+          <h5>
+            Tareas por cerrar antes de la reunión
+            {tasks.length > 0 && <small>{tasks.length}</small>}
+          </h5>
+          {prep.error && <p className="form-error">{prep.error}</p>}
+          {tasks.length === 0 ? (
+            <p className="mcard-prep-empty">
+              {prep.connectHref && prep.tasks.length === 0 ? (
+                <>
+                  Este cliente no tiene un proyecto de Notion vinculado.{" "}
+                  <a href={prep.connectHref} className="link-connect-inline">
+                    Vincular
+                  </a>
+                </>
+              ) : (
+                "No hay tareas abiertas que venzan antes de esta reunión."
+              )}
+            </p>
+          ) : (
+            <ul className="mcard-tasks">
+              {tasks.map((t) => (
+                <li key={t.id}>
+                  <span className={`prio ${t.priority}`}>{t.priority}</span>
+                  <div className="mcard-task-main">
+                    {t.url ? (
+                      <a href={t.url} target="_blank" rel="noreferrer">
+                        {t.title}
+                      </a>
+                    ) : (
+                      <span>{t.title}</span>
+                    )}
+                    <small>
+                      <span className={t.late ? "late" : undefined}>{t.dueLabel}</span>
+                      {" · "}
+                      <span className={`state ${t.status}`}>{STATUS_LABEL[t.status]}</span>
+                    </small>
+                  </div>
+                  {t.assignee ? (
+                    <span title={t.assignee.name}>
+                      <UserAvatar className="mcard-av" name={t.assignee.name} avatarUrl={t.assignee.avatarUrl} />
+                    </span>
+                  ) : (
+                    <small className="mcard-task-none">Sin asignar</small>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {prep.undated > 0 && (
+            <p className="mcard-prep-empty">
+              {prep.undated === 1
+                ? "Hay 1 tarea abierta sin vencimiento, que no se incluye acá."
+                : `Hay ${prep.undated} tareas abiertas sin vencimiento, que no se incluyen acá.`}
+            </p>
+          )}
+        </div>
       )}
     </article>
   );

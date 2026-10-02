@@ -5,19 +5,19 @@ import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, MissingIntegration, NotConnected } from "@/components/ui";
 import { type Client, getNotionConfig } from "@/lib/data";
 import { getPortal, notionConfigured, notionErrorMessage, type Portal } from "@/lib/notion";
+import { portalImageSrc } from "@/lib/notion-image";
 import { isPortalConfigured } from "@/lib/notion-map";
 import { attendeeName, calendarConfigured, getClientMeetings } from "@/lib/calendar";
 import { getMeetingNotes } from "@/lib/meeting-notes";
 import { isTabHidden } from "@/lib/client-tabs";
 import { type ExtraEvent, withExtraEvents } from "@/lib/notion-blocks";
-import { RefreshPortalButton } from "./refresh-button";
 
 const TZ = "America/Argentina/Buenos_Aires";
 const hour = new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: TZ });
 const localDay = new Intl.DateTimeFormat("en-CA", { timeZone: TZ });
 
-// Reuniones con el cliente (Google Calendar) para sumar al calendario del
-// portal. Nada si Calendar no está configurado, si la solapa Reuniones está
+// Reuniones con el cliente (Google Calendar) para la solapa "Reuniones" de la
+// database del portal. Nada si Calendar no está configurado, si la solapa Reuniones está
 // desactivada para quien mira, o si falla la lectura: el portal no depende de esto.
 async function portalMeetings(client: Client, internal: boolean): Promise<ExtraEvent[]> {
   if (!calendarConfigured() || isTabHidden(client.hiddenTabs, internal ? "team" : "client", "reuniones")) return [];
@@ -49,6 +49,15 @@ async function portalMeetings(client: Client, internal: boolean): Promise<ExtraE
       notes: done ? (notes.byKey[m.key]?.notes ?? null) : null,
     };
   });
+}
+
+// En Notion la página se llama "Portal del cliente - <Cliente>"; acá el nombre ya
+// está en el encabezado, así que se le quita del final (con su separador). Si el
+// título no termina así, queda como está.
+function titleWithoutClient(title: string, clientName: string) {
+  const name = clientName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!name) return title;
+  return title.replace(new RegExp(`\\s*[-–—|·:]\\s*${name}\\s*$`, "i"), "") || title;
 }
 
 // Portal del cliente (la página de Notion vinculada al proyecto): la intranet baja
@@ -124,25 +133,19 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
   const meetings = await meetingsPromise;
 
   const ok = portal?.state === "ok" ? portal : null;
+  // Portada e ícono salen por una ruta propia con link estable, para que el
+  // navegador los guarde (lib/notion-image.ts). La cuenta del cliente no puede
+  // salir de /mi-empresa, así que tiene la suya.
+  const imageBase = internal ? "/api/notion/img" : "/mi-empresa/portal/img";
 
   return (
     <>
       {!internal && <Topbar crumb={c.name} title={title} />}
       <section className="view">
-        {/* Abrir y actualizar solo para el equipo: el link lleva al workspace de
-            Notion de Qualita, que el cliente no puede abrir. */}
-        <SyncStatus source="Notion" live error={loadError} internal={internal}>
-          {internal && (
-            <>
-              {ok && (
-                <a href={ok.url} target="_blank" rel="noreferrer" className="link-connect-inline">
-                  Abrir en Notion
-                </a>
-              )}
-              <RefreshPortalButton />
-            </>
-          )}
-        </SyncStatus>
+        {/* El estado de la fuente solo aparece si Notion falló: andando bien, el
+            portal no lleva el "Notion · En vivo" de las otras solapas. El botón de
+            actualizar (solo equipo) está en el encabezado del cliente. */}
+        {loadError && <SyncStatus source="Notion" live error={loadError} internal={internal} />}
 
         {!internal && (portal?.state === "missing" || portal?.state === "unreachable") && (
           <EmptyState label="Pendiente">El portal todavía no está disponible.</EmptyState>
@@ -167,7 +170,7 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
             {/* Banner e ícono de la página, como los muestra Notion. */}
             {ok.cover && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img className="portal-cover" src={ok.cover} alt="" />
+              <img className="portal-cover" src={portalImageSrc(imageBase, ok.pageId, "cover", ok.cover)} alt="" fetchPriority="high" />
             )}
             <div className={`portal-head${ok.cover ? " with-cover" : ""}`}>
               {ok.icon && (
@@ -176,11 +179,11 @@ export async function PortalView({ c, internal, isAdmin }: { c: Client; internal
                     ok.icon.emoji
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={ok.icon.url} alt="" />
+                    <img src={portalImageSrc(imageBase, ok.pageId, "icon", ok.icon.url)} alt="" />
                   )}
                 </span>
               )}
-              <h2>{ok.title}</h2>
+              <h2>{titleWithoutClient(ok.title, c.name)}</h2>
             </div>
 
             {ok.blocks.length === 0 ? (

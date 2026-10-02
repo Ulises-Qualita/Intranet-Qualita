@@ -8,7 +8,7 @@ import { canAccess } from "@/lib/auth-shared";
 import { statusMeta } from "@/lib/client-status";
 import { getClients, getMetaSpendByClient, getTeam } from "@/lib/data";
 import { UserAvatar } from "@/components/user-avatar";
-import { greeting, longToday, money } from "@/lib/format";
+import { greeting, longToday, integer, money } from "@/lib/format";
 
 // Período del gasto en Meta que muestra la tabla de clientes.
 const META_DAYS = 30;
@@ -35,8 +35,11 @@ export default async function InicioPage() {
 
   const countBy = (status: string) => clients.filter((c) => c.status === status).length;
   const activeMembers = team.filter((m) => m.active);
-  const integrations = clients.reduce((t, c) => t + Object.values(c.conn).filter(Boolean).length, 0);
-  const connectedClients = clients.filter((c) => Object.values(c.conn).some(Boolean)).length;
+  // Total del estudio en Meta: la suma de lo que la tabla muestra por cliente.
+  const metaTotal = [...spendByClient.values()].reduce(
+    (t, s) => ({ spend: t.spend + s.spend, leads: t.leads + s.leads }),
+    { spend: 0, leads: 0 },
+  );
 
   // El saludo es personal: solo lo que tiene a cargo quien está mirando. Los KPIs
   // de abajo son del estudio, por eso el texto dice "tenés".
@@ -107,12 +110,23 @@ export default async function InicioPage() {
         <div className="grid g4 mb-4">
           <Kpi label="Clientes" icon="briefcase" value={countBy("cliente")} sub={`de ${clients.length} en total`} hero />
           <Kpi label="En onboarding" icon="target" value={countBy("onboarding")} sub={`${countBy("lead")} lead${countBy("lead") === 1 ? "" : "s"} en seguimiento`} />
-          <Kpi
-            label="Integraciones conectadas"
-            icon="bolt"
-            value={integrations}
-            sub={`en ${connectedClients} de ${clients.length} cliente${clients.length === 1 ? "" : "s"}`}
-          />
+          {/* Sin acceso a META (o sin cuentas conectadas) no hay leads que mostrar:
+              en su lugar va cuántos clientes siguen sin responsable. */}
+          {metaClients.length > 0 ? (
+            <Kpi
+              label={`Leads generados, ${META_DAYS} días`}
+              icon="funnel"
+              value={integer(metaTotal.leads)}
+              sub={`${metaTotal.leads > 0 ? `CPL promedio ${money(metaTotal.spend / metaTotal.leads)} · ` : ""}${metaClients.length} cliente${metaClients.length === 1 ? "" : "s"}`}
+            />
+          ) : (
+            <Kpi
+              label="Sin responsable"
+              icon="team"
+              value={unassigned}
+              sub={`de ${clients.length} cliente${clients.length === 1 ? "" : "s"}`}
+            />
+          )}
           <Kpi label="Miembros del equipo" icon="users" value={activeMembers.length} sub="activos en Qualita" />
         </div>
 

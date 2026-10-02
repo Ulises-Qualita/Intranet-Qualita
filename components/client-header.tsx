@@ -8,8 +8,8 @@ const websiteHref = (website: string) => (/^https?:\/\//i.test(website) ? websit
 
 // Encabezado del panel de un cliente (equipo): logo, nombre y, abajo,
 // la web y el rubro. Reemplaza al Topbar en clientes/[id]/layout.tsx; las solapas
-// van justo debajo.
-export function ClientHeader({ client }: { client: Client }) {
+// van justo debajo. `children`: acciones de la solapa, a la izquierda del tema.
+export function ClientHeader({ client, children }: { client: Client; children?: React.ReactNode }) {
   return (
     <div className="topbar client-header">
       <ClientAvatar client={client} />
@@ -29,6 +29,7 @@ export function ClientHeader({ client }: { client: Client }) {
         )}
       </div>
       <div className="spacer" />
+      {children}
       <ThemeToggle />
     </div>
   );

@@ -1,20 +1,29 @@
 import Link from "next/link";
+import type { Change } from "@/lib/compare";
 import type { Client } from "@/lib/data";
 import { IntegrationDialog } from "./integration-dialog";
 import { Icon, type IconName } from "./icons";
 
+// `change`: comparación contra el período anterior (lib/compare.ts). Si viene,
+// reemplaza a `sub`: flecha según hacia dónde se movió y color según si mejoró.
+// null o sin pasar = no hay contra qué comparar y queda `sub`.
 export function Kpi({
   label,
   icon,
   value,
   sub,
   hero,
+  change,
+  versus,
 }: {
   label: string;
   icon: IconName;
   value: string | number;
   sub: string;
   hero?: boolean;
+  change?: Change | null;
+  // Contra qué se compara, al lado del porcentaje: "vs. 30 días anteriores".
+  versus?: string;
 }) {
   return (
     <div className={`card kpi${hero ? " hero" : ""}`}>
@@ -25,9 +34,22 @@ export function Kpi({
         </span>
       </div>
       <div className="val">{value}</div>
-      <div className="delta flat" style={{ fontWeight: 500 }}>
-        {sub}
-      </div>
+      {change ? (
+        <div className={`delta ${change.tone}`} title={change.detail}>
+          <span className="arrow" aria-hidden>
+            {change.dir === "up" ? "▲" : change.dir === "down" ? "▼" : "="}
+          </span>
+          <span>
+            <span className="sr-only">{change.dir === "up" ? "Subió " : change.dir === "down" ? "Bajó " : "Sin cambios, "}</span>
+            {change.label}
+          </span>
+          {versus && <small>{versus}</small>}
+        </div>
+      ) : (
+        <div className="delta flat" style={{ fontWeight: 500 }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

@@ -85,8 +85,9 @@ export type EmbeddedDb = {
   // Nunca vacío: si Notion no devuelve las vistas, se arma una por defecto
   // (calendario si hay fecha, si no tabla).
   views: DbView[];
-  // Eventos que no son filas de Notion y solo muestra el calendario (las
-  // reuniones de Google Calendar en el portal). No vienen de Notion: los suma
+  // Eventos que no son filas de Notion: las reuniones de Google Calendar en el
+  // portal. Las muestra la vista calendario, mezcladas con las filas, y además
+  // la solapa "Reuniones", que las tiene solas. No vienen de Notion: los suma
   // withExtraEvents después de leer la página, fuera del cache.
   extraEvents?: ExtraEvent[];
 };
@@ -510,7 +511,8 @@ export type CalEvent = {
 export type ExtraEvent = CalEvent & { day: string };
 
 // Suma `events` a todas las databases con calendario de la página, sin tocar
-// sus filas: la tabla y el tablero no los muestran. Devuelve una copia.
+// sus filas: se ven en el calendario y en la solapa "Reuniones" de esa database
+// (la tabla y el tablero no los muestran). Devuelve una copia.
 export function withExtraEvents(nodes: BlockNode[], events: ExtraEvent[]): BlockNode[] {
   if (!events.length) return nodes;
   return nodes.map((node) => {
@@ -645,10 +647,14 @@ function placeWeek(days: CalDay[], spans: { event: CalEvent; start: string; end:
 // vista: el actual si cae en el rango, si no el extremo más cercano.
 // Las filas sin fecha no aparecen, igual que en el calendario de Notion (en el
 // tablero sí están). `today` se pasa desde afuera para no congelarlo en el cache.
+// `source`: "all" arma el calendario de Notion (las filas de la database más
+// las reuniones); "extra", el de la solapa Reuniones (solo `extraEvents`;
+// `dateColumn` no se usa).
 export function buildCalendar(
   db: EmbeddedDb,
   dateColumn: number,
   today: string,
+  source: "all" | "extra" = "all",
 ): { months: CalMonth[]; initial: number; twoLines: boolean } {
   // La propiedad "Entregable(s)" va como segunda línea de cada evento, si existe.
   const deliverable = db.columns.findIndex((c) => /^entregables?$/.test(normalizeLabel(c)));
@@ -666,7 +672,7 @@ export function buildCalendar(
   const spans: { event: CalEvent; start: string; end: string }[] = [];
   const monthKeys = new Set<string>();
 
-  for (const row of db.rows) {
+  for (const row of source === "all" ? db.rows : []) {
     const cell = row.cells[dateColumn];
     if (cell?.kind !== "date" || !cell.text) continue;
 
@@ -738,7 +744,8 @@ export function buildCalendar(
 
   // Dos líneas si la database tiene Entregable: todos los eventos miden lo mismo
   // para que los carriles sigan alineados.
-  return { months, initial, twoLines: deliverable >= 0 };
+  // Las reuniones siempre llevan su horario en la segunda línea.
+  return { months, initial, twoLines: source === "extra" || deliverable >= 0 };
 }
 
 export const WEEKDAYS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];

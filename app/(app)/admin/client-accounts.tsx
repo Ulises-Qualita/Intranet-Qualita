@@ -225,7 +225,7 @@ export function ClientAccounts({ clients, accounts }: { clients: Client[]; accou
   const [created, setCreated] = useState<{ name: string; email: string; password: string } | null>(null);
 
   return (
-    <Card title="Cuentas de clientes" hint="Una por empresa. Ingresan con mail y contraseña y ven solo lo suyo." className="mt-4">
+    <Card title="Cuentas de clientes" hint="Una por empresa. Ingresan con mail y contraseña y ven solo lo suyo.">
       {accounts === null ? (
         <EmptyState label="Pendiente">Falta correr docs/sql/2026-09-25-cuentas-clientes.sql en Supabase.</EmptyState>
       ) : clients.length === 0 ? (

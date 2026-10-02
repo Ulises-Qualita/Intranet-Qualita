@@ -8,12 +8,13 @@
 
 export const CLIENT_TABS = [
   { key: "meta", team: "META", client: "META" },
+  { key: "gads", team: "GADS", client: null },
   { key: "crm", team: "CRM", client: "CRM" },
   { key: "web", team: "WEB", client: "WEB" },
   { key: "reuniones", team: "Reuniones", client: "Reuniones" },
   { key: "drive", team: "Drive", client: "Drive" },
   { key: "tareas", team: "Tareas", client: null },
-  { key: "portal", team: "Portal del cliente", client: "Portal" },
+  { key: "portal", team: "Portal del cliente", client: "Portal del cliente" },
   { key: "equipo", team: "Equipo", client: "Equipo" },
   { key: "reportes", team: "Reportes", client: null },
 ] as const;
@@ -26,7 +27,7 @@ export const NO_HIDDEN_TABS: HiddenTabs = { team: [], client: [] };
 
 export const isTabKey = (value: unknown): value is TabKey => CLIENT_TABS.some((t) => t.key === value);
 
-// La solapa existe en esa zona (Tareas y Reportes son solo del equipo).
+// La solapa existe en esa zona (GADS, Tareas y Reportes son solo del equipo).
 export const tabInZone = (key: TabKey, zone: TabZone) => !!CLIENT_TABS.find((t) => t.key === key)?.[zone];
 
 export const isTabHidden = (hidden: HiddenTabs, zone: TabZone, key: TabKey) => hidden[zone].includes(key);

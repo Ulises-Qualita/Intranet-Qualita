@@ -84,6 +84,13 @@ function DbCalendar({ db, dateColumn }: { db: EmbeddedDb; dateColumn: number }) 
   return <NotionCalendar months={months} initial={initial} twoLines={twoLines} />;
 }
 
+// Solapa "Reuniones": el mismo calendario, solo con las reuniones de Google
+// Calendar (db.extraEvents). No es una vista de Notion.
+function DbMeetings({ db }: { db: EmbeddedDb }) {
+  const { months, initial, twoLines } = buildCalendar(db, -1, todayISO(), "extra");
+  return <NotionCalendar months={months} initial={initial} twoLines={twoLines} />;
+}
+
 // Tablero: una columna por grupo, en el orden y color de Notion. Las tarjetas
 // muestran el título y las propiedades que la vista tiene visibles, salteando
 // las vacías como hace Notion.
@@ -158,17 +165,24 @@ function DbViews({ db }: { db: EmbeddedDb }) {
           : { id: "default", name: "Tabla", kind: "table" },
       ];
 
+  // Además de verse en el calendario, las reuniones tienen una solapa propia al
+  // final, donde están solas. Sin reuniones (o sin Calendar) no aparece.
+  const meetings = !!db.extraEvents?.length;
+
   return (
-    <NotionDbTabs names={views.map((v) => v.name)}>
-      {views.map((v) =>
-        v.kind === "calendar" && v.dateColumn !== undefined ? (
-          <DbCalendar key={v.id} db={db} dateColumn={v.dateColumn} />
-        ) : v.kind === "board" ? (
-          <DbBoard key={v.id} db={db} view={v} />
-        ) : (
-          <DbTable key={v.id} db={db} columns={v.tableColumns} />
+    <NotionDbTabs names={[...views.map((v) => v.name), ...(meetings ? ["Reuniones"] : [])]}>
+      {[
+        ...views.map((v) =>
+          v.kind === "calendar" && v.dateColumn !== undefined ? (
+            <DbCalendar key={v.id} db={db} dateColumn={v.dateColumn} />
+          ) : v.kind === "board" ? (
+            <DbBoard key={v.id} db={db} view={v} />
+          ) : (
+            <DbTable key={v.id} db={db} columns={v.tableColumns} />
+          ),
         ),
-      )}
+        ...(meetings ? [<DbMeetings key="reuniones" db={db} />] : []),
+      ]}
     </NotionDbTabs>
   );
 }

@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { crmStatusOf, type CrmLead, type CrmProvider } from "./crm-shared";
 import { todayISO } from "./format";
+import { syncKommoChats } from "./crm-chat-sync";
 import { readKommo, type KommoCredentials } from "./kommo";
 import { getOdooOpportunities, getOdooStages, odooConnect, type OdooCredentials } from "./odoo";
 import { createAdminClient } from "./supabase/server";
@@ -30,6 +31,9 @@ export type CrmSecrets = {
   won_stages?: string[];
   synced_at?: string;
   sync_error?: string | null;
+  // Actividad de los chats (solo Kommo): el motivo si la última lectura falló.
+  // Va aparte de sync_error: que fallen los chats no invalida las oportunidades.
+  chat_error?: string | null;
 };
 
 export async function getCrmSecrets(clientId: string): Promise<CrmSecrets | null> {
@@ -178,11 +182,15 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     });
     if (snapshotError) throw snapshotError;
 
+    // Actividad de los chats: nunca tira, así un problema ahí no pierde el sync.
+    const chats = secrets.provider === "kommo" && secrets.kommo ? await syncKommoChats(clientId, secrets.kommo, leads) : null;
+
     await saveCrmSecrets(clientId, {
       ...secrets,
       stage_order: stages.length ? stages : secrets.stage_order,
       synced_at: new Date().toISOString(),
       sync_error: null,
+      chat_error: chats?.error ?? null,
     });
     return { clientId, ok: true, leads: leads.length };
   } catch (e) {

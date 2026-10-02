@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
 import type { AreaKey } from "@/lib/auth-shared";
@@ -9,6 +8,7 @@ import type { SessionUser } from "@/lib/auth";
 import type { Client } from "@/lib/data";
 import { ClientAvatar } from "./client-avatar";
 import { Icon, type IconName } from "./icons";
+import { NavLink } from "./nav-link";
 import { UserAvatar } from "./user-avatar";
 
 // area null = no pertenece a un área: el agente consulta las que el usuario
@@ -48,10 +48,15 @@ export function Sidebar({
 
         <div className="nav-title">Qualita</div>
         {STUDIO_NAV.filter((item) => (item.area ? access[item.area] : Object.values(access).some(Boolean))).map((item) => (
-          <Link key={item.href} href={item.href} className={`nav-btn${pathname === item.href ? " active" : ""}`}>
+          // Administración tiene solapas con ruta propia (/admin/cuentas…): sigue marcada en todas.
+          <NavLink
+            key={item.href}
+            href={item.href}
+            className={`nav-btn${pathname === item.href || (item.href === "/admin" && pathname.startsWith("/admin/")) ? " active" : ""}`}
+          >
             <Icon name={item.icon} />
             {item.label}
-          </Link>
+          </NavLink>
         ))}
 
         {access.clientes && (
@@ -62,7 +67,7 @@ export function Sidebar({
               const base = `/clientes/${c.slug}`;
               const selected = pathname === base || pathname.startsWith(`${base}/`);
               return (
-                <Link
+                <NavLink
                   key={c.id}
                   href={base}
                   className={`client-btn${selected ? " sel" : ""}`}
@@ -70,7 +75,7 @@ export function Sidebar({
                 >
                   <ClientAvatar client={c} />
                   <span className="cn">{c.name}</span>
-                </Link>
+                </NavLink>
               );
             })}
           </>

@@ -6,6 +6,7 @@ import { getSession } from "@/lib/auth";
 import { isTabHidden, type TabKey } from "@/lib/client-tabs";
 import { getClient, getTasks, isOpenTask } from "@/lib/data";
 import { SHOW_TASKS } from "@/lib/tasks";
+import { RefreshPortalButton } from "./portal/refresh-button";
 
 // Solo las vistas de consulta del cliente. Editar se entra desde la tabla de
 // /clientes: es una acción de gestión, no una solapa que se mire a diario.
@@ -16,6 +17,8 @@ const CLIENT_NAV = (
   [
     { suffix: "", label: "Vista general", area: "clientes" },
     { suffix: "/meta", label: "META", area: "meta", tab: "meta" },
+    // Google Ads: misma área que META (publicidad). Solo en el panel del equipo.
+    { suffix: "/gads", label: "GADS", area: "meta", tab: "gads" },
     { suffix: "/crm", label: "CRM", area: "crm", tab: "crm" },
     // Sin área propia: analítica del sitio, para quien ya ve el panel del cliente.
     { suffix: "/web", label: "WEB", area: "clientes", tab: "web" },
@@ -88,7 +91,10 @@ export default async function ClienteLayout({
   return (
     <div className="client-shell">
       <div className="client-head">
-        <ClientHeader client={client} />
+        <ClientHeader client={client}>
+          {/* Solo con el proyecto de Notion vinculado hay un portal que releer. */}
+          {client.conn.notion && tabs.some((t) => t.suffix === "/portal") && <RefreshPortalButton href={`${base}/portal`} />}
+        </ClientHeader>
         <ClientTabsBar base={base} tabs={tabs} periodTabs={PERIOD_TABS} />
       </div>
       <div className="client-content">{children}</div>

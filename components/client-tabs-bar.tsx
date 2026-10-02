@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { RANGES, readPeriod } from "@/lib/period";
 import { CustomRange } from "./custom-range";
 import { Icon } from "./icons";
+import { NavLink } from "./nav-link";
 
 // config: acción de ajustes de la solapa (p. ej. las etapas del CRM), como un
 // engranaje junto al período para no ocupar lugar arriba de las cards.
@@ -56,7 +57,7 @@ export function ClientTabsBar({ base, tabs, periodTabs }: { base: string; tabs: 
     <div className="client-tabbar" data-pending={pending || undefined}>
       <nav className="client-tabs" aria-label="Solapas del cliente">
         {tabs.map((t) => (
-          <Link
+          <NavLink
             key={t.suffix}
             href={base + t.suffix + qs}
             className={`client-tab${t === current ? " on" : ""}`}
@@ -64,7 +65,7 @@ export function ClientTabsBar({ base, tabs, periodTabs }: { base: string; tabs: 
           >
             {t.label}
             {!!t.badge && <span className="tab-badge">{t.badge}</span>}
-          </Link>
+          </NavLink>
         ))}
       </nav>
       {current?.config && pathname === base + current.suffix && (

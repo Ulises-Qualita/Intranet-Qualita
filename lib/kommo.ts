@@ -190,3 +190,93 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
 
   return { leads, stages: pipelines.order };
 }
+
+// ---------- Actividad de los chats ----------
+
+// Un mensaje de chat según la API de eventos: quién, cuándo y en qué
+// conversación, sin el texto (eso es otro permiso: "External chat history").
+export type KommoChatEvent = {
+  id: string;
+  talkId: number;
+  // Lead del chat; null si la conversación es de un contacto sin lead.
+  leadId: string | null;
+  incoming: boolean;
+  // Usuario de Kommo que lo envió; null si no salió de un usuario (entrantes,
+  // respuestas desde la app de WhatsApp del teléfono, bots).
+  userId: number | null;
+  origin: string | null;
+  at: string;
+};
+
+type RawChatEvent = {
+  id: string;
+  type: string;
+  entity_id: number;
+  entity_type: string;
+  created_by: number;
+  created_at: number;
+  value_after?: { message?: { talk_id?: number; origin?: string } }[];
+};
+
+// Kommo devuelve los eventos del más nuevo al más viejo, hasta 250 por página.
+const EVENT_PAGE = 250;
+
+// Mensajes de chat entre `from` y `to` (segundos Unix), del más nuevo al más
+// viejo. Corta en `maxPages`: `truncated` avisa que quedaron más viejos sin leer.
+export async function readKommoChatEvents(
+  creds: KommoCredentials,
+  { from, to, maxPages }: { from: number; to?: number; maxPages: number },
+): Promise<{ events: KommoChatEvent[]; truncated: boolean }> {
+  const events = new Map<string, KommoChatEvent>();
+  let truncated = false;
+
+  for (let page = 1; ; page++) {
+    const body = await api<{ _embedded: { events: RawChatEvent[] }; _links?: { next?: unknown } }>(creds, "events", {
+      page,
+      limit: EVENT_PAGE,
+      "filter[type]": "incoming_chat_message,outgoing_chat_message",
+      "filter[created_at][from]": from,
+      ...(to ? { "filter[created_at][to]": to } : {}),
+    });
+    for (const e of body?._embedded.events ?? []) {
+      const message = e.value_after?.[0]?.message;
+      if (!message?.talk_id) continue;
+      // Por id: entre una página y la siguiente Kommo puede repetir alguno.
+      events.set(e.id, {
+        id: e.id,
+        talkId: message.talk_id,
+        leadId: e.entity_type === "lead" ? String(e.entity_id) : null,
+        incoming: e.type === "incoming_chat_message",
+        userId: e.created_by || null,
+        origin: message.origin ?? null,
+        at: new Date(e.created_at * 1000).toISOString(),
+      });
+    }
+    if (!body?._links?.next) break;
+    if (page >= maxPages) {
+      truncated = true;
+      break;
+    }
+  }
+  return { events: [...events.values()], truncated };
+}
+
+// Nombres de los usuarios de la cuenta, por id.
+export const kommoUsers = getUsers;
+
+// Nombre y responsable de leads puntuales, por id: los de chats cuyo lead el sync
+// de oportunidades no trajo (cerrados hace más de LEAD_DAYS).
+export async function readKommoLeadOwners(creds: KommoCredentials, ids: string[]) {
+  const found = new Map<string, { name: string; owner: string | null }>();
+  if (!ids.length) return found;
+  const users = await getUsers(creds);
+  // De a 50: los ids viajan en la URL.
+  for (let i = 0; i < ids.length; i += 50) {
+    const filter = Object.fromEntries(ids.slice(i, i + 50).map((id, n) => [`filter[id][${n}]`, id]));
+    const body = await api<{ _embedded: { leads: KommoLead[] } }>(creds, "leads", { limit: PAGE_LIMIT, ...filter });
+    for (const l of body?._embedded.leads ?? []) {
+      found.set(String(l.id), { name: l.name, owner: l.responsible_user_id ? (users.get(l.responsible_user_id) ?? null) : null });
+    }
+  }
+  return found;
+}

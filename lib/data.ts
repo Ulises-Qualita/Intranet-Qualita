@@ -269,6 +269,21 @@ export async function getMetaDaily(clientId: string, period: Period | number = 3
   return (data ?? []).map((d) => ({ ...d, spend: Number(d.spend), revenue: Number(d.revenue) }));
 }
 
+// Primer día con métricas guardadas de un cliente. Dice si un período anterior
+// está completo o si arranca antes de que hubiera datos (y no se puede comparar).
+export async function getMetaFirstDate(clientId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("intranet_meta_daily")
+    .select("date")
+    .eq("client_id", clientId)
+    .order("date", { ascending: true })
+    .limit(1)
+    .returns<{ date: string }[]>();
+  if (error) throw error;
+  return data?.[0]?.date ?? null;
+}
+
 export type MetaAd = {
   id: string;
   name: string;

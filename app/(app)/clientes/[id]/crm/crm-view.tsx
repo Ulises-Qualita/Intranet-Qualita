@@ -3,12 +3,15 @@ import { RangePicker } from "@/components/range-picker";
 import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, KpiLocked, MissingIntegration, Pill } from "@/components/ui";
+import { getChatEvents } from "@/lib/crm-chats";
 import { crmProviderLabel } from "@/lib/crm-shared";
 import { prepareCrmView } from "@/lib/crm-sync";
 import { type Client, crmPeriod, getCrmSnapshot, getLeads, getMetaCampaigns, leadFunnel, topVideoAds } from "@/lib/data";
-import { integer, money, percent, relativeTime } from "@/lib/format";
-import { type Period, periodPhrase, periodQuery } from "@/lib/period";
+import { compare } from "@/lib/compare";
+import { integer, localDate, money, percent, relativeTime, todayISO } from "@/lib/format";
+import { CRM_HISTORY_DAYS, type Period, periodPhrase, periodQuery, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
 import { AdsTable } from "./ads-table";
+import { ChatMonitor } from "./chat-monitor";
 import { TopVideos } from "./top-videos";
 
 // Color del chip de etapa según cómo terminó la oportunidad: ganada, perdida o
@@ -48,15 +51,35 @@ export async function CrmView({
   // Los videos salen de Meta (qué anuncio es video, gasto, miniatura): la card
   // solo aparece si el cliente tiene Meta y el usuario puede verlo.
   const showVideos = c.conn.meta && seesMeta;
-  const [snapshot, all, campaigns] = await Promise.all([
+  // Atención por chat: solo el equipo y solo Kommo, que es el que registra los mensajes.
+  const kommoUrl = internal && secrets?.provider === "kommo" ? secrets.kommo?.url : undefined;
+  const [snapshot, all, campaigns, chatEvents] = await Promise.all([
     getCrmSnapshot(c.id),
     getLeads(c.id),
     showVideos ? getMetaCampaigns(c.id, range) : null,
+    kommoUrl ? getChatEvents(c.id, range) : undefined,
   ]);
 
   // Todo el bloque se recorta por fecha de creación, según el selector del topbar.
   const { leads, won, tickets, ticketAvg, ticketTotal, sellers, sources, wonSources, ads } = crmPeriod(all, range);
   const periodo = range.label;
+
+  // Comparación contra el período anterior, solo en lo que es parejo de comparar:
+  // cuántas oportunidades entraron y de cuánto fue el ticket. Ganadas y total en
+  // tickets NO se comparan: todo se cuenta por fecha de creación, y las
+  // oportunidades del período anterior tuvieron más tiempo para cerrarse, así que
+  // el período actual siempre saldría perdiendo.
+  const previous = previousPeriod(range);
+  // Solo si el período anterior está entero dentro de lo que hay: ni más atrás de
+  // lo que trae el CRM, ni antes de la primera oportunidad cargada (un CRM recién
+  // estrenado daría una suba que es solo el arranque).
+  const firstDay = all.length ? localDate(all.reduce((min, l) => (l.created_at < min ? l.created_at : min), all[0].created_at)) : null;
+  const comparable = !!firstDay && firstDay <= previous.since && previous.since >= shiftDate(todayISO(), CRM_HISTORY_DAYS);
+  const before = comparable ? crmPeriod(all, previous) : null;
+  const versus = versusLabel(range);
+  const antes = `Antes (${previous.label})`;
+  const leadsChange = before && compare(leads.length, before.leads.length, { better: "up", format: integer, versus: antes });
+  const ticketChange = before && compare(ticketAvg, before.ticketAvg, { better: "up", format: (v) => money(v), versus: antes });
   const top = campaigns && topVideoAds(campaigns, ads);
 
   return (
@@ -80,7 +103,7 @@ export async function CrmView({
         <div className="grid g4 mb-4">
           {snapshot ? (
             <>
-              <Kpi label="Oportunidades" icon="target" value={integer(leads.length)} sub={periodo} hero />
+              <Kpi label="Oportunidades" icon="target" value={integer(leads.length)} sub={periodo} hero change={leadsChange} versus={versus} />
               {won === null ? (
                 <KpiLocked label="Ganadas" icon="check" note={internal ? "Falta correr la migración de estados" : "Sin datos"} />
               ) : (
@@ -99,7 +122,7 @@ export async function CrmView({
                     value={money(ticketTotal)}
                     sub={`${tickets} ${tickets === 1 ? "venta con ticket" : "ventas con ticket"}`}
                   />
-                  <Kpi label="Ticket promedio" icon="money" value={money(ticketAvg)} sub={periodo} />
+                  <Kpi label="Ticket promedio" icon="money" value={money(ticketAvg)} sub={periodo} change={ticketChange} versus={versus} />
                 </>
               )}
             </>
@@ -242,6 +265,15 @@ export async function CrmView({
             )}
           </Card>
         </div>
+
+        {kommoUrl && chatEvents !== undefined && (
+          <ChatMonitor
+            events={chatEvents}
+            range={range}
+            error={secrets?.chat_error ?? null}
+            leadUrl={(leadId) => `${kommoUrl}/leads/detail/${leadId}`}
+          />
+        )}
 
         {top && (
           <Card

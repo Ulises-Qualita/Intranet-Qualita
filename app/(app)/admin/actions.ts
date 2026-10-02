@@ -241,7 +241,7 @@ export async function createClientAccount(_prev: ActionResult | null, form: Form
     return { ok: false, error: "No se pudo crear la cuenta. ¿Corriste docs/sql/2026-09-25-cuentas-clientes.sql?" };
   }
 
-  revalidatePath("/admin");
+  revalidatePath("/admin/cuentas");
   return { ok: true, error: null };
 }
 
@@ -267,7 +267,7 @@ export async function setClientAccountActive(userId: string, active: boolean): P
     .select("user_id");
   if (error || !data?.length) return { ok: false, error: "No se pudo guardar el cambio." };
 
-  revalidatePath("/admin");
+  revalidatePath("/admin/cuentas");
   return { ok: true, error: null };
 }
 
@@ -279,6 +279,6 @@ export async function deleteClientAccount(userId: string): Promise<ActionResult>
   const { error } = await createAdminClient().auth.admin.deleteUser(userId);
   if (error) return { ok: false, error: "No se pudo borrar la cuenta." };
 
-  revalidatePath("/admin");
+  revalidatePath("/admin/cuentas");
   return { ok: true, error: null };
 }

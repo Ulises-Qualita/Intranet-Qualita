@@ -1,11 +1,13 @@
 import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState } from "@/components/ui";
-import { attendeeName, calendarConfigured, getClientMeetings, type Meeting } from "@/lib/calendar";
-import { type Client, getTeam } from "@/lib/data";
-import { relativeTime, todayISO } from "@/lib/format";
+import { attendeeName, calendarConfigured, getClientMeetings, meetingTime, type Meeting } from "@/lib/calendar";
+import { type Client, getTasksResult, getTeam, isOpenTask } from "@/lib/data";
+import { relativeTime, shortDate, todayISO } from "@/lib/format";
 import { getMeetingNotes } from "@/lib/meeting-notes";
-import { type CalMeeting, MeetingsCalendar } from "./meetings-calendar";
+import { type CalMeeting, type MeetingPrep, MeetingsCalendar } from "./meetings-calendar";
+
+const PRIORITY_RANK = { alta: 0, media: 1, baja: 2 };
 
 const TZ = "America/Argentina/Buenos_Aires";
 // Misma ventana que lee lib/calendar.ts.
@@ -37,7 +39,17 @@ function windowMonths(today: string) {
 // (intranet_meeting_notes) y que la cuenta del cliente lee.
 // La comparten el panel interno y la cuenta del cliente: quien la llama ya validó
 // el acceso. `internal` agrega la edición y las pistas para configurar.
-export async function ReunionesView({ client, internal }: { client: Client; internal: boolean }) {
+// `withTasks` (solo equipo con el área Tareas): al tocar una reunión que viene,
+// su card muestra lo que hay que cerrar antes.
+export async function ReunionesView({
+  client,
+  internal,
+  withTasks = false,
+}: {
+  client: Client;
+  internal: boolean;
+  withTasks?: boolean;
+}) {
   const title = "Reuniones";
 
   if (!calendarConfigured()) {
@@ -57,12 +69,14 @@ export async function ReunionesView({ client, internal }: { client: Client; inte
     );
   }
 
-  const [{ upcoming, past, error }, notes, team] = await Promise.all([
+  const [{ upcoming, past, error }, notes, team, taskData] = await Promise.all([
     getClientMeetings(client.name),
     getMeetingNotes(client.id),
     // Fotos y nombres del equipo para los participantes, y el "Editado por…".
     // getTeam usa service_role: acá solo sale nombre y foto de quien está en la reunión.
     getTeam(),
+    // Nunca tira: si Notion falla devuelve las propias y el motivo.
+    internal && withTasks ? getTasksResult() : null,
   ]);
   const names = new Map(team.map((m) => [m.id, m.name]));
   const byEmail = new Map(team.filter((m) => m.email).map((m) => [m.email!.toLowerCase(), m]));
@@ -112,8 +126,38 @@ export async function ReunionesView({ client, internal }: { client: Client; inte
   // En orden cronológico: las próximas se agrupan por semana respetando este orden.
   const calendar = [
     ...[...past].reverse().map((m) => toCal(m, "past")),
-    ...upcoming.map((m) => toCal(m, !m.allDay && m.start <= now ? "live" : "upcoming")),
+    ...upcoming.map((m) => toCal(m, !m.allDay && meetingTime(m.start) <= Date.parse(now) ? "live" : "upcoming")),
   ];
+
+  // Tareas a cerrar antes de cada reunión que viene (solo equipo con el área
+  // Tareas): las abiertas del cliente con vencimiento. Van todas y la card de
+  // cada reunión, al tocarla, se queda con las que vencen ese día o antes. Las
+  // abiertas sin vencimiento no entran (no se sabe para qué reunión son): se cuentan.
+  const members = new Map(team.map((m) => [m.id, m]));
+  const openTasks = (taskData?.tasks ?? []).filter((t) => t.client_id === client.id && isOpenTask(t));
+  const prep: MeetingPrep | null = taskData && {
+    tasks: openTasks
+      .filter((t) => t.due_date)
+      .sort((a, b) => a.due_date!.localeCompare(b.due_date!) || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
+      .map((t) => {
+        const due = t.due_date!;
+        const assignee = t.assignee_id ? members.get(t.assignee_id) : undefined;
+        return {
+          id: t.id,
+          title: t.title,
+          url: t.url,
+          priority: t.priority,
+          status: t.status,
+          due,
+          dueLabel: `Deadline: ${due === today ? "hoy" : shortDate(due)}`,
+          late: due <= today,
+          assignee: assignee ? { name: assignee.name, avatarUrl: assignee.avatarUrl } : null,
+        };
+      }),
+    undated: openTasks.filter((t) => !t.due_date).length,
+    error: taskData.notionError,
+    connectHref: client.conn.notion ? null : `/clientes/${client.slug}/notion/conectar`,
+  };
 
   return (
     <>
@@ -130,6 +174,7 @@ export async function ReunionesView({ client, internal }: { client: Client; inte
             months={windowMonths(today)}
             today={today}
             editSlug={internal && !notes.missingTable ? client.slug : null}
+            prep={prep}
           />
         </div>
       </section>
