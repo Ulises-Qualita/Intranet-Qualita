@@ -3,6 +3,8 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { AREAS, isQualitaEmail, type AreaKey, type Role } from "@/lib/auth-shared";
 import { getSession } from "@/lib/auth";
+import { AI_SETTINGS_KEY } from "@/lib/ai-config";
+import { AI_TASKS, type AiConfig, isAiEffort, isAiModel } from "@/lib/ai-models";
 import { NOTION_SETTINGS_KEY } from "@/lib/data";
 import { NOTION_PORTAL_TAG, NOTION_TICKETS_TAG, getDataSource, notionErrorMessage, type NotionProperty } from "@/lib/notion";
 import type { NotionConfig } from "@/lib/notion-map";
@@ -102,6 +104,33 @@ export async function addMember(_prev: ActionResult | null, formData: FormData):
   if (profileError) return { ok: false, error: "Se creó el usuario pero no su perfil de intranet." };
 
   revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// ---------- Modelo de IA (intranet_settings) ----------
+
+// Modelo y esfuerzo de cada uso de Claude. Solo admin: cambia lo que gasta todo el equipo.
+export async function saveAiConfig(config: AiConfig): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede cambiar el modelo de IA." };
+
+  const value: Partial<AiConfig> = {};
+  for (const { key, label } of AI_TASKS) {
+    const choice = config[key];
+    if (!isAiModel(choice?.model)) return { ok: false, error: `Elegí un modelo para ${label}.` };
+    if (choice.effort !== null && !isAiEffort(choice.effort)) return { ok: false, error: `Elegí un esfuerzo para ${label}.` };
+    value[key] = { model: choice.model, effort: choice.effort };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("intranet_settings")
+    .upsert({ key: AI_SETTINGS_KEY, value, updated_at: new Date().toISOString() });
+  if (error) {
+    console.error("[admin] saveAiConfig", error);
+    return { ok: false, error: "No se pudo guardar el modelo de IA." };
+  }
+
+  revalidatePath("/admin/gastos");
   return { ok: true, error: null };
 }
 

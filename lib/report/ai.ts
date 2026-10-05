@@ -6,9 +6,8 @@
 // énfasis con **negrita**; el HTML lo escapa y lo convierte en <strong>.
 import Anthropic from "@anthropic-ai/sdk";
 import { addUsage, emptyTokens, recordUsage } from "../agent/usage";
+import { aiChoice, effortParam } from "../ai-config";
 import type { ReportData } from "./data";
-
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 
 export type ReportTexts = {
   reading: string;
@@ -131,13 +130,14 @@ export async function writeReportTexts(
   userId: string,
   onThinking?: (text: string) => void,
 ): Promise<ReportTexts> {
+  const ai = await aiChoice("reporte");
   const client = new Anthropic();
   const stream = client.messages.stream({
-    model: MODEL,
+    model: ai.model,
     max_tokens: 16000,
     system: SYSTEM,
     thinking: { type: "adaptive", display: "summarized" },
-    output_config: { format: { type: "json_schema", schema: SCHEMA } },
+    output_config: { ...effortParam(ai), format: { type: "json_schema", schema: SCHEMA } },
     messages: [
       {
         role: "user",
@@ -152,7 +152,7 @@ export async function writeReportTexts(
   }
   const response = await stream.finalMessage();
 
-  await recordUsage("reporte", userId, null, MODEL, addUsage(emptyTokens(), response.usage));
+  await recordUsage("reporte", userId, null, ai.model, addUsage(emptyTokens(), response.usage));
 
   if (response.stop_reason === "refusal") throw new Error("Claude no quiso escribir los textos de este reporte.");
   if (response.stop_reason === "max_tokens") throw new Error("La respuesta de Claude quedó cortada.");

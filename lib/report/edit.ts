@@ -6,10 +6,11 @@
 // marcadores antes de mandarlo y se restituyen al guardar.
 import Anthropic from "@anthropic-ai/sdk";
 import { addUsage, emptyTokens, recordUsage, type TokenCounts } from "../agent/usage";
+import { aiChoice, effortParam } from "../ai-config";
+import type { AiChoice } from "../ai-models";
 import { createClient } from "../supabase/server";
 import { ReportError } from "./generate";
 
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 // Vueltas extra cuando un fragmento no coincide: se le avisa a Claude y reintenta.
 const MAX_RETRIES = 2;
 const MAX_TURNS = 12;
@@ -106,15 +107,16 @@ function cleanHistory(history: ChatTurn[]): Anthropic.MessageParam[] {
 
 async function ask(
   client: Anthropic,
+  ai: AiChoice,
   messages: Anthropic.MessageParam[],
   onThinking: (text: string) => void,
 ): Promise<{ response: EditResponse; raw: string; usage: Anthropic.Usage }> {
   const stream = client.messages.stream({
-    model: MODEL,
+    model: ai.model,
     max_tokens: 32000,
     system: SYSTEM,
     thinking: { type: "adaptive", display: "summarized" },
-    output_config: { format: { type: "json_schema", schema: SCHEMA } },
+    output_config: { ...effortParam(ai), format: { type: "json_schema", schema: SCHEMA } },
     messages,
   });
   stream.on("streamEvent", (event) => {
@@ -156,11 +158,12 @@ export async function editReport(
     { role: "user", content: `HTML actual del reporte:\n\n\`\`\`html\n${stripped}\n\`\`\`\n\nPedido: ${pedido}` },
   ];
 
+  const ai = await aiChoice("reporte");
   const client = new Anthropic();
   let tokens: TokenCounts = emptyTokens();
   try {
     for (let attempt = 0; ; attempt++) {
-      const { response, raw, usage } = await ask(client, messages, onThinking);
+      const { response, raw, usage } = await ask(client, ai, messages, onThinking);
       tokens = addUsage(tokens, usage);
       if (!response.edits.length) return { reply: response.reply, applied: 0 };
 
@@ -194,7 +197,7 @@ export async function editReport(
     }
   } finally {
     // Aunque falle a mitad de camino, las vueltas que corrieron ya se gastaron.
-    if (tokens.input || tokens.output) await recordUsage("reporte", userId, null, MODEL, tokens);
+    if (tokens.input || tokens.output) await recordUsage("reporte", userId, null, ai.model, tokens);
   }
 }
 

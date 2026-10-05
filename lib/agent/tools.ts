@@ -372,11 +372,16 @@ const crmResumen: AgentTool = {
 const TAGS_UNAVAILABLE =
   "Las etiquetas del CRM todavía no se están sincronizando (falta correr una migración en la base). No se sabe cuáles tiene cada oportunidad: no digas que no hay.";
 
+// Cada lead son ~60 tokens que se reenvían en cada vuelta del loop, y un listado
+// de cientos no entra en una respuesta de chat: los recuentos salen de crm_resumen.
+const MAX_LEADS = 50;
+
 const crmLeads: AgentTool = {
   area: "crm",
   definition: {
     name: "crm_leads",
-    description: "Oportunidades concretas del CRM de un cliente, con etapa, estado, vendedor, anuncio de origen, etiquetas y monto. Usala cuando pregunten por leads puntuales, no por totales.",
+    description:
+      "Oportunidades concretas del CRM de un cliente, con etapa, estado, vendedor, anuncio de origen, etiquetas y monto. Usala cuando pregunten por leads puntuales. Devuelve como máximo 50: para totales, conversión o cortes por vendedor, etapa, anuncio, origen o etiqueta usá crm_resumen, que ya los trae calculados sobre todo el período.",
     input_schema: {
       type: "object",
       properties: {
@@ -385,7 +390,7 @@ const crmLeads: AgentTool = {
         estado: { type: "string", enum: ["abierta", "ganada", "perdida"], description: "Filtrar por estado de la oportunidad." },
         vendedor: { type: "string", description: "Nombre del vendedor a cargo." },
         etiqueta: { type: "string", description: "Etiqueta del CRM (coincidencia parcial, sin distinguir mayúsculas)." },
-        limite: { type: "number", description: "Máximo de leads a devolver. Por defecto 30." },
+        limite: { type: "number", description: "Máximo de leads a devolver. Por defecto 30, tope 50." },
       },
       required: ["cliente"],
     },
@@ -411,7 +416,7 @@ const crmLeads: AgentTool = {
     if (etiqueta && list.some((l) => l.tags === null)) return { cliente: client.name, aviso: TAGS_UNAVAILABLE };
     if (etiqueta) list = list.filter((l) => l.tags?.some((t) => t.toLowerCase().includes(etiqueta)));
 
-    const limite = int(input.limite, 30);
+    const limite = Math.min(Math.max(int(input.limite, 30), 1), MAX_LEADS);
     return {
       cliente: client.name,
       dias,

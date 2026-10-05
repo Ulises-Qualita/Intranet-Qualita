@@ -107,8 +107,13 @@ No hay framework de tests configurado todavía.
   validar porque leen con la sesión del usuario). `lib/agent/prompt.ts` (system
   prompt cacheado, estable en toda la conversación), `lib/agent/threads.ts`
   (historial en `intranet_agent_threads` / `intranet_agent_messages`, solo el texto
-  de cada turno, nunca los resultados de las tools). Modelo por defecto
-  `claude-opus-5`, override con `ANTHROPIC_MODEL`. El render del chat soporta un
+  de cada turno, nunca los resultados de las tools). Modelo y esfuerzo por uso
+  (agente / reportes) los elige un admin en `/admin/gastos` (fila `ai` de
+  `intranet_settings`; `lib/ai-models.ts` client-safe, `lib/ai-config.ts` server);
+  sin elegir, `ANTHROPIC_MODEL` y si no `claude-opus-5-5`. Solo modelos con thinking
+  adaptativo y `effort` (Haiku 4.5 no). El loop cachea también los mensajes
+  (`cache_control` arriba de todo) para que los resultados de tools reenviados en
+  cada vuelta se cobren como lectura de caché; `crm_leads` tiene tope de 50. El render del chat soporta un
   markdown acotado (`components/agent/rich-text.tsx`): sin tablas, y el prompt lo
   dice. `lib/agent/usage.ts` registra tokens y costo estimado por consulta en
   `intranet_agent_usage` (precios por millón en una tabla del módulo; el costo se

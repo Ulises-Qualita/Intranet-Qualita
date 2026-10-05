@@ -9,6 +9,7 @@
 // herramientas y tardar; así el chat muestra qué está haciendo mientras tanto.
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse, type NextRequest } from "next/server";
+import { aiChoice, effortParam } from "@/lib/ai-config";
 import { getSession } from "@/lib/auth";
 import { systemPrompt } from "@/lib/agent/prompt";
 import { toolsFor } from "@/lib/agent/tools";
@@ -26,8 +27,6 @@ const MAX_ITERATIONS = 8;
 // Alcanza para una respuesta de chat larga más el razonamiento. Subirlo solo
 // sube el techo, pero también el gasto máximo de una pregunta suelta.
 const MAX_TOKENS = 16_000;
-
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 
 // Eventos que consume components/agent/agent-chat.tsx.
 type AgentEvent =
@@ -54,7 +53,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Tu cuenta todavía no tiene ningún área habilitada." }, { status: 403 });
   }
 
-  const clients = await getClients().catch(() => []);
+  // Modelo y esfuerzo: los elige un admin en /admin/gastos.
+  const [clients, ai] = await Promise.all([getClients().catch(() => []), aiChoice("agente")]);
   const system = systemPrompt({
     userName: session.user.name,
     profile: session.profile,
@@ -94,11 +94,16 @@ export async function POST(request: NextRequest) {
 
         for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
           const turn = client.messages.stream({
-            model: MODEL,
+            model: ai.model,
+            output_config: effortParam(ai),
             max_tokens: MAX_TOKENS,
             // El prompt del sistema y las herramientas no cambian en toda la
             // conversación: se cachean y los turnos siguientes salen más baratos.
             system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+            // Además se cachea hasta el último mensaje: cada vuelta del loop reenvía
+            // los resultados de las herramientas anteriores, y así se cobran como
+            // lectura de caché (~10%) en lugar de entrada completa.
+            cache_control: { type: "ephemeral" },
             thinking: { type: "adaptive", display: "summarized" },
             tools: tools.definitions,
             messages,
@@ -171,7 +176,7 @@ export async function POST(request: NextRequest) {
         // En el finally: si la consulta se cortó a mitad de camino, los tokens de
         // las vueltas que sí corrieron ya se gastaron y tienen que quedar contados.
         if (tokens.input || tokens.output) {
-          await recordUsage("agente", session.user.id, thread?.id ?? null, MODEL, tokens);
+          await recordUsage("agente", session.user.id, thread?.id ?? null, ai.model, tokens);
         }
         controller.close();
       }
