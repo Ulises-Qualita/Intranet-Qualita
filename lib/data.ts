@@ -6,9 +6,11 @@ import { type CrmExclusion, isCrmExclusion } from "./crm-shared";
 import { type HiddenTabs, parseHiddenTabs } from "./client-tabs";
 import { INTEGRATIONS, type Integration, type IntegrationState } from "./integrations";
 import { localDate } from "./format";
+import { googlePhoto } from "./google-photo";
 import { LOGOS_BUCKET, LOGOS_TAG } from "./logos";
 import { getTickets, notionConfigured, notionErrorMessage } from "./notion";
 import { type Period, toPeriod } from "./period";
+import { EMPTY_PORTAL, parsePortal, type PortalSettings } from "./portal";
 import { EMPTY_NOTION_CONFIG, isNotionConfigured, normalizeId, type NotionConfig } from "./notion-map";
 import { createAdminClient, createClient, isMissingTable } from "./supabase/server";
 import type { Task } from "./tasks";
@@ -239,6 +241,23 @@ export const getNotionConfig = cache(async (): Promise<NotionConfig | null> => {
   if (error) return null;
   return data?.value ? { ...EMPTY_NOTION_CONFIG, ...data.value } : null;
 });
+
+// ---------- Portal del cliente (intranet_clients.portal) ----------
+
+// Banner y responsable validador que carga el equipo. Con la sesión: la RLS de
+// intranet_clients deja leer al equipo y a la cuenta del propio cliente.
+// `missing`: falta correr docs/sql/2026-10-05-portal-intranet.sql.
+export async function getPortalSettings(clientId: string): Promise<{ settings: PortalSettings; missing: boolean }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("intranet_clients")
+    .select("portal")
+    .eq("id", clientId)
+    .maybeSingle<{ portal: unknown }>();
+  if (error?.code === "42703") return { settings: EMPTY_PORTAL, missing: true };
+  if (error) throw error;
+  return { settings: parsePortal(data?.portal), missing: false };
+}
 
 // ---------- Meta (intranet_meta_daily / intranet_meta_ads) ----------
 
@@ -724,19 +743,23 @@ export const getTeam = cache(async (): Promise<TeamMember[]> => {
 
   const users = new Map((authUsers?.users ?? []).map((u) => [u.id, u]));
 
-  return (profiles ?? []).map(({ id, email, full_name, role, areas, active, job_title }) => {
-    const p = { id, email, full_name, role, areas, active };
-    const user = users.get(p.id);
-    const meta = user?.user_metadata ?? {};
-    return {
-      ...p,
-      jobTitle: job_title?.trim() || null,
-      name: meta.full_name || meta.name || p.full_name || p.email?.split("@")[0] || "Sin nombre",
-      avatarUrl: meta.avatar_url || meta.picture || null,
-      // Alta hecha desde Administración que todavía no ingresó con Google.
-      invited: !user?.last_sign_in_at,
-    };
-  });
+  return Promise.all(
+    (profiles ?? []).map(async ({ id, email, full_name, role, areas, active, job_title }) => {
+      const p = { id, email, full_name, role, areas, active };
+      const user = users.get(p.id);
+      const meta = user?.user_metadata ?? {};
+      return {
+        ...p,
+        jobTitle: job_title?.trim() || null,
+        name: meta.full_name || meta.name || p.full_name || p.email?.split("@")[0] || "Sin nombre",
+        // Si el login no trajo la foto, se pide a Google (solo activos: un dado de
+        // baja puede no existir más en Workspace).
+        avatarUrl: meta.avatar_url || meta.picture || (p.active ? await googlePhoto(p.email) : null),
+        // Alta hecha desde Administración que todavía no ingresó con Google.
+        invited: !user?.last_sign_in_at,
+      };
+    }),
+  );
 });
 
 // Equipo asignado a un cliente (intranet_client_assignments), solo los activos.

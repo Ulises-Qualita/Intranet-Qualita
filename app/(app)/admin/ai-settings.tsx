@@ -78,7 +78,7 @@ export function AiSettings({ config, canEdit }: { config: AiConfig; canEdit: boo
 
         {canEdit ? (
           <div className="form-actions">
-            <button type="submit" className="btn-primary" disabled={pending}>
+            <button type="submit" className="btn-secondary btn-primary" disabled={pending}>
               {pending ? "Guardando…" : "Guardar"}
             </button>
             {error && <p className="form-error">{error}</p>}

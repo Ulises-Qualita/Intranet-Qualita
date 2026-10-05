@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { canAccess, isQualitaEmail, type AreaKey, type Profile } from "./auth-shared";
+import { googlePhoto } from "./google-photo";
 import { createClient } from "./supabase/server";
 
 export type SessionUser = {
@@ -32,7 +33,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
       id: claims.sub,
       email,
       name: meta.full_name || meta.name || profile?.full_name || email.split("@")[0],
-      avatarUrl: meta.avatar_url || meta.picture || null,
+      avatarUrl: meta.avatar_url || meta.picture || (await googlePhoto(email)),
     },
     profile,
   };

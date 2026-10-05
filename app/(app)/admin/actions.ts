@@ -6,7 +6,7 @@ import { getSession } from "@/lib/auth";
 import { AI_SETTINGS_KEY } from "@/lib/ai-config";
 import { AI_TASKS, type AiConfig, isAiEffort, isAiModel } from "@/lib/ai-models";
 import { NOTION_SETTINGS_KEY } from "@/lib/data";
-import { NOTION_PORTAL_TAG, NOTION_TICKETS_TAG, getDataSource, notionErrorMessage, type NotionProperty } from "@/lib/notion";
+import { NOTION_TICKETS_TAG, getDataSource, notionErrorMessage, type NotionProperty } from "@/lib/notion";
 import type { NotionConfig } from "@/lib/notion-map";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
@@ -159,9 +159,8 @@ export async function saveNotionConfig(config: NotionConfig): Promise<ActionResu
     statusMap: config.statusMap ?? {},
     priorityMap: config.priorityMap ?? {},
     hiddenStatuses: config.hiddenStatuses ?? [],
-    // Portal del cliente: opcional. Sin esto la solapa avisa que falta configurar
-    // y el resto de la app sigue igual.
-    portalUrlProp: config.portalUrlProp ?? "",
+    // Portal del cliente: checkbox de Tickets. Vacío = detección automática.
+    portalProp: config.portalProp ?? "",
   };
 
   const supabase = await createClient();
@@ -181,7 +180,6 @@ export async function saveNotionConfig(config: NotionConfig): Promise<ActionResu
 
   // Cambió el mapeo: lo que estaba cacheado ya no sirve.
   revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
-  revalidateTag(NOTION_PORTAL_TAG, { expire: 0 });
   revalidatePath("/", "layout");
   return { ok: true, error: null };
 }

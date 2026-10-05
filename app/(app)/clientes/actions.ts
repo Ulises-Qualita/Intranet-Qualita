@@ -10,7 +10,9 @@ import { driveErrorMessage, getItem, isDriveId } from "@/lib/drive";
 import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
 import { LOGO_MAX_BYTES, LOGO_TYPES, LOGOS_BUCKET, LOGOS_TAG } from "@/lib/logos";
 import { deleteMetaSecrets, getAdAccount, getMetaSecrets, saveMetaSecrets } from "@/lib/meta";
-import { NOTION_PORTAL_TAG, NOTION_TICKETS_TAG, getPageRef, notionErrorMessage } from "@/lib/notion";
+import { NOTION_TICKETS_TAG, getPageRef, notionErrorMessage } from "@/lib/notion";
+import { BANNER_MAX_BYTES, BANNER_TYPES, BANNERS_BUCKET, type PortalValidator, parsePortal } from "@/lib/portal";
+import { MEETINGS_TAG } from "@/lib/calendar";
 import { KommoError, kommoAccount, normalizeKommoUrl } from "@/lib/kommo";
 import { normalizeOdooUrl, odooLogin } from "@/lib/odoo";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -520,10 +522,87 @@ export async function setCrmLeadBase(clientId: string, since: string, stages: st
   return { ok: true, error: null };
 }
 
-// Fuerza una lectura fresca del portal del cliente.
+// ---------- Portal del cliente (intranet_clients.portal) ----------
+
+const PORTAL_MISSING: FormState = { ok: false, error: "Falta correr docs/sql/2026-10-05-portal-intranet.sql en Supabase." };
+
+// Lee, cambia y guarda el jsonb del portal con la sesión (la RLS vuelve a validar).
+async function updatePortal(clientId: string, change: (portal: Record<string, unknown>) => void): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  const supabase = await createClient();
+  const { data: row, error: readError } = await supabase
+    .from("intranet_clients")
+    .select("portal")
+    .eq("id", clientId)
+    .maybeSingle<{ portal: Record<string, unknown> | null }>();
+  if (readError?.code === "42703") return PORTAL_MISSING;
+  if (readError || !row) return { ok: false, error: dbError(readError?.code, "No se encontró el cliente.") };
+
+  const portal = { ...(row.portal ?? {}) };
+  change(portal);
+  const { data, error } = await supabase
+    .from("intranet_clients")
+    .update({ portal, updated_at: new Date().toISOString() })
+    .eq("id", clientId)
+    .select("id");
+  if (error || !data?.length) return { ok: false, error: dbError(error?.code, "No se pudo guardar el portal.") };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// Responsable validador: lo carga el equipo a mano. Sin nombre se borra.
+export async function savePortalValidator(clientId: string, validator: PortalValidator): Promise<FormState> {
+  const clean = parsePortal({ validator }).validator;
+  return updatePortal(clientId, (portal) => {
+    if (clean) portal.validator = clean;
+    else delete portal.validator;
+  });
+}
+
+// Banner: como el logo, va del navegador a Storage con una URL firmada.
+export async function createBannerUpload(
+  clientId: string,
+  file: { type: string; size: number },
+): Promise<{ ok: true; path: string; token: string } | { ok: false; error: string }> {
+  if (!(await getAreaSession("clientes"))) return { ok: false, error: NO_ACCESS.error! };
+  if (!BANNER_TYPES.includes(file.type)) return { ok: false, error: "Subí un PNG, JPG o WebP." };
+  if (file.size > BANNER_MAX_BYTES) return { ok: false, error: "El banner no puede pesar más de 5 MB." };
+
+  const supabase = await createClient();
+  const { data: client } = await supabase.from("intranet_clients").select("id").eq("id", clientId).maybeSingle();
+  if (!client) return { ok: false, error: "Cliente no encontrado." };
+
+  const { data, error } = await createAdminClient()
+    .storage.from(BANNERS_BUCKET)
+    .createSignedUploadUrl(clientId, { upsert: true });
+  if (error || !data) return { ok: false, error: "No se pudo preparar la subida. Puede faltar crear el bucket (docs/sql/2026-10-05-portal-intranet.sql)." };
+
+  return { ok: true, path: data.path, token: data.token };
+}
+
+// Ya subido: se guarda cuándo, que es la versión que lleva la URL del banner.
+export async function bannerUploaded(clientId: string): Promise<FormState> {
+  return updatePortal(clientId, (portal) => {
+    portal.banner = Date.now();
+  });
+}
+
+export async function removeBanner(clientId: string): Promise<FormState> {
+  const result = await updatePortal(clientId, (portal) => {
+    delete portal.banner;
+  });
+  if (!result.ok) return result;
+  await createAdminClient().storage.from(BANNERS_BUCKET).remove([clientId]);
+  return result;
+}
+
+// Fuerza una lectura fresca de lo que el portal trae de afuera: los tickets de
+// Notion y las reuniones de Google Calendar.
 export async function refreshPortal(): Promise<FormState> {
   if (!(await getAreaSession("clientes"))) return NO_ACCESS;
-  revalidateTag(NOTION_PORTAL_TAG, { expire: 0 });
+  revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
+  revalidateTag(MEETINGS_TAG, { expire: 0 });
   revalidatePath("/", "layout");
   return { ok: true, error: null };
 }

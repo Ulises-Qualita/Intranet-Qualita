@@ -42,10 +42,7 @@ export default async function AdminNotionPage() {
       return [];
     }
   };
-  const [initialProperties, initialProjectProperties] = await Promise.all([
-    schemaOf(config?.ticketsDataSourceId),
-    schemaOf(config?.projectsDataSourceId),
-  ]);
+  const initialProperties = await schemaOf(config?.ticketsDataSourceId);
 
   return (
     <>
@@ -90,7 +87,6 @@ export default async function AdminNotionPage() {
               sources={sources.list}
               config={config}
               initialProperties={initialProperties}
-              initialProjectProperties={initialProjectProperties}
             />
           )}
         </Card>

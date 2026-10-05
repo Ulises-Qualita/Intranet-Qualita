@@ -23,9 +23,10 @@ export type NotionConfig = {
   // Estados que no son trabajo del equipo (en Qualita, "Reuniones"): sus tickets
   // no entran al tablero ni a los contadores. Se eligen en /admin/notion.
   hiddenStatuses: string[];
-  // Portal del cliente: propiedad de tipo url en la database de Proyectos con el
-  // link a la página del portal. Opcional: sin esto la solapa avisa y nada más.
-  portalUrlProp: string;
+  // Portal del cliente: checkbox de la database de Tickets que dice qué tickets
+  // se muestran en el portal (calendario y etapas). Vacío = se busca un checkbox
+  // con "portal" en el nombre (portalPropOf).
+  portalProp: string;
 };
 
 export const EMPTY_NOTION_CONFIG: NotionConfig = {
@@ -35,7 +36,7 @@ export const EMPTY_NOTION_CONFIG: NotionConfig = {
   statusMap: {},
   priorityMap: {},
   hiddenStatuses: [],
-  portalUrlProp: "",
+  portalProp: "",
 };
 
 // Configurada = alcanza para leer tickets y saber a qué proyecto pertenecen.
@@ -43,15 +44,12 @@ export const EMPTY_NOTION_CONFIG: NotionConfig = {
 export const isNotionConfigured = (c: NotionConfig | null): c is NotionConfig =>
   !!c && !!c.ticketsDataSourceId && !!c.props.project;
 
-// Para el portal alcanza con saber qué propiedad del proyecto guarda el link.
-export const isPortalConfigured = (c: NotionConfig | null): c is NotionConfig =>
-  !!c && !!c.projectsDataSourceId && !!c.portalUrlProp;
-
-// Notion acepta ids con guiones o sin ellos; de una URL salen sin guiones y a
-// veces con el título y un "-" adelante (…/Portal-del-cliente-<id>).
-export function pageIdFromUrl(url: string): string | null {
-  const match = url.match(/([0-9a-f]{32})|([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-  return match ? match[0] : null;
+// Checkbox de Tickets que manda un ticket al portal: el elegido en /admin/notion
+// o, si no se eligió, el primero con "portal" en el nombre (en Qualita, "Portal de
+// cliente"). Así el portal anda sin pasar por la configuración.
+export function portalPropOf(config: NotionConfig, props: Record<string, { type: string }>): string | null {
+  if (config.portalProp && props[config.portalProp]?.type === "checkbox") return config.portalProp;
+  return Object.keys(props).find((name) => props[name].type === "checkbox" && /portal/i.test(name)) ?? null;
 }
 
 // Notion devuelve los ids con guiones, pero si alguien los copia de una URL vienen
@@ -162,6 +160,10 @@ export type NotionTicket = {
   status: TaskStatus;
   priority: TaskPriority;
   dueDate: string | null;
+  // Fin del rango de la fecha (inicio → fin), para el calendario del portal.
+  dueEnd: string | null;
+  // Tildado para mostrarse en el portal del cliente (portalPropOf).
+  portal: boolean;
   projectIds: string[];
   // Se resuelven contra intranet_profiles en lib/data.ts.
   peopleEmails: string[];
@@ -185,6 +187,10 @@ export function toTicket(page: NotionPage, config: NotionConfig): NotionTicket {
   const statusName = optionName(props[config.props.status]);
   const priorityName = optionName(props[config.props.priority]);
   const people = props[config.props.assignee]?.people ?? [];
+  const portalProp = portalPropOf(config, props);
+  const due = dateStart(props[config.props.dueDate]);
+  // Solo un fin posterior al inicio cuenta como rango.
+  const end = props[config.props.dueDate]?.date?.end?.slice(0, 10) ?? null;
 
   return {
     id: page.id,
@@ -194,7 +200,9 @@ export function toTicket(page: NotionPage, config: NotionConfig): NotionTicket {
     // estado nuevo en Notion, el ticket se ve igual en vez de desaparecer callado.
     status: (statusName && config.statusMap[statusName]) || "todo",
     priority: (priorityName && config.priorityMap[priorityName]) || "media",
-    dueDate: dateStart(props[config.props.dueDate]),
+    dueDate: due,
+    dueEnd: due && end && end > due ? end : null,
+    portal: !!portalProp && props[portalProp]?.checkbox === true,
     projectIds: relationIds(props[config.props.project]),
     peopleEmails: people.map((p) => p.person?.email).filter((e): e is string => !!e),
     peopleNames: people.map((p) => p.name).filter((n): n is string => !!n),

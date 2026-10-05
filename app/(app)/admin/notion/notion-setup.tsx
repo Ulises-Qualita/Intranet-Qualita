@@ -36,14 +36,12 @@ export function NotionSetup({
   sources,
   config,
   initialProperties,
-  initialProjectProperties,
 }: {
   sources: NotionDataSource[];
   config: NotionConfig | null;
   // Schemas de las databases ya configuradas, leídos en el server para no pagar
   // un viaje extra al abrir la pantalla.
   initialProperties: NotionProperty[];
-  initialProjectProperties: NotionProperty[];
 }) {
   const [projectsId, setProjectsId] = useState(config?.projectsDataSourceId ?? "");
   const [ticketsId, setTicketsId] = useState(config?.ticketsDataSourceId ?? "");
@@ -52,10 +50,9 @@ export function NotionSetup({
   const [priorityMap, setPriorityMap] = useState<Record<string, TaskPriority>>(config?.priorityMap ?? {});
   const [hiddenStatuses, setHiddenStatuses] = useState<string[]>(config?.hiddenStatuses ?? []);
 
-  // Portal del cliente: qué propiedad url de Proyectos guarda el link al portal.
-  const [portalUrlProp, setPortalUrlProp] = useState(config?.portalUrlProp ?? "");
-  const [projectProperties, setProjectProperties] = useState<NotionProperty[]>(initialProjectProperties);
-  const [loadingProject, setLoadingProject] = useState(false);
+  // Portal del cliente: qué checkbox de Tickets manda un ticket al portal. Vacío =
+  // el que tenga "portal" en el nombre (portalPropOf en lib/notion-map.ts).
+  const [portalProp, setPortalProp] = useState(config?.portalProp ?? "");
 
   const [properties, setProperties] = useState<NotionProperty[]>(initialProperties);
   const [loadingProps, setLoadingProps] = useState(false);
@@ -94,39 +91,12 @@ export function NotionSetup({
     });
   }
 
-  // Elegir la database de Proyectos lee su schema para poder ofrecer sus
-  // propiedades de tipo url (de ahí sale el link al portal de cada cliente).
   function chooseProjects(nextId: string) {
     setProjectsId(nextId);
     setError(null);
-    if (!nextId) {
-      setProjectProperties([]);
-      setPortalUrlProp("");
-      return;
-    }
-
-    setLoadingProject(true);
-    startTransition(async () => {
-      const result = await loadNotionProperties(nextId);
-      setLoadingProject(false);
-      if (!result.ok) {
-        setProjectProperties([]);
-        setError(result.error);
-        return;
-      }
-      setProjectProperties(result.properties);
-
-      if (nextId === config?.projectsDataSourceId && config.portalUrlProp) {
-        setPortalUrlProp(config.portalUrlProp);
-        return;
-      }
-      // Pre-selección: la propiedad url que hable de portal.
-      const urls = result.properties.filter((p) => p.type === "url");
-      setPortalUrlProp((urls.find((p) => /portal/i.test(p.name)) ?? urls[0])?.name ?? "");
-    });
   }
 
-  const urlProps = projectProperties.filter((p) => p.type === "url");
+  const checkboxProps = properties.filter((p) => p.type === "checkbox");
 
   // Cambiar la propiedad de Estado o Prioridad invalida el mapeo de sus opciones.
   function setRole(key: keyof NotionProps, value: string) {
@@ -150,7 +120,8 @@ export function NotionSetup({
         priorityMap,
         // Solo las opciones que siguen existiendo en la database elegida.
         hiddenStatuses: hiddenStatuses.filter((s) => statusOptions.includes(s)),
-        portalUrlProp,
+        // Si el elegido ya no existe en Tickets, vuelve a la detección automática.
+        portalProp: checkboxProps.some((p) => p.name === portalProp) ? portalProp : "",
       });
       if (result.ok) setSaved(true);
       else setError(result.error);
@@ -281,13 +252,11 @@ export function NotionSetup({
 
       <hr className="form-sep" />
 
-      {loadingProject && <p className="muted">Leyendo las propiedades de Proyectos…</p>}
-
       <label>
         <span>Portal del cliente</span>
-        <select value={portalUrlProp} onChange={(e) => setPortalUrlProp(e.target.value)} disabled={pending || !urlProps.length}>
-          <option value="">{urlProps.length ? "Sin usar" : "Proyectos no tiene propiedades de tipo URL"}</option>
-          {urlProps.map((p) => (
+        <select value={portalProp} onChange={(e) => setPortalProp(e.target.value)} disabled={pending || !checkboxProps.length}>
+          <option value="">{checkboxProps.length ? "Automático (el que diga “portal”)" : "Tickets no tiene propiedades de tipo checkbox"}</option>
+          {checkboxProps.map((p) => (
             <option key={p.id} value={p.name}>
               {p.name}
             </option>
@@ -295,8 +264,8 @@ export function NotionSetup({
         </select>
       </label>
       <p className="muted">
-        Propiedad de <b>Proyectos</b> donde está el link a la página del portal. La intranet la lee y muestra su
-        contenido en la solapa Portal de cada cliente. Es opcional: sin esto el resto funciona igual.
+        Checkbox de <b>Tickets</b> que marca qué tickets se muestran en el portal de cada cliente (en su calendario y en
+        la lista de etapas). Los que no lo tienen tildado no aparecen.
       </p>
 
       {error && <p className="form-error">{error}</p>}

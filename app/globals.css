@@ -1064,17 +1064,38 @@ body {
 @layer components {
   .portal-page { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; padding-bottom: 36px; }
   .portal-cover { display: block; width: 100%; height: 180px; object-fit: cover; }
+  /* Sin banner cargado: el degradado de marca. */
+  .portal-cover.plain { background: var(--grad); }
 
   /* El contenido comparte el gutter del header para que todo quede alineado. */
   .portal-page > .notion-doc, .portal-page > .empty-state { padding: 0 44px; }
+  .portal-page > .empty-state { margin: 4px 0 18px; }
   .portal-head { padding: 28px 44px 6px; }
-  /* Con banner, el ícono lo monta encima como en Notion. */
-  .portal-head.with-cover { padding-top: 0; margin-top: -34px; }
+  /* Con banner, el ícono lo monta encima como en Notion. position + z-index para
+     que quede por delante del banner (si no, el banner lo tapa). */
+  .portal-head.with-cover { position: relative; z-index: 1; padding-top: 0; margin-top: -34px; }
   .portal-head h2 { font-family: var(--font-display); font-size: 27px; font-weight: 600; letter-spacing: -.8px; color: var(--navy); line-height: 1.2; margin-top: 14px; }
 
   .portal-icon { display: block; width: 68px; height: 68px; font-size: 54px; line-height: 68px; }
   .portal-icon img { width: 68px; height: 68px; object-fit: cover; border-radius: 12px; display: block; }
   .portal-head.with-cover .portal-icon img { border: 3px solid var(--surface); }
+  /* El ícono es el logo del cliente: entero (contain) sobre blanco, no recortado. */
+  .portal-icon.logo img { object-fit: contain; background: #fff; padding: 6px; }
+  /* #252851 fijo: --navy se aclara en el tema oscuro. */
+  .portal-icon.initials { display: grid; place-items: center; border-radius: 12px; background: #252851; color: #fff; font-family: var(--font-display); font-size: 24px; font-weight: 600; line-height: 1; border: 3px solid var(--surface); }
+
+  .portal-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+
+  /* Banner en "Editar portal": apaisado, como se ve en el portal. */
+  .banner-field { display: flex; flex-direction: column; gap: 8px; }
+  .banner-label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .banner-drop { width: 100%; height: 110px; border-radius: 14px; border: 1px dashed var(--line-strong); background: var(--surface-2); color: var(--muted-2); display: grid; place-items: center; cursor: pointer; overflow: hidden; padding: 0; transition: .14s; }
+  .banner-drop:hover { border-color: var(--magenta); color: var(--magenta); }
+  .banner-drop.has-banner { border-style: solid; }
+  .banner-drop img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .banner-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .banner-actions > span { font-size: 12px; color: var(--muted); }
+  .banner-actions .logo-field-actions { margin-top: 0; }
 
   @media (max-width: 720px) {
     .portal-page > .notion-doc, .portal-page > .empty-state { padding: 0 20px; }

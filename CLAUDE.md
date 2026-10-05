@@ -160,18 +160,19 @@ No hay framework de tests configurado todavía.
   día y, a la derecha, las próximas como cards separadas por semana (fotos de Google
   del equipo cruzadas por mail con `getTeam`; los de afuera, iniciales). Tocando un
   día se ven sus reuniones; las pasadas llevan una descripción que escribe el equipo
-  y la cuenta del cliente solo lee (además, en el Portal la database de Notion
-  embebida suma una solapa "Reuniones" al lado de sus vistas, con un calendario solo
-  de reuniones: `withExtraEvents` de `lib/notion-blocks.ts` las agrega a
-  `db.extraEvents` fuera del cache y `buildCalendar(…, "extra")` lo arma; la vista
-  calendario de Notion también las sigue mostrando, mezcladas con las filas, y la
-  solapa no aparece si no hay reuniones o si la
-  solapa Reuniones del cliente está desactivada): `intranet_meeting_notes` (clave = `Meeting.key`,
+  y la cuenta del cliente solo lee (además, en el Portal el roadmap suma una solapa
+  "Reuniones" al lado de Calendario y Etapas, con un calendario solo de reuniones:
+  van en `db.extraEvents` y `buildCalendar(…, "extra")` lo arma; el Calendario las
+  muestra mezcladas con las etapas, y la solapa no aparece si no hay reuniones o si
+  la solapa Reuniones del cliente está desactivada): `intranet_meeting_notes` (clave = `Meeting.key`,
   `docs/sql/2026-09-30-reuniones-notas.sql`), `lib/meeting-notes.ts`,
   `saveMeetingNote` valida que la clave sea de una reunión pasada del cliente.
 - Cuenta de servicio de Google: `lib/google.ts` (token por usuario + scope) la
   comparten Calendar y Drive. La delegación en admin.google.com tiene que tener los
   dos scopes: `calendar.events.readonly` y `drive` (al editarla se reemplaza la lista).
+  También da la foto de perfil cuando el login de Google no la trajo (a alejo@ no se
+  la manda aunque la tenga): `lib/google-photo.ts` pide `drive/v3/about` como ese
+  usuario, cacheado un día; lo usan `getSession()` y `getTeam()`.
 - Pestaña Drive (`/clientes/[slug]/drive` y `/mi-empresa/drive`, misma `DriveView`,
   área `clientes`): la carpeta de cada cliente, **en vivo** (no se espeja). El estudio
   **no usa una unidad compartida**: son carpetas sueltas (de clientes o del equipo)
@@ -316,12 +317,19 @@ No hay framework de tests configurado todavía.
   todos los salientes llegan sin usuario (`created_by` 0, responden desde la app de
   WhatsApp). El texto de los mensajes existe en `GET /api/v4/talks/{id}/messages`,
   pero pide el alcance "External chat history" (Chats API add-on) y hoy da 403.
-- Portada e ícono del portal del cliente: no se usa la url firmada de Notion en el
-  `<img>` (cambia en cada consulta y el navegador nunca la guarda). `PortalView` arma
-  un link propio firmado con HMAC (`lib/notion-image.ts`, mismo esquema que las
-  miniaturas de Drive) con una huella del archivo, y `/api/notion/img/[token]` o
-  `/mi-empresa/portal/img/[token]` le piden a Notion un link vigente y devuelven la
-  imagen con cache de un año. Las imágenes del cuerpo del portal siguen directas.
+- Portal del cliente (`/clientes/[slug]/portal` y `/mi-empresa/portal`, misma
+  `PortalView`): **armado en la intranet**, ya no lee una página de Notion. Banner y
+  responsable validador los carga el equipo desde "Editar portal" y van en
+  `intranet_clients.portal` (`lib/portal.ts`, `getPortalSettings`); el banner es un
+  objeto por cliente en el bucket público `intranet-client-banners` (como los logos,
+  subida con URL firmada) y su versión va en `portal.banner`
+  (`docs/sql/2026-10-05-portal-intranet.sql`). El ícono es el logo del cliente.
+  Textos de bienvenida y de confidencialidad fijos. El roadmap son los tickets del
+  proyecto del cliente con el checkbox "Portal de cliente" tildado
+  (`NotionTicket.portal`; el checkbox se elige en `/admin/notion` y, si no, se toma
+  el que diga "portal"), armados como una database (`EmbeddedDb`) para reusar el
+  render de `components/notion-content.tsx`: solapas Calendario, Etapas (etapa,
+  fecha, estado traducido a Pendiente / En curso / Completada) y Reuniones.
 - Links de navegación (sidebar, solapas del cliente y de Administración): usar
   `NavLink` (`components/nav-link.tsx`), no `Link`. Precarga la pantalla entera al
   pasar el mouse, enfocar o tocar. Consecuencia: **una página se puede renderizar sin

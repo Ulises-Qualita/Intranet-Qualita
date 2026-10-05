@@ -5,7 +5,8 @@ import { useState, useTransition } from "react";
 import { Icon } from "@/components/icons";
 import { refreshPortal } from "../../actions";
 
-// Descarta el cache del portal y vuelve a leer Notion ahora. Va en el encabezado
+// Descarta el cache de los tickets de Notion y de las reuniones, y los vuelve a
+// leer ahora. Va en el encabezado
 // del cliente (a la izquierda del tema), que es del layout y no sabe en qué solapa
 // está: por eso se muestra solo en `href`, la del portal.
 export function RefreshPortalButton({ href }: { href: string }) {
@@ -15,7 +16,7 @@ export function RefreshPortalButton({ href }: { href: string }) {
   if (pathname !== href) return null;
 
   // Sin lugar para un mensaje en el encabezado: el error va en el ícono (rojo) y su título.
-  const label = pending ? "Actualizando…" : (error ?? "Actualizar desde Notion");
+  const label = pending ? "Actualizando…" : (error ?? "Actualizar etapas y reuniones");
 
   return (
     <button

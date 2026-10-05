@@ -92,8 +92,8 @@ export default async function ClienteLayout({
     <div className="client-shell">
       <div className="client-head">
         <ClientHeader client={client}>
-          {/* Solo con el proyecto de Notion vinculado hay un portal que releer. */}
-          {client.conn.notion && tabs.some((t) => t.suffix === "/portal") && <RefreshPortalButton href={`${base}/portal`} />}
+          {/* Relee los tickets de Notion y las reuniones del portal. */}
+          {tabs.some((t) => t.suffix === "/portal") && <RefreshPortalButton href={`${base}/portal`} />}
         </ClientHeader>
         <ClientTabsBar base={base} tabs={tabs} periodTabs={PERIOD_TABS} />
       </div>
