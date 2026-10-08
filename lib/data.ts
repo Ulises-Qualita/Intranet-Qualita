@@ -304,6 +304,94 @@ export async function getMetaFirstDate(clientId: string): Promise<string | null>
   return data?.[0]?.date ?? null;
 }
 
+// ---------- Google Ads (lib/google-ads-sync.ts las llena) ----------
+
+export type GadsMetrics = { impressions: number; clicks: number; cost: number; conversions: number; conversions_value: number };
+export type GadsDaily = GadsMetrics & { date: string };
+export type GadsCampaign = GadsMetrics & { id: string; name: string; status: string | null; channel: string | null };
+
+const GADS_METRICS = "impressions, clicks, cost, conversions, conversions_value";
+
+// bigint y numeric llegan como texto o número según el tamaño: se normalizan.
+const gadsMetrics = (r: Record<keyof GadsMetrics, unknown>): GadsMetrics => ({
+  impressions: Number(r.impressions),
+  clicks: Number(r.clicks),
+  cost: Number(r.cost),
+  conversions: Number(r.conversions),
+  conversions_value: Number(r.conversions_value),
+});
+
+export async function getGadsDaily(clientId: string, period: Period | number = 30): Promise<GadsDaily[]> {
+  const { since, until } = toPeriod(period);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("intranet_gads_daily")
+    .select(`date, ${GADS_METRICS}`)
+    .eq("client_id", clientId)
+    .gte("date", since)
+    .lte("date", until)
+    .order("date", { ascending: true })
+    .returns<(Record<keyof GadsMetrics, unknown> & { date: string })[]>();
+  if (error) throw error;
+  return (data ?? []).map((d) => ({ date: d.date, ...gadsMetrics(d) }));
+}
+
+// Primer día guardado: dice si el período anterior está completo para comparar.
+export async function getGadsFirstDate(clientId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("intranet_gads_daily")
+    .select("date")
+    .eq("client_id", clientId)
+    .order("date", { ascending: true })
+    .limit(1)
+    .returns<{ date: string }[]>();
+  if (error) throw error;
+  return data?.[0]?.date ?? null;
+}
+
+// Campañas con actividad en el período, sumadas, de mayor a menor gasto. Nombre,
+// estado y tipo salen del día más reciente.
+export async function getGadsCampaigns(clientId: string, period: Period | number = 30): Promise<GadsCampaign[]> {
+  const { since, until } = toPeriod(period);
+  const supabase = await createClient();
+  const rows: (Record<keyof GadsMetrics, unknown> & { campaign_id: string; date: string; name: string; status: string | null; channel: string | null })[] = [];
+  // PostgREST corta en 1000 filas: se pagina (campañas × días puede pasarlas).
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("intranet_gads_campaigns")
+      .select(`campaign_id, date, name, status, channel, ${GADS_METRICS}`)
+      .eq("client_id", clientId)
+      .gte("date", since)
+      .lte("date", until)
+      .order("date", { ascending: true })
+      .order("campaign_id", { ascending: true })
+      .range(from, from + 999)
+      .returns<typeof rows>();
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+
+  const byId = new Map<string, GadsCampaign>();
+  for (const r of rows) {
+    const m = gadsMetrics(r);
+    const prev = byId.get(r.campaign_id);
+    byId.set(r.campaign_id, {
+      id: r.campaign_id,
+      name: r.name,
+      status: r.status,
+      channel: r.channel,
+      impressions: (prev?.impressions ?? 0) + m.impressions,
+      clicks: (prev?.clicks ?? 0) + m.clicks,
+      cost: (prev?.cost ?? 0) + m.cost,
+      conversions: (prev?.conversions ?? 0) + m.conversions,
+      conversions_value: (prev?.conversions_value ?? 0) + m.conversions_value,
+    });
+  }
+  return [...byId.values()].sort((a, b) => b.cost - a.cost);
+}
+
 export type MetaAd = {
   id: string;
   name: string;
@@ -477,13 +565,16 @@ export type Lead = {
   tags: string[] | null;
   // Último cambio de etapa (solo Odoo); null si el CRM no lo informa.
   stage_changed_at: string | null;
+  // Parte en dólares de la venta, solo con planilla de ventas (`amount` lleva la
+  // parte en pesos).
+  amount_usd: number | null;
 };
 
 const LEAD_COLUMNS = "id, external_id, name, source, amount, stage, temperature, created_at";
 // Columnas agregadas después (ver docs/sql/), de a tandas y de la más vieja a la
 // más nueva: mientras la base no tenga alguna, se lee sin ella (y sin las
 // posteriores) en vez de romper.
-const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"], ["stage_changed_at"], ["excluded"]];
+const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"], ["stage_changed_at"], ["excluded"], ["amount_usd"]];
 
 // Fila como está guardada: `excluded` trae el motivo de los leads que no cuentan
 // como oportunidad nueva (crmExclusions en lib/crm-shared.ts).
@@ -534,7 +625,113 @@ export async function getLeads(clientId: string): Promise<Lead[]> {
     tags: l.tags ?? null,
     stage_changed_at: l.stage_changed_at ?? null,
     amount: l.amount === null ? null : Number(l.amount),
+    amount_usd: l.amount_usd === null || l.amount_usd === undefined ? null : Number(l.amount_usd),
   }));
+}
+
+// ---------- Ventas desde la planilla (intranet_crm_sales) ----------
+
+// Un proyecto confirmado según la planilla de ventas del cliente (lib/sales-sheet.ts).
+export type Sale = {
+  project: string;
+  customer: string | null;
+  confirmed_on: string;
+  amount_ars: number | null;
+  amount_usd: number | null;
+  seller: string | null;
+  channel: string | null;
+  // Lead del CRM que la originó; null si ninguno tiene el mismo teléfono.
+  lead_external_id: string | null;
+};
+
+// Las ventas de la planilla. null si la tabla todavía no existe.
+export const getSales = cache(async (clientId: string): Promise<Sale[] | null> => {
+  const supabase = await createClient();
+  try {
+    const rows = await readAll<Sale>((from, to) =>
+      supabase
+        .from("intranet_crm_sales")
+        .select("project, customer, confirmed_on, amount_ars, amount_usd, seller, channel, lead_external_id")
+        .eq("client_id", clientId)
+        .order("confirmed_on", { ascending: false })
+        .order("project")
+        .range(from, to)
+        .returns<Sale[]>(),
+    );
+    return rows.map((s) => ({
+      ...s,
+      amount_ars: s.amount_ars === null ? null : Number(s.amount_ars),
+      amount_usd: s.amount_usd === null ? null : Number(s.amount_usd),
+    }));
+  } catch (e) {
+    if (isMissingTable(e as { code?: string })) return null;
+    throw e;
+  }
+});
+
+// Total y promedio de una moneda, sobre las ventas que tienen esa parte: un
+// proyecto solo en pesos no baja el promedio en dólares.
+export type CurrencyStats = { total: number; count: number; avg: number | null };
+
+function currencyStats(amounts: (number | null)[]): CurrencyStats {
+  const values = amounts.filter((a): a is number => a !== null && a > 0);
+  const total = values.reduce((sum, a) => sum + a, 0);
+  return { total, count: values.length, avg: values.length ? total / values.length : null };
+}
+
+export type SaleSellerStats = { name: string; sales: number; ars: CurrencyStats; usd: CurrencyStats };
+
+export type SaleSourceStats = { name: string; sales: number; share: number; ars: number; usd: number };
+
+// Origen de las ventas que no vienen de una oportunidad contada del CRM.
+export const NO_CRM_LEAD = "Sin oportunidad en el CRM";
+
+// Corte por período de las ventas, por fecha de confirmación (no por la del lead,
+// así la facturación del mes es la de lo que se vendió en el mes). El origen sale
+// del lead del CRM con el mismo teléfono.
+export function salesPeriod(sales: Sale[], leads: Lead[], period: Period | number) {
+  const { since, until } = toPeriod(period);
+  const inPeriod = sales.filter((s) => s.confirmed_on >= since && s.confirmed_on <= until);
+  const leadOf = new Map(leads.map((l) => [l.external_id, l]));
+
+  const bySeller = new Map<string, Sale[]>();
+  const bySource = new Map<string, Sale[]>();
+  for (const sale of inPeriod) {
+    const seller = sale.seller ?? UNASSIGNED;
+    bySeller.set(seller, [...(bySeller.get(seller) ?? []), sale]);
+    const lead = sale.lead_external_id ? leadOf.get(sale.lead_external_id) : undefined;
+    const source = lead ? lead.source?.trim() || "Sin origen" : NO_CRM_LEAD;
+    bySource.set(source, [...(bySource.get(source) ?? []), sale]);
+  }
+
+  const total = inPeriod.length || 1;
+  const sum = (list: Sale[], key: "amount_ars" | "amount_usd") => list.reduce((t, s) => t + (s[key] ?? 0), 0);
+  const last = (name: string) => name === NO_CRM_LEAD || name === "Sin origen";
+
+  return {
+    sales: inPeriod,
+    // Ventas que no se pudieron atribuir a una oportunidad del CRM.
+    unattributed: inPeriod.filter((s) => !s.lead_external_id || !leadOf.has(s.lead_external_id)).length,
+    ars: currencyStats(inPeriod.map((s) => s.amount_ars)),
+    usd: currencyStats(inPeriod.map((s) => s.amount_usd)),
+    sellers: [...bySeller.entries()]
+      .map(([name, list]): SaleSellerStats => ({
+        name,
+        sales: list.length,
+        ars: currencyStats(list.map((s) => s.amount_ars)),
+        usd: currencyStats(list.map((s) => s.amount_usd)),
+      }))
+      .sort((a, b) => b.ars.total - a.ars.total || b.sales - a.sales),
+    sources: [...bySource.entries()]
+      .map(([name, list]): SaleSourceStats => ({
+        name,
+        sales: list.length,
+        share: (list.length * 100) / total,
+        ars: sum(list, "amount_ars"),
+        usd: sum(list, "amount_usd"),
+      }))
+      .sort((a, b) => Number(last(a.name)) - Number(last(b.name)) || b.sales - a.sales),
+  };
 }
 
 // Cómo llega un lead desde la publicidad de Meta, según la fuente del CRM.
@@ -593,7 +790,8 @@ function groupSellers(leads: Lead[]): SellerStats[] {
     .sort((a, b) => b.ticketTotal - a.ticketTotal || b.leads - a.leads);
 }
 
-export type AdStats = { name: string; leads: number; won: number; tickets: number; ticketTotal: number };
+// usdTotal: la parte en dólares de las ventas, solo con planilla de ventas.
+export type AdStats = { name: string; leads: number; won: number; tickets: number; ticketTotal: number; usdTotal: number };
 
 // Rendimiento por anuncio. Solo entran las oportunidades que traen el anuncio
 // cargado: el resto no se puede atribuir y contarlas como "sin anuncio" mezclaría
@@ -604,17 +802,70 @@ function groupAds(leads: Lead[]): AdStats[] {
   for (const lead of leads) {
     const name = lead.ad?.trim();
     if (!name) continue;
-    const ad = byAd.get(name) ?? { name, leads: 0, won: 0, tickets: 0, ticketTotal: 0 };
+    const ad = byAd.get(name) ?? { name, leads: 0, won: 0, tickets: 0, ticketTotal: 0, usdTotal: 0 };
     ad.leads += 1;
     if (lead.status === "won") ad.won += 1;
     if (lead.amount && lead.amount > 0) {
       ad.tickets += 1;
       ad.ticketTotal += lead.amount;
     }
+    if (lead.amount_usd && lead.amount_usd > 0) ad.usdTotal += lead.amount_usd;
     byAd.set(name, ad);
   }
 
   return [...byAd.values()].sort((a, b) => b.leads - a.leads || b.ticketTotal - a.ticketTotal);
+}
+
+const adTokens = (name: string) => name.trim().toUpperCase().split(/[\s_-]+/).filter(Boolean);
+
+// ¿El nombre corto del CRM es este anuncio de Meta? Sus partes tienen que estar en
+// el nombre de Meta en el mismo orden, y la última (la variante: WEB02, RTG01)
+// tiene que ser también la última del de Meta.
+function isShortNameOf(crm: string[], meta: string[]) {
+  if (!crm.length || crm.at(-1) !== meta.at(-1)) return false;
+  let i = 0;
+  for (const token of meta) if (token === crm[i]) i++;
+  return i === crm.length;
+}
+
+// El CRM no siempre guarda el nombre completo del anuncio: en Arteplac, Kommo
+// recibe "TESTIMONIAL_WEB02" por un anuncio que en Meta se llama
+// "ATP_COC_A01_D07_TESTIMONIAL_VID_V01_WEB02". Cada anuncio del CRM pasa a llevar
+// el nombre de Meta: exacto (sin distinguir mayúsculas) o, si no, el anuncio
+// corto que lo contiene; entre varios, el de más gasto. Los que no aparecen en
+// Meta (Google Ads, ids sueltos) quedan como estaban. Varios nombres del CRM
+// pueden caer en el mismo anuncio: se suman.
+export function withMetaAdNames(crmAds: AdStats[], metaAds: MetaAd[]): AdStats[] {
+  const spend = new Map<string, number>();
+  for (const ad of metaAds) spend.set(ad.name.trim(), (spend.get(ad.name.trim()) ?? 0) + ad.spend);
+  const meta = [...spend.keys()].map((name) => ({ name, tokens: adTokens(name) }));
+
+  const merged = new Map<string, AdStats>();
+  for (const stats of crmAds) {
+    const tokens = adTokens(stats.name);
+    const exact = meta.find((m) => m.tokens.join("_") === tokens.join("_"));
+    const short = exact
+      ? null
+      : meta
+          .filter((m) => isShortNameOf(tokens, m.tokens))
+          .sort((a, b) => (spend.get(b.name) ?? 0) - (spend.get(a.name) ?? 0))[0];
+    const name = (exact ?? short)?.name ?? stats.name;
+    const into = merged.get(name);
+    merged.set(
+      name,
+      into
+        ? {
+            name,
+            leads: into.leads + stats.leads,
+            won: into.won + stats.won,
+            tickets: into.tickets + stats.tickets,
+            ticketTotal: into.ticketTotal + stats.ticketTotal,
+            usdTotal: into.usdTotal + stats.usdTotal,
+          }
+        : { ...stats, name },
+    );
+  }
+  return [...merged.values()].sort((a, b) => b.leads - a.leads || b.ticketTotal - a.ticketTotal);
 }
 
 export type SourceStats = { name: string; leads: number; share: number; ticketTotal: number };
@@ -851,6 +1102,7 @@ export type VideoPerformance = {
   crmLeads: number;
   won: number;
   ticketTotal: number;
+  usdTotal: number;
   // Resultados según Meta, sumando todos los anuncios con ese nombre.
   spend: number;
   metaLeads: number;
@@ -876,6 +1128,7 @@ export function topVideoAds(campaigns: MetaCampaign[], crmAds: AdStats[], limit 
       crmLeads: 0,
       won: 0,
       ticketTotal: 0,
+      usdTotal: 0,
       spend: 0,
       metaLeads: 0,
       clicks: 0,
@@ -895,6 +1148,7 @@ export function topVideoAds(campaigns: MetaCampaign[], crmAds: AdStats[], limit 
     v.crmLeads = stats.leads;
     v.won = stats.won;
     v.ticketTotal = stats.ticketTotal;
+    v.usdTotal = stats.usdTotal;
   }
 
   const videos = [...byName.values()];
@@ -909,7 +1163,7 @@ export function topVideoAds(campaigns: MetaCampaign[], crmAds: AdStats[], limit 
   return { by, videos: ranked.slice(0, limit), total: videos.length };
 }
 
-// ---------- Inversión en Meta del estudio (Inicio) ----------
+// ---------- Inversión en Meta y Google Ads del estudio (Inicio) ----------
 
 export type MetaSpend = { spend: number; leads: number };
 
@@ -936,6 +1190,25 @@ export async function getMetaSpendByClient(clientIds: string[], days = 30): Prom
     t.leads += r.leads;
     totals.set(r.client_id, t);
   }
+  return totals;
+}
+
+// Lo mismo para Google Ads: gasto por cliente en los últimos `days` días.
+export async function getGadsSpendByClient(clientIds: string[], days = 30): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  if (!clientIds.length) return totals;
+  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const supabase = await createClient();
+  const rows = await readAll<{ client_id: string; cost: number | string }>((from, to) =>
+    supabase
+      .from("intranet_gads_daily")
+      .select("client_id, cost")
+      .in("client_id", clientIds)
+      .gte("date", since)
+      .order("date", { ascending: true })
+      .range(from, to),
+  );
+  for (const r of rows) totals.set(r.client_id, (totals.get(r.client_id) ?? 0) + Number(r.cost));
   return totals;
 }
 

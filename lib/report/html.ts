@@ -3,7 +3,7 @@
 // ni el JS que lo dibujaba). El archivo es autónomo: estilos inline, miniaturas
 // embebidas y solo las fuentes de Google por fuera.
 //
-// Las secciones sin datos se omiten; Google Ads figura como pendiente.
+// Las secciones sin datos se omiten; Google Ads sin conectar figura como pendiente.
 import type { ReportData, ReportKpi } from "./data";
 import type { ReportTexts } from "./ai";
 import { REPORT_CSS } from "./styles";
@@ -44,41 +44,83 @@ const maxOf = (values: number[]) => Math.max(1, ...values);
 
 function pauta(data: ReportData, texts: ReportTexts | null) {
   const m = data.meta;
-  if (!m) return "";
-  const cpl = m.leads ? m.spend / m.leads : 0;
-  const ctr = m.impressions ? m.clicks / m.impressions : 0;
-  const cpm = m.impressions ? (m.spend / m.impressions) * 1000 : 0;
-  const cpc = m.clicks ? m.spend / m.clicks : 0;
+  const g = data.googleAds;
+  if (!m && !g) return "";
 
+  // Meta y Google Ads juntos. Los "leads" de Google son sus conversiones.
+  const mt = { spend: m?.spend ?? 0, leads: m?.leads ?? 0, impressions: m?.impressions ?? 0, clicks: m?.clicks ?? 0 };
+  const gt = { spend: g?.spend ?? 0, leads: g?.conversions ?? 0, impressions: g?.impressions ?? 0, clicks: g?.clicks ?? 0 };
+  const spend = mt.spend + gt.spend;
+  const leads = mt.leads + gt.leads;
+  const impressions = mt.impressions + gt.impressions;
+  const clicks = mt.clicks + gt.clicks;
+  const cpl = leads ? spend / leads : 0;
+  const ctr = impressions ? clicks / impressions : 0;
+  const cpm = impressions ? (spend / impressions) * 1000 : 0;
+  const cpc = clicks ? spend / clicks : 0;
+  const mCpl = mt.leads ? mt.spend / mt.leads : null;
+  const gCpl = gt.leads ? gt.spend / gt.leads : null;
+  // Sin Google conectado, la comparación queda armada y lo marca como pendiente.
+  const gLabel = data.googleAdsConnected ? "sin actividad" : "pendiente";
+  const leadsNum = (n: number) => (Number.isInteger(n) ? int(n) : dec(n));
+
+  type Row = { name: string; spend: number; leads: number; impressions: number; clicks: number; platform: "meta" | "google" };
+  const campaigns: Row[] = [
+    ...(m?.campaigns ?? []).map((c) => ({ ...c, platform: "meta" as const })),
+    ...(g?.campaigns ?? []).map((c) => ({ ...c, platform: "google" as const })),
+  ];
+
+  const both = !!m && !!g;
   const kpis = `
   <div class="section">
     <span class="eyebrow">Métricas madre · Leads</span>
     <div class="kpis">
       <div class="kpi hero-kpi">
         <div class="lbl">Inversión total</div>
-        <div class="val tnum">${money(m.spend)}</div>
-        <div class="sub">CPM ${money(cpm)} · CPC ${money(cpc)}</div>
+        <div class="val tnum">${money(spend)}</div>
+        <div class="sub">${both ? `Meta ${money(mt.spend)} · Google ${money(gt.spend)}` : `CPM ${money(cpm)} · CPC ${money(cpc)}`}</div>
       </div>
       <div class="kpi hero-kpi">
         <div class="lbl">Leads generados</div>
-        <div class="val tnum">${int(m.leads)}</div>
-        <div class="sub">${m.campaigns.length} ${m.campaigns.length === 1 ? "campaña activa" : "campañas activas"}</div>
+        <div class="val tnum">${leadsNum(leads)}</div>
+        <div class="sub">${campaigns.length} ${campaigns.length === 1 ? "campaña activa" : "campañas activas"}</div>
       </div>
       <div class="kpi hero-kpi">
         <div class="lbl">CPL · Costo por lead</div>
-        <div class="val tnum" style="color:var(--violet)">${m.leads ? money(cpl) : "—"}</div>
-        <div class="sub">Meta ${m.leads ? money(cpl) : "—"} · Google pendiente</div>
+        <div class="val tnum" style="color:var(--violet)">${leads ? money(cpl) : "—"}</div>
+        <div class="sub">Meta ${m ? (mCpl ? money(mCpl) : "—") : "no conectado"} · Google ${g ? (gCpl ? money(gCpl) : "—") : gLabel}</div>
       </div>
     </div>
     <div class="kpi-sec">
-      <div class="kpi"><div class="lbl">Impresiones</div><div class="val tnum">${int(m.impressions)}</div></div>
-      <div class="kpi"><div class="lbl">Clics</div><div class="val tnum">${int(m.clicks)}</div></div>
+      <div class="kpi"><div class="lbl">Impresiones</div><div class="val tnum">${int(impressions)}</div></div>
+      <div class="kpi"><div class="lbl">Clics</div><div class="val tnum">${int(clicks)}</div></div>
       <div class="kpi"><div class="lbl">CTR</div><div class="val tnum">${pct(ctr)}</div></div>
       <div class="kpi"><div class="lbl">CPM</div><div class="val tnum">${money(cpm)}</div></div>
     </div>
   </div>`;
 
-  // Google Ads todavía no está conectado: la comparación queda armada y lo marca como pendiente.
+  // Barras de participación: como en la referencia, el % va adentro si entra.
+  const share = (mv: number, gv: number) => {
+    const total = mv + gv || 1;
+    const seg = (cls: string, v: number) => {
+      const p = (v / total) * 100;
+      return p > 0 ? `<div class="seg ${cls}" style="width:${p}%">${p >= 14 ? `${Math.round(p)}%` : ""}</div>` : "";
+    };
+    return `<div class="bar">${seg("meta", mv)}${seg("google", gv)}</div>`;
+  };
+  const maxCpl = Math.max(mCpl ?? 0, gCpl ?? 0) || 1;
+  const cplBar = (name: string, cls: string, value: number | null, missing: string | null) =>
+    `<div class="cplbar"><div class="row"><span class="name"><span class="dot" style="background:var(--${cls})"></span>${name}</span>` +
+    (missing
+      ? `<span class="amt tnum" style="color:var(--ink-3)">${missing}</span></div><div class="track"></div></div>`
+      : `<span class="amt tnum">${value ? money(value) : "—"}</span></div>` +
+        `<div class="track"><div class="fill ${cls}" style="width:${value ? (value / maxCpl) * 100 : 0}%"></div></div></div>`);
+  const cplHint =
+    mCpl && gCpl
+      ? `<strong style="color:var(--ink)">${mCpl <= gCpl ? "Meta Ads" : "Google Ads"}</strong> trae el lead más barato del período — una diferencia de ${money(Math.abs(mCpl - gCpl))} por lead frente a la otra plataforma. En Google, los leads son las conversiones de la cuenta. Barra más corta = mejor CPL.`
+      : !g && !data.googleAdsConnected
+        ? "Google Ads todavía no está conectado a la intranet: cuando se conecte, esta comparación se completa sola. Barra más corta = mejor CPL."
+        : "En Google, los leads son las conversiones de la cuenta. Barra más corta = mejor CPL.";
   const plataformas = `
   <div class="section">
     <span class="eyebrow">Comparación por plataforma</span>
@@ -87,44 +129,45 @@ function pauta(data: ReportData, texts: ReportTexts | null) {
       <div class="card">
         <h3>Distribución de inversión y leads</h3>
         <div class="sharerow">
-          <div class="toplbl"><span>Inversión</span><span class="tnum">${money(m.spend)}</span></div>
-          <div class="bar"><div class="seg meta" style="width:100%">100%</div></div>
+          <div class="toplbl"><span>Inversión</span><span class="tnum">${money(spend)}</span></div>
+          ${share(mt.spend, gt.spend)}
         </div>
         <div class="sharerow">
-          <div class="toplbl"><span>Leads</span><span class="tnum">${int(m.leads)} leads</span></div>
-          <div class="bar"><div class="seg meta" style="width:100%">100%</div></div>
+          <div class="toplbl"><span>Leads</span><span class="tnum">${leadsNum(leads)} leads</span></div>
+          ${share(mt.leads, gt.leads)}
         </div>
         <div class="legend">
-          <span><span class="dot" style="background:var(--meta)"></span>Meta Ads</span>
-          <span><span class="dot" style="background:var(--google)"></span>Google Ads · pendiente</span>
+          <span><span class="dot" style="background:var(--meta)"></span>Meta Ads${m ? "" : " · no conectado"}</span>
+          <span><span class="dot" style="background:var(--google)"></span>Google Ads${g ? "" : ` · ${gLabel}`}</span>
         </div>
       </div>
       <div class="card">
         <h3>CPL por plataforma</h3>
-        <div class="cplbar"><div class="row"><span class="name"><span class="dot" style="background:var(--meta)"></span>Meta Ads</span><span class="amt tnum">${m.leads ? money(cpl) : "—"}</span></div><div class="track"><div class="fill meta" style="width:100%"></div></div></div>
-        <div class="cplbar"><div class="row"><span class="name"><span class="dot" style="background:var(--google)"></span>Google Ads</span><span class="amt tnum" style="color:var(--ink-3)">Pendiente</span></div><div class="track"></div></div>
-        <div class="hint">Google Ads todavía no está conectado a la intranet: cuando se conecte, esta comparación se completa sola. Barra más corta = mejor CPL.</div>
+        ${cplBar("Meta Ads", "meta", mCpl, m ? null : "No conectado")}
+        ${cplBar("Google Ads", "google", gCpl, g ? null : gLabel.charAt(0).toUpperCase() + gLabel.slice(1))}
+        <div class="hint">${cplHint}</div>
       </div>
     </div>
   </div>`;
 
-  const sorted = [...m.campaigns].sort((a, b) => b.leads - a.leads);
+  const sorted = [...campaigns].sort((a, b) => b.leads - a.leads);
   const maxLeads = maxOf(sorted.map((r) => r.leads));
   const cpls = sorted.map((r) => (r.leads ? r.spend / r.leads : Infinity));
   const minCpl = Math.min(...cpls);
-  const maxCpl = Math.max(...cpls.filter(Number.isFinite));
+  const maxCplRow = Math.max(...cpls.filter(Number.isFinite));
   const rows = sorted
     .map((r) => {
       const c = r.leads ? r.spend / r.leads : 0;
       const w = Math.max(3, (r.leads / maxLeads) * 64);
       let pill = "";
       if (r.leads > 0 && c === minCpl && sorted.length > 1) pill = ' <span class="pill best">mejor CPL</span>';
-      else if (r.leads > 0 && c === maxCpl && sorted.length > 1) pill = ' <span class="pill worst">CPL alto</span>';
+      else if (r.leads > 0 && c === maxCplRow && sorted.length > 1) pill = ' <span class="pill worst">CPL alto</span>';
+      const plat = r.platform === "meta" ? "Meta Ads" : "Google Ads";
       return (
         "<tr>" +
-        `<td class="camp">${esc(r.name)}<div class="plat-tag"><span class="dot" style="background:var(--meta)"></span>Meta Ads</div></td>` +
+        `<td class="camp">${esc(r.name)}<div class="plat-tag"><span class="dot" style="background:var(--${r.platform})"></span>${plat}</div></td>` +
         `<td>${money(r.spend)}</td>` +
-        `<td class="leadwrap"><div class="leadcell"><span class="leadbar" style="width:${w}px"></span><span>${int(r.leads)}</span></div></td>` +
+        `<td class="leadwrap"><div class="leadcell"><span class="leadbar" style="width:${w}px"></span><span>${leadsNum(r.leads)}</span></div></td>` +
         `<td>${r.leads ? money(c) : "—"}${pill}</td>` +
         `<td>${pct(r.impressions ? r.clicks / r.impressions : 0)}</td>` +
         "<td></td>" +
@@ -144,7 +187,7 @@ function pauta(data: ReportData, texts: ReportTexts | null) {
           </tr>
         </thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr><td>Total</td><td>${money(m.spend)}</td><td>${int(m.leads)}</td><td>${m.leads ? money(cpl) : "—"}</td><td>${pct(ctr)}</td><td></td></tr></tfoot>
+        <tfoot><tr><td>Total</td><td>${money(spend)}</td><td>${leadsNum(leads)}</td><td>${leads ? money(cpl) : "—"}</td><td>${pct(ctr)}</td><td></td></tr></tfoot>
       </table>
     </div>
   </div>`;
@@ -353,14 +396,26 @@ function pipeline(data: ReportData, texts: ReportTexts | null) {
     <span class="eyebrow">${num()} · Negocio · ticket y facturación</span>
     <h2 class="section-title">Ticket y facturación</h2>
     <div class="grid2"${bySource ? "" : ' style="grid-template-columns:1fr"'}>
-      <div class="card now">
+      ${
+        s.fromSheet
+          ? `<div class="card now">
+        <div class="who">Ventas confirmadas · planilla de ventas</div>
+        <div class="big-fact" style="margin-top:6px">${s.withTicket ? money(s.total) : "—"}</div>
+        ${s.usdTotal ? `<div class="big-fact" style="margin-top:2px;font-size:0.6em">+ U$D ${int(s.usdTotal)}</div>` : ""}
+        <div style="font-size:13px;color:var(--ink-2);margin:6px 0 10px">Facturación de los proyectos confirmados en el período, en pesos y en dólares por separado</div>
+        <div class="cstat"><span class="cl">Ventas confirmadas</span><span class="cv">${int(s.won)}</span></div>
+        <div class="cstat"><span class="cl">Ticket promedio en pesos</span><span class="cv">${s.average !== null ? money(s.average) : "—"}</span></div>
+        <div class="cstat"><span class="cl">Ticket promedio en dólares</span><span class="cv">${s.usdAverage !== null ? `U$D ${int(s.usdAverage)}` : "—"}</span></div>
+      </div>`
+          : `<div class="card now">
         <div class="who">Ventas cerradas · CRM</div>
         <div class="big-fact" style="margin-top:6px">${s.withTicket ? money(s.total) : "—"}</div>
         <div style="font-size:13px;color:var(--ink-2);margin:6px 0 10px">Facturación de ventas cerradas en el período</div>
         <div class="cstat"><span class="cl">Ventas confirmadas</span><span class="cv">${int(s.won)}</span></div>
         <div class="cstat"><span class="cl">Ventas con ticket cargado</span><span class="cv">${int(s.withTicket)}</span></div>
         <div class="cstat"><span class="cl">Ticket promedio (CRM)</span><span class="cv">${s.average !== null ? money(s.average) : "—"}</span></div>
-      </div>
+      </div>`
+      }
       ${bySource}
     </div>
   </div>`);
@@ -463,12 +518,15 @@ function conclusiones(texts: ReportTexts | null, crm: boolean) {
 
 export function renderReport(data: ReportData, texts: ReportTexts | null) {
   const sources = [
-    data.meta ? "Pauta (Meta · Google pendiente)" : null,
+    data.meta || data.googleAds
+      ? `Pauta (${[data.meta ? "Meta" : null, data.googleAds ? "Google" : data.googleAdsConnected ? null : "Google pendiente"].filter(Boolean).join(" · ")})`
+      : null,
     data.crm ? "Pipeline (CRM)" : null,
     data.clarity ? "Microsoft Clarity (Web)" : null,
   ].filter(Boolean);
   const fuente = [
     data.meta ? "Meta Ads (pauta)" : null,
+    data.googleAds ? "Google Ads (pauta)" : null,
     data.crm ? "CRM (pipeline)" : null,
     data.clarity ? "Microsoft Clarity (Web)" : null,
   ]

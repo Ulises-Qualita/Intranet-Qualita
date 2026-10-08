@@ -38,8 +38,8 @@ export async function generateReport(
       `Solo hay datos de los últimos ${META_HISTORY_DAYS} días: elegí un inicio desde el ${oldest.split("-").reverse().join("/")}.`,
     );
   }
-  if (!client.conn.meta && !client.conn.crm && !client.conn.clarity) {
-    throw new ReportError("El cliente no tiene Meta, CRM ni Clarity conectados: no hay datos para el reporte.");
+  if (!client.conn.meta && !client.conn.google_ads && !client.conn.crm && !client.conn.clarity) {
+    throw new ReportError("El cliente no tiene Meta, Google Ads, CRM ni Clarity conectados: no hay datos para el reporte.");
   }
 
   progress.step("datos");
@@ -48,7 +48,9 @@ export async function generateReport(
     console.error("[reportes] datos", client.id, e);
     throw new ReportError("No se pudieron leer los datos del período.");
   });
-  if (!data.meta && !data.crm && !data.clarity) throw new ReportError("No hay datos de Meta, CRM ni Clarity en ese período.");
+  if (!data.meta && !data.googleAds && !data.crm && !data.clarity) {
+    throw new ReportError("No hay datos de Meta, Google Ads, CRM ni Clarity en ese período.");
+  }
 
   // Sin textos el reporte igual sale: con los números y sin las notas.
   progress.step("claude");

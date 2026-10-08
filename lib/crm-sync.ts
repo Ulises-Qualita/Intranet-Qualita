@@ -10,7 +10,8 @@ import { todayISO } from "./format";
 import { syncKommoChats } from "./crm-chat-sync";
 import { readKommo, type KommoCredentials } from "./kommo";
 import { getOdooOpportunities, getOdooStages, odooConnect, type OdooCredentials } from "./odoo";
-import { createAdminClient } from "./supabase/server";
+import { matchSales, readSalesSheet } from "./sales-sheet";
+import { createAdminClient, isMissingTable } from "./supabase/server";
 
 // Antigüedad a partir de la cual abrir la vista dispara un sync.
 const STALE_MS = 6 * 60 * 60 * 1000;
@@ -38,7 +39,17 @@ export type CrmSecrets = {
   // Actividad de los chats (solo Kommo): el motivo si la última lectura falló.
   // Va aparte de sync_error: que fallen los chats no invalida las oportunidades.
   chat_error?: string | null;
+  // Planilla de ventas confirmadas (lib/sales-sheet.ts). Con ella, la venta y su
+  // monto salen de la planilla y no del CRM.
+  sales_sheet?: { id: string; url: string; title?: string };
+  // Va aparte de sync_error, como los chats: si la planilla falla se siguen
+  // usando las ventas que ya estaban guardadas.
+  sales_error?: string | null;
+  sales_stats?: SalesStats;
 };
+
+// Resumen de la última lectura de la planilla, para la pantalla de conexión.
+export type SalesStats = { projects: number; matched: number; noPhone: number; undated: number };
 
 export async function getCrmSecrets(clientId: string): Promise<CrmSecrets | null> {
   const { data } = await createAdminClient()
@@ -80,6 +91,122 @@ async function readCrm(secrets: CrmSecrets): Promise<{ leads: CrmLead[]; stages:
   throw new Error(`El CRM "${secrets.provider}" todavía no está integrado.`);
 }
 
+// Fila de intranet_crm_sales.
+type SaleRow = {
+  client_id: string;
+  project: string;
+  customer: string | null;
+  confirmed_on: string;
+  amount_ars: number | null;
+  amount_usd: number | null;
+  seller: string | null;
+  channel: string | null;
+  lead_external_id: string | null;
+};
+
+type Db = ReturnType<typeof createAdminClient>;
+
+// Reemplaza las ventas guardadas del cliente por las de la planilla.
+async function saveSales(db: Db, clientId: string, rows: SaleRow[]) {
+  const existing: string[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await db
+      .from("intranet_crm_sales")
+      .select("project")
+      .eq("client_id", clientId)
+      .order("project")
+      .range(from, from + PAGE_SIZE - 1)
+      .returns<{ project: string }[]>();
+    if (error) throw error;
+    existing.push(...(data ?? []).map((r) => r.project));
+    if ((data?.length ?? 0) < PAGE_SIZE) break;
+  }
+
+  for (let i = 0; i < rows.length; i += PAGE_SIZE) {
+    const { error } = await db
+      .from("intranet_crm_sales")
+      .upsert(rows.slice(i, i + PAGE_SIZE), { onConflict: "client_id,project" });
+    if (error) throw error;
+  }
+
+  const current = new Set(rows.map((r) => r.project));
+  const gone = existing.filter((p) => !current.has(p));
+  for (let i = 0; i < gone.length; i += DELETE_BATCH) {
+    const { error } = await db
+      .from("intranet_crm_sales")
+      .delete()
+      .eq("client_id", clientId)
+      .in("project", gone.slice(i, i + DELETE_BATCH));
+    if (error) throw error;
+  }
+}
+
+async function storedSales(db: Db, clientId: string) {
+  const rows: SaleRow[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await db
+      .from("intranet_crm_sales")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("project")
+      .range(from, from + PAGE_SIZE - 1)
+      .returns<SaleRow[]>();
+    if (error) {
+      if (isMissingTable(error)) return rows;
+      throw error;
+    }
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+// Lee la planilla, cruza cada venta con su lead y la guarda. Nunca tira: si la
+// planilla falla, devuelve las ventas que ya estaban guardadas y el motivo.
+async function syncSales(
+  db: Db,
+  clientId: string,
+  sheetId: string,
+  leads: CrmLead[],
+  excluded: Map<string, unknown>,
+): Promise<{ rows: SaleRow[]; error: string | null; stats?: SalesStats }> {
+  try {
+    const { sales, undated } = await readSalesSheet(sheetId);
+    const matches = matchSales(sales, leads, excluded);
+    const rows: SaleRow[] = sales.map((s) => ({
+      client_id: clientId,
+      project: s.project,
+      customer: s.customer,
+      confirmed_on: s.confirmedOn,
+      amount_ars: s.ars,
+      amount_usd: s.usd,
+      seller: s.seller,
+      channel: s.channel,
+      lead_external_id: matches.get(s.project) ?? null,
+    }));
+    const stats: SalesStats = {
+      projects: sales.length,
+      matched: matches.size,
+      noPhone: sales.filter((s) => !s.phoneKey).length,
+      undated,
+    };
+    try {
+      await saveSales(db, clientId, rows);
+    } catch (e) {
+      // Lo leído se aplica igual a los leads; solo falta guardarlo.
+      const message = isMissingTable(e as { code?: string })
+        ? "Falta correr docs/sql/2026-10-06-ventas-planilla.sql en Supabase."
+        : ((e as { message?: string })?.message ?? "No se pudieron guardar las ventas.");
+      return { rows, error: message, stats };
+    }
+    return { rows, error: null, stats };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "No se pudo leer la planilla.";
+    console.error("[crm] planilla", clientId, message);
+    return { rows: await storedSales(db, clientId).catch(() => []), error: message };
+  }
+}
+
 export type CrmSyncResult = { clientId: string; ok: boolean; leads: number; error?: string };
 
 export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
@@ -95,6 +222,22 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     // Los que no son una oportunidad nueva: se guardan marcados y no entran en las métricas.
     const excluded = crmExclusions(leads, { since: secrets.since, excludedStages: secrets.excluded_stages });
     const counted = leads.filter((l) => !excluded.has(l.externalId));
+
+    // Con planilla de ventas, ganada = tiene una venta en la planilla, y el monto
+    // es el de esa venta (pesos y dólares por separado). Las etapas ganadas y los
+    // presupuestos del CRM dejan de contar.
+    const sales = secrets.sales_sheet ? await syncSales(db, clientId, secrets.sales_sheet.id, leads, excluded) : null;
+    const sold = new Map<string, { ars: number | null; usd: number | null }>();
+    for (const sale of sales?.rows ?? []) {
+      if (!sale.lead_external_id) continue;
+      const total = sold.get(sale.lead_external_id) ?? { ars: null, usd: null };
+      if (sale.amount_ars) total.ars = (total.ars ?? 0) + Number(sale.amount_ars);
+      if (sale.amount_usd) total.usd = (total.usd ?? 0) + Number(sale.amount_usd);
+      sold.set(sale.lead_external_id, total);
+    }
+    if (sales) {
+      for (const l of leads) statuses.set(l.externalId, sold.has(l.externalId) ? "won" : l.lost ? "lost" : "open");
+    }
 
     // Se conserva el id de los leads que ya estaban (el CRM manda external_id).
     // PostgREST corta en 1000 filas sin avisar: se lee de a páginas, porque un lead
@@ -122,7 +265,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         external_id: l.externalId,
         name: l.name,
         source: l.source,
-        amount: l.amount,
+        amount: sales ? (sold.get(l.externalId)?.ars ?? null) : l.amount,
         stage: l.stage,
         temperature: l.temperature,
         created_at: l.createdAt,
@@ -135,6 +278,8 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         stage_changed_at: l.stageChangedAt,
         contact_created_at: l.contactCreatedAt,
         excluded: excluded.get(l.externalId) ?? null,
+        // Solo la carga la planilla de ventas; sin ella queda vacía.
+        amount_usd: sold.get(l.externalId)?.usd ?? null,
       }));
 
       // Se sacan de a tandas, de la más nueva a la más vieja, así una migración
@@ -153,7 +298,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
       // Columna inexistente: 42703 si responde Postgres, PGRST204 si PostgREST no
       // la tiene en su schema cache.
       const faltaColumna = (e: { code?: string } | null) => e?.code === "42703" || e?.code === "PGRST204";
-      const tandas = [["contact_created_at", "excluded"], ["stage_changed_at"], ["tags"], ["status", "owner", "ad"]];
+      const tandas = [["amount_usd"], ["contact_created_at", "excluded"], ["stage_changed_at"], ["tags"], ["status", "owner", "ad"]];
       let { error } = await upsert(rows);
       for (let n = 1; n <= tandas.length && faltaColumna(error); n++) {
         ({ error } = await upsert(sinColumnas(tandas.slice(0, n).flat())));
@@ -199,6 +344,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
       synced_at: new Date().toISOString(),
       sync_error: null,
       chat_error: chats?.error ?? null,
+      ...(sales ? { sales_error: sales.error, sales_stats: sales.stats ?? secrets.sales_stats } : {}),
     });
     return { clientId, ok: true, leads: counted.length };
   } catch (e) {

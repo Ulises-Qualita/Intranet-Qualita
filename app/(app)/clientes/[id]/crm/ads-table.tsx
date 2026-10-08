@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Icon } from "@/components/icons";
 import type { AdStats } from "@/lib/data";
-import { integer, money } from "@/lib/format";
+import { dollars, integer, money } from "@/lib/format";
 
 // Cuántos anuncios se ven antes de pedir el resto.
 const PREVIEW = 4;
@@ -43,7 +43,13 @@ export function AdsTable({ ads, base, query }: { ads: AdStats[]; base: string; q
                   </td>
                   <td className="num">{integer(ad.leads)}</td>
                   <td className="num">{integer(ad.won)}</td>
-                  <td className="num">{ad.ticketTotal ? money(ad.ticketTotal) : "—"}</td>
+                  <td className="num">
+                    {ad.ticketTotal || ad.usdTotal
+                      ? [ad.ticketTotal ? money(ad.ticketTotal) : null, ad.usdTotal ? dollars(ad.usdTotal) : null]
+                          .filter(Boolean)
+                          .join(" + ")
+                      : "—"}
+                  </td>
                   <td className="go">
                     <Link href={href} aria-label={`Ver ${ad.name} en META`}>
                       <Icon name="chevron" size={18} strokeWidth={2} />

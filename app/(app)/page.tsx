@@ -6,11 +6,11 @@ import { Card, EmptyState, Kpi, NoAccess, Pill } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { canAccess } from "@/lib/auth-shared";
 import { statusMeta } from "@/lib/client-status";
-import { getClients, getMetaSpendByClient, getTeam } from "@/lib/data";
+import { getClients, getGadsSpendByClient, getMetaSpendByClient, getTeam } from "@/lib/data";
 import { UserAvatar } from "@/components/user-avatar";
 import { greeting, longToday, integer, money } from "@/lib/format";
 
-// Período del gasto en Meta que muestra la tabla de clientes.
+// Período de la inversión (Meta + Google Ads) que muestra la tabla de clientes.
 const META_DAYS = 30;
 // Clientes a cargo que entran como accesos directos en el saludo; el resto va como "+N más".
 const WELCOME_CLIENTS = 5;
@@ -26,12 +26,18 @@ export default async function InicioPage() {
     );
   }
 
-  // El gasto en Meta de la tabla sale de las métricas sincronizadas: solo para
-  // quien puede ver META y de los clientes que lo tienen conectado.
+  // La inversión de la tabla (Meta + Google Ads) sale de las métricas
+  // sincronizadas: solo para quien puede ver META (el área de la publicidad, que
+  // cubre las dos) y de los clientes que tienen alguna conectada.
   const [clients, team] = await Promise.all([getClients(), getTeam()]);
   const seesMeta = canAccess(session.profile, "meta");
   const metaClients = seesMeta ? clients.filter((c) => c.conn.meta) : [];
-  const spendByClient = await getMetaSpendByClient(metaClients.map((c) => c.id), META_DAYS);
+  const gadsClients = seesMeta ? clients.filter((c) => c.conn.google_ads) : [];
+  const adClients = seesMeta ? clients.filter((c) => c.conn.meta || c.conn.google_ads) : [];
+  const [spendByClient, gadsByClient] = await Promise.all([
+    getMetaSpendByClient(metaClients.map((c) => c.id), META_DAYS),
+    getGadsSpendByClient(gadsClients.map((c) => c.id), META_DAYS),
+  ]);
 
   const countBy = (status: string) => clients.filter((c) => c.status === status).length;
   const activeMembers = team.filter((m) => m.active);
@@ -140,14 +146,15 @@ export default async function InicioPage() {
                   <thead>
                     <tr>
                       <th>Cliente</th>
-                      {metaClients.length > 0 && <th>Meta, {META_DAYS} días</th>}
+                      {adClients.length > 0 && <th>Inversión, {META_DAYS} días</th>}
                       <th>Estado</th>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
                     {clients.map((c) => {
-                      const spend = spendByClient.get(c.id)?.spend ?? 0;
+                      const meta = spendByClient.get(c.id)?.spend ?? 0;
+                      const gads = gadsByClient.get(c.id) ?? 0;
                       return (
                         <tr key={c.id} className="link-row">
                           <td>
@@ -159,8 +166,20 @@ export default async function InicioPage() {
                               </div>
                             </Link>
                           </td>
-                          {metaClients.length > 0 && (
-                            <td className="num">{c.conn.meta ? money(spend) : <span className="muted">—</span>}</td>
+                          {adClients.length > 0 && (
+                            <td className="num">
+                              {c.conn.meta || c.conn.google_ads ? (
+                                <span
+                                  title={[c.conn.meta && `Meta ${money(meta)}`, c.conn.google_ads && `Google Ads ${money(gads)}`]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                >
+                                  {money(meta + gads)}
+                                </span>
+                              ) : (
+                                <span className="muted">—</span>
+                              )}
+                            </td>
                           )}
                           <td>
                             <div className="chips">

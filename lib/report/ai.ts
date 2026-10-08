@@ -23,7 +23,7 @@ const SCHEMA = {
   additionalProperties: false,
   required: ["reading", "bottleneck", "sources", "traffic", "behavior", "nextSteps"],
   properties: {
-    reading: { type: "string", description: "Lectura del período: 2 a 4 oraciones sobre la pauta." },
+    reading: { type: "string", description: "Lectura del período: 2 a 4 oraciones sobre la pauta (Meta y Google Ads)." },
     bottleneck: { type: "string", description: "Callout sobre dónde se acumula el pipeline. Vacío si no hay CRM." },
     sources: { type: "string", description: "Nota sobre el canal de las oportunidades. Vacío si no hay CRM." },
     traffic: { type: "string", description: "Nota sobre el origen del tráfico web. Vacío si no hay datos de origen." },
@@ -56,7 +56,7 @@ Reglas:
 - Números en formato argentino ($1.234.567, 12,5%).
 - Podés resaltar lo importante con **negrita**. No uses otro formato (ni listas, ni títulos, ni HTML).
 - Si una sección no tiene datos en el resumen (valor null), devolvé "" en su texto.
-- Google Ads todavía no está conectado: no lo analices; como mucho mencioná que está pendiente.
+- Si googleAds es "no conectado" o "sin actividad", no lo analices; como mucho mencioná que está pendiente. Si trae datos, la inversión del período es Meta + Google, y los "leads" de Google son las conversiones que define su cuenta (formularios, llamadas): comparables con los leads de Meta, pero no idénticos; pueden tener decimales por la atribución.
 - Los próximos pasos tienen que ser accionables y salir de lo que muestran los datos.
 
 Ejemplo del estilo esperado (de otro reporte, no copies sus números):
@@ -71,7 +71,25 @@ function summary(data: ReportData) {
     cliente: data.client.name,
     periodo: data.period.range,
     moneda: "ARS",
-    googleAds: "no conectado",
+    inversionTotal: Math.round((meta?.spend ?? 0) + (data.googleAds?.spend ?? 0)),
+    googleAds: data.googleAds
+      ? {
+          inversion: Math.round(data.googleAds.spend),
+          conversiones: +data.googleAds.conversions.toFixed(1),
+          costoPorConversion: data.googleAds.conversions ? Math.round(data.googleAds.spend / data.googleAds.conversions) : null,
+          impresiones: data.googleAds.impressions,
+          clics: data.googleAds.clicks,
+          campanias: data.googleAds.campaigns.map((c) => ({
+            nombre: c.name,
+            tipo: c.channel,
+            inversion: Math.round(c.spend),
+            conversiones: +c.leads.toFixed(1),
+            ctr: c.impressions ? +((c.clicks / c.impressions) * 100).toFixed(2) : null,
+          })),
+        }
+      : data.googleAdsConnected
+        ? "sin actividad"
+        : "no conectado",
     meta: meta && {
       inversion: Math.round(meta.spend),
       leads: meta.leads,
@@ -106,7 +124,16 @@ function summary(data: ReportData) {
       vendedores: crm.sellers?.map((s) => ({ ...s, pct: +s.pct.toFixed(1) })) ?? null,
       origen: crm.sources,
       conOrigenCargado: crm.sourcesKnown,
-      ventas: crm.sales && { ...crm.sales, total: Math.round(crm.sales.total), average: crm.sales.average && Math.round(crm.sales.average) },
+      ventas: crm.sales && {
+        ...crm.sales,
+        total: Math.round(crm.sales.total),
+        average: crm.sales.average && Math.round(crm.sales.average),
+        usdTotal: Math.round(crm.sales.usdTotal),
+        usdAverage: crm.sales.usdAverage && Math.round(crm.sales.usdAverage),
+        nota: crm.sales.fromSheet
+          ? "Ventas de la planilla oficial del cliente, por fecha de confirmación. total/average en pesos y usdTotal/usdAverage en dólares: son partes distintas de las ventas, no se suman ni se convierten."
+          : "Ventas según el CRM, por fecha de creación del lead.",
+      },
     },
     clarity: clarity && {
       desde: clarity.from,

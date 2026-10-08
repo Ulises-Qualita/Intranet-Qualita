@@ -14,6 +14,9 @@ export const META_HISTORY_DAYS = 90;
 // El CRM trae las oportunidades abiertas y las cerradas de esta ventana (LEAD_DAYS
 // en lib/kommo.ts y lib/odoo.ts): más atrás, faltan las cerradas.
 export const CRM_HISTORY_DAYS = 90;
+// Google Ads tiene todo el historial: se guarda el doble de 90 días para que el
+// período más largo también se pueda comparar con el anterior (lib/google-ads-sync.ts).
+export const GADS_HISTORY_DAYS = 182;
 
 export type Period = {
   since: string;

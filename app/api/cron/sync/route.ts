@@ -2,12 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
 import { syncAllClarityClients } from "@/lib/clarity-sync";
 import { syncAllCrmClients } from "@/lib/crm-sync";
+import { syncAllGadsClients } from "@/lib/google-ads-sync";
 import { syncAllMetaClients } from "@/lib/meta-sync";
 
-// Sincroniza las métricas de Meta, los CRM y Clarity de todos los clientes
-// conectados. Lo dispara el cron de Vercel (ver vercel.json), que manda
+// Sincroniza las métricas de Meta y Google Ads, los CRM y Clarity de todos los
+// clientes conectados. Lo dispara el cron de Vercel (ver vercel.json), que manda
 // `Authorization: Bearer ${CRON_SECRET}`. Se puede llamar a mano con el mismo
-// header, y con ?full=1 para rehacer la ventana completa de Meta (90 días).
+// header, y con ?full=1 para rehacer la ventana completa de Meta (90 días) y de
+// Google Ads (182).
 //
 // Clarity va solo en la corrida de la mañana: su API permite 10 consultas por
 // proyecto por día y devuelve una ventana de 24 h, así que dos fotos diarias se
@@ -26,8 +28,10 @@ export async function GET(request: NextRequest) {
   // La corrida de las 9 UTC (ver vercel.json) es la que toma la foto diaria.
   const conClarity = params.get("clarity") === "1" || new Date().getUTCHours() < 12;
 
-  const [meta, crm, clarity] = await Promise.all([
-    syncAllMetaClients(params.get("full") === "1"),
+  const full = params.get("full") === "1";
+  const [meta, gads, crm, clarity] = await Promise.all([
+    syncAllMetaClients(full),
+    syncAllGadsClients(full),
     syncAllCrmClients(),
     conClarity ? syncAllClarityClients() : Promise.resolve([]),
   ]);
@@ -39,8 +43,9 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json({
-    ok: [...meta, ...crm, ...clarity].every((r) => r.ok),
+    ok: [...meta, ...gads, ...crm, ...clarity].every((r) => r.ok),
     meta: summary(meta),
+    google_ads: summary(gads),
     crm: summary(crm),
     clarity: conClarity ? summary(clarity) : "omitido: la foto de Clarity se toma en la corrida de la mañana",
   });

@@ -16,13 +16,17 @@ import {
   getLeads,
   getMetaCampaigns,
   getMetaDaily,
+  getSales,
   getTasks,
   getTeam,
   isLateTask,
   isOpenTask,
   leadFunnel,
+  salesPeriod,
+  withMetaAdNames,
   type Client,
 } from "../data";
+import { getCrmSecrets } from "../crm-sync";
 import { todayISO } from "../format";
 import { SHOW_TASKS } from "../tasks";
 
@@ -318,7 +322,7 @@ const crmResumen: AgentTool = {
   definition: {
     name: "crm_resumen",
     description:
-      "Estado del CRM de un cliente en el período: leads, conversión, ticket promedio, embudo por etapa, rendimiento por vendedor, por anuncio, por origen y por etiqueta.",
+      "Estado del CRM de un cliente en el período: leads, conversión, ticket promedio, embudo por etapa, rendimiento por vendedor, por anuncio, por origen y por etiqueta. Si el cliente registra las ventas en una planilla, trae además `ventas_planilla`: la facturación oficial, por fecha de confirmación, en pesos y en dólares por separado (no se convierten).",
     input_schema: {
       type: "object",
       properties: { ...CLIENTE_PROP, ...DIAS_PROP },
@@ -330,10 +334,17 @@ const crmResumen: AgentTool = {
     requireIntegration(client, "crm");
 
     const dias = int(input.dias, 30);
-    const [leads, snapshot] = await Promise.all([getLeads(client.id), getCrmSnapshot(client.id)]);
+    const [leads, snapshot, secrets] = await Promise.all([getLeads(client.id), getCrmSnapshot(client.id), getCrmSecrets(client.id)]);
     if (!leads.length) return { cliente: client.name, dias, aviso: "No hay leads sincronizados." };
 
     const period = crmPeriod(leads, dias);
+    // Con planilla, la venta y la facturación oficiales salen de ahí.
+    const allSales = secrets?.sales_sheet ? await getSales(client.id) : null;
+    const sheet = allSales && salesPeriod(allSales, leads, dias);
+    // El CRM puede guardar el anuncio con un nombre corto: se pasa al de Meta (solo
+    // los nombres; si no se pueden leer, quedan los del CRM).
+    const campaigns = client.conn.meta ? await getMetaCampaigns(client.id, dias).catch(() => null) : null;
+    const ads = campaigns ? withMetaAdNames(period.ads, campaigns.flatMap((c) => c.ads)) : period.ads;
     return {
       cliente: client.name,
       dias,
@@ -346,6 +357,24 @@ const crmResumen: AgentTool = {
         facturacion: round(period.ticketTotal),
         leads_desde_meta: period.fromMeta,
       },
+      ventas_planilla: sheet
+        ? {
+            nota: "Fuente oficial de ventas. Cuenta por fecha de confirmación del proyecto. En los cortes por lead (ganadas, facturación, vendedores y anuncios de arriba), ganada = tiene venta en la planilla y el monto es el de esa venta en pesos; esos cortes van por fecha de creación del lead.",
+            ventas: sheet.sales.length,
+            facturacion_pesos: round(sheet.ars.total),
+            ticket_promedio_pesos: sheet.ars.avg === null ? null : round(sheet.ars.avg),
+            facturacion_dolares: round(sheet.usd.total),
+            ticket_promedio_dolares: sheet.usd.avg === null ? null : round(sheet.usd.avg),
+            sin_oportunidad_en_crm: sheet.unattributed,
+            vendedores: sheet.sellers.map((s) => ({
+              nombre: s.name,
+              ventas: s.sales,
+              facturacion_pesos: round(s.ars.total),
+              facturacion_dolares: round(s.usd.total),
+            })),
+            por_origen: sheet.sources.map((s) => ({ origen: s.name, ventas: s.sales, pesos: round(s.ars), dolares: round(s.usd) })),
+          }
+        : null,
       total_historico: { leads: leads.length, pipeline_abierto: snapshot ? round(snapshot.pipeline_value) : null, al: snapshot?.as_of ?? null },
       embudo: leadFunnel(period.leads).map((s) => ({ etapa: s.name, leads: s.value })),
       vendedores: period.sellers.map((s) => ({
@@ -356,7 +385,13 @@ const crmResumen: AgentTool = {
         ticket_promedio: s.ticketAvg === null ? null : round(s.ticketAvg),
         facturacion: round(s.ticketTotal),
       })),
-      anuncios: period.ads.map((a) => ({ anuncio: a.name, leads: a.leads, ganadas: a.won, facturacion: round(a.ticketTotal) })),
+      anuncios: ads.map((a) => ({
+        anuncio: a.name,
+        leads: a.leads,
+        ganadas: a.won,
+        facturacion: round(a.ticketTotal),
+        ...(a.usdTotal ? { facturacion_dolares: round(a.usdTotal) } : {}),
+      })),
       origenes: period.sources.map((s) => ({ origen: s.name, leads: s.leads, share_pct: round(s.share, 1) })),
       ventas_por_origen:
         period.wonSources?.map((s) => ({ origen: s.name, ganadas: s.leads, share_pct: round(s.share, 1), facturacion: round(s.ticketTotal) })) ?? null,

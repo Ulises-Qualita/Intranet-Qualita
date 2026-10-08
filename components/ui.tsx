@@ -88,7 +88,7 @@ export function KpiLocked({
   );
 }
 
-type ConnectKind = "meta" | "crm" | "notion" | "clarity" | "drive";
+type ConnectKind = "meta" | "google_ads" | "crm" | "notion" | "clarity" | "drive";
 
 const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: string; cta: string }> = {
   notion: {
@@ -102,6 +102,12 @@ const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: s
     title: "Conectá la cuenta de Meta",
     desc: "Vinculá la cuenta de Meta Business de este cliente para traer las métricas de anuncios: gasto, CPL, leads y rendimiento por anuncio.",
     cta: "Conectar cuenta de Meta",
+  },
+  google_ads: {
+    icon: "target",
+    title: "Conectá la cuenta de Google Ads",
+    desc: "Elegí la cuenta de anuncios de este cliente entre las que cuelgan de la MCC del estudio para traer las métricas de Google Ads.",
+    cta: "Elegir cuenta de Google Ads",
   },
   crm: {
     icon: "funnel",
@@ -150,6 +156,7 @@ export function ConnectState({ kind, client }: { kind: ConnectKind; client: Pick
 const NOT_CONNECTED: Record<ConnectKind, string> = {
   notion: "El portal todavía no está disponible.",
   meta: "Las métricas de Meta todavía no están conectadas.",
+  google_ads: "Las métricas de Google Ads todavía no están conectadas.",
   crm: "El CRM todavía no está conectado.",
   clarity: "La analítica del sitio todavía no está conectada.",
   drive: "La carpeta de archivos todavía no está disponible.",

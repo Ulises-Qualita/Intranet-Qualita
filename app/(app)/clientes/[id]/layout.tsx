@@ -38,7 +38,7 @@ const CLIENT_NAV = (
 // cambio de período volvería a vaciar la pantalla. Por lo mismo Vista general vive
 // en el grupo (general)/ y no directo en [id]/, donde la tomaría el loading.tsx de
 // las solapas.
-const PERIOD_TABS = ["", "/meta", "/crm"];
+const PERIOD_TABS = ["", "/meta", "/gads", "/crm"];
 
 // Panel de un cliente para el equipo. El encabezado (nombre, solapas y período) es
 // de este layout, que no se vuelve a renderizar al navegar entre solapas: solo

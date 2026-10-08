@@ -201,8 +201,10 @@ No hay framework de tests configurado todavía.
 - Pestaña Reportes (`/clientes/[slug]/reportes`, solo equipo, área `clientes`): genera
   un HTML con el diseño de `docs/DML_reporte_mensual_5.html` para el período elegido
   (máx. 90 días atrás, lo que guardan Meta y el CRM). `lib/report/data.ts` junta Meta,
-  CRM y Clarity (cada parte es null si no hay datos y la sección se omite; Google Ads
-  figura como pendiente); `lib/report/ai.ts` pide a Claude los textos con structured
+  Google Ads, CRM y Clarity (cada parte es null si no hay datos y la sección se omite;
+  Google Ads sin conectar figura como pendiente). La pauta suma Meta y Google Ads, y
+  como en la referencia las conversiones de Google cuentan como sus leads (con
+  decimales); `lib/report/ai.ts` pide a Claude los textos con structured
   outputs (registra consumo en `intranet_agent_usage`); `lib/report/html.ts` renderiza
   en el server con el CSS copiado tal cual en `lib/report/styles.ts`. La generación
   (`lib/report/generate.ts`) corre en `POST /api/reportes` por SSE: manda los pasos y
@@ -276,15 +278,40 @@ No hay framework de tests configurado todavía.
   Ganadas ni Total en tickets: todo se cuenta por fecha de creación y el período
   anterior tuvo más tiempo para cerrar ventas (para compararlas habría que guardar la
   fecha de cierre). Falta llevarlo a WEB y Vista general.
-- Google Ads (solapa GADS, `/clientes/[slug]/gads`, solo equipo, área `meta`): por ahora un
-  placeholder. La conexión es con la misma cuenta de servicio de Calendar y Drive
-  (`lib/google.ts`, scope `https://www.googleapis.com/auth/adwords` en la delegación de
-  dominio), sin OAuth por usuario. Env: `GOOGLE_ADS_DEVELOPER_TOKEN`,
-  `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (MCC, 10 dígitos), `GOOGLE_ADS_USER` (usuario a
-  impersonar). Probado el 2026-10-01 contra la API v25: el token y
-  `listAccessibleCustomers` responden, pero las consultas a cuentas reales dan
-  `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION` hasta que Google apruebe el acceso
-  (se pide en el Centro de API de la MCC). Todavía no hay `lib/` que lea la API.
+- Google Ads (solapa GADS, `/clientes/[slug]/gads`, solo equipo, área `meta`). La conexión
+  es con la misma cuenta de servicio de Calendar y Drive (`lib/google.ts`, scope
+  `https://www.googleapis.com/auth/adwords` en la delegación de dominio), sin OAuth por
+  usuario. Env: `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (MCC; se aceptan guiones, el header
+  `login-customer-id` los saca), `GOOGLE_ADS_USER` (usuario a impersonar), opcionales
+  `GOOGLE_ADS_DEVELOPER_TOKEN` y `GOOGLE_ADS_API_VERSION` (default `v25`). Desde el
+  2026-09-10 el nivel de acceso no lo da el developer token (opcional, la API lo ignora)
+  sino el **proyecto de Cloud** de las credenciales: `intranet-qualita`. El "Explorer"
+  del Centro de API de la MCC es de otro proyecto del equipo. El 2026-10-07 ya lee
+  cuentas reales (listado de la MCC y métricas). `lib/google-ads.ts`: `gaql()` (search
+  paginado), `listAdsAccounts()` / `getAdsAccount()` (solo cuentas bajo la MCC, sin
+  MCCs) y los mensajes de los errores de configuración. Por cliente: provider
+  `google_ads`, `account_ref` = customer id de 10 dígitos, elegido en
+  `/clientes/[slug]/gads/conectar` (`connectGoogleAdsAccount` valida que cuelgue de la
+  MCC; migración `docs/sql/2026-10-07-google-ads-provider.sql`). Métricas como Meta:
+  `lib/google-ads-sync.ts` (en el cron y, como refuerzo, al abrir la vista con
+  `prepareGadsView`) guarda `intranet_gads_daily` (cuenta por día) e
+  `intranet_gads_campaigns` (campaña por día; `docs/sql/2026-10-07-google-ads.sql`,
+  RLS: equipo con área `meta`). Backfill de `GADS_HISTORY_DAYS` = 182 días (la API
+  tiene todo el historial, así el período de 90 también se compara), después se
+  reescriben los últimos 14. `synced_at` / `sync_error` van en
+  `intranet_integration_secrets` (provider `google_ads`, sin credenciales). Montos en
+  la moneda de la cuenta, sin convertir; las conversiones traen decimales. Cambiar o
+  desvincular la cuenta borra lo guardado (`clearGadsData`). La vista
+  (`gads/gads-view.tsx`) usa el período del encabezado (`/gads` en `PERIOD_TABS`):
+  gasto, costo por conversión, conversiones, clics, CTR y CPC contra el período
+  anterior, tabla de campañas y gasto diario. La **inversión** que se muestra en
+  lugares generales es Meta + Google Ads: Vista general (KPI "Nivel de inversión" y
+  "Recorrido de la inversión", donde los leads también suman las conversiones de Google
+  y todos los costos usan la inversión total; la card "Leads generados" también
+  suma las dos), la columna de Inicio
+  (`getGadsSpendByClient`) y el reporte. La cuenta del cliente lee sus totales
+  diarios para la Vista general (`docs/sql/2026-10-07-google-ads-cliente.sql`); las
+  campañas, no. Falta llevarlo al agente.
 - Qué leads del CRM cuentan (contexto de Arteplac en `docs/contexto-kommo.md`): no todo
   lead es una consulta nueva. `crmExclusions` de `lib/crm-shared.ts` marca en el sync los
   que no cuentan y el motivo va a `intranet_leads.excluded`
@@ -294,12 +321,34 @@ No hay framework de tests configurado todavía.
   un WhatsApp, Kommo importa la agenda y cada cliente viejo que escribe nace como lead
   nuevo; se detecta con `contact_created_at`) y `duplicate` (mismo teléfono que un lead
   anterior; el teléfono no se guarda). `getLeads()` ya los deja afuera, así que vistas,
-  agente y reportes quedan corregidos sin tocarlos; `getExcludedLeads()` alimenta el
-  aviso de la solapa CRM (solo equipo). La fecha y las etapas se eligen por cliente en
+  agente y reportes quedan corregidos sin tocarlos. `getExcludedLeads()` da cuántos
+  quedaron afuera y por qué; la solapa CRM ya no muestra ese aviso (se sacó a pedido). La fecha y las etapas se eligen por cliente en
   `/clientes/[slug]/crm/conectar` → "Qué leads se cuentan" (`since` y `excluded_stages`
-  en los secrets del CRM). En Odoo solo aplican esas dos. Lo que **no** se resuelve: las
-  ventas de Arteplac (etapa CONFIRMADO y "Presupuesto $") no son confiables en Kommo;
-  la fuente oficial es su planilla, que la intranet no lee.
+  en los secrets del CRM). En Odoo solo aplican esas dos.
+- Ventas desde planilla (Arteplac: la etapa CONFIRMADO y el "Presupuesto $" de Kommo no
+  son confiables). Se conecta por cliente en `/clientes/[slug]/crm/conectar` → "Ventas
+  desde una planilla" (`sales_sheet` en los secrets del CRM). `lib/sales-sheet.ts` lee
+  con la **API de Sheets** como `GOOGLE_DRIVE_USER` (scope `drive`, el de la
+  delegación; la API tiene que estar habilitada en el proyecto de Cloud de la cuenta
+  de servicio) dos pestañas que se cruzan por número de proyecto: **Proyectos**
+  (teléfono, Total valor pesos / USD) y **Cotizaciones** (Fecha confirmación de
+  proyecto, Vendedor); columnas por encabezado. Corre dentro de `syncCrmClient`: guarda
+  `intranet_crm_sales` (`docs/sql/2026-10-06-ventas-planilla.sql`) y cruza cada venta
+  por teléfono (`matchSales`, solo leads creados hasta la confirmación) con su lead,
+  que pasa a `won` con `amount` = pesos y `amount_usd` = dólares; con planilla, las
+  etapas ganadas y los presupuestos del CRM no cuentan. Un fallo va a
+  `secrets.sales_error` y se siguen usando las ventas guardadas. **Pesos y dólares no
+  se suman ni se convierten.** En la solapa CRM (`salesPeriod` de `lib/data.ts`) las
+  ventas, la facturación y el ticket van por **fecha de confirmación** (por eso sí se
+  comparan con el período anterior), y vendedores y ventas por origen salen de la
+  planilla; anuncios, videos y Vista general siguen por fecha del lead. El agente
+  (`ventas_planilla` en `crm_resumen`) y los reportes la usan también.
+- Anuncio del lead vs. Meta: el CRM puede guardar un nombre corto (Kommo de Arteplac:
+  `TESTIMONIAL_WEB02` por `ATP_COC_A01_D07_TESTIMONIAL_VID_V01_WEB02`).
+  `withMetaAdNames` (`lib/data.ts`) pasa cada anuncio del CRM al nombre de Meta antes de
+  la tabla "Por anuncio" y los videos de la solapa CRM (y en `crm_resumen` del agente): exacto o con las partes en
+  orden y la misma variante final; entre varios, el de más gasto. Los ids numéricos
+  (Google Ads) quedan como están.
 - Atención por chat en la solapa CRM (solo equipo, solo Kommo): `intranet_crm_chat_events`
   (`docs/sql/2026-10-01-crm-chats.sql`) guarda un registro por mensaje **sin el texto**,
   de la API de eventos de Kommo (`incoming_chat_message` / `outgoing_chat_message`).

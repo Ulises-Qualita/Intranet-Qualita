@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { VideoPerformance } from "@/lib/data";
-import { compact, integer, money, orDash, percent, safeDiv } from "@/lib/format";
+import { compact, dollars, integer, money, orDash, percent, safeDiv } from "@/lib/format";
 import { AdThumb } from "../meta/ad-preview";
 
 type Metric = [label: string, value: string];
@@ -8,7 +8,8 @@ type Metric = [label: string, value: string];
 function metrics(v: VideoPerformance, by: "crm" | "meta", showWon: boolean): Metric[] {
   const ctr = orDash(safeDiv(v.clicks * 100, v.impressions), (x) => percent(x));
   // Siempre, también en $0: lo que se mira de cada video es si trajo ventas.
-  const billed: Metric = ["Facturado", money(v.ticketTotal)];
+  // Con planilla de ventas, la parte en dólares va aparte.
+  const billed: Metric = ["Facturado", [money(v.ticketTotal), v.usdTotal ? dollars(v.usdTotal) : null].filter(Boolean).join(" + ")];
   if (by === "meta") {
     return [
       ["Leads (Meta)", integer(v.metaLeads)],

@@ -5,10 +5,11 @@ import { getAreaSession } from "@/lib/auth";
 import { crmProviderLabel } from "@/lib/crm-shared";
 import { getCrmSecrets } from "@/lib/crm-sync";
 import { getClient } from "@/lib/data";
-import { relativeTime, todayISO } from "@/lib/format";
+import { integer, relativeTime, todayISO } from "@/lib/format";
 import { CrmForm } from "./crm-form";
 import { DisconnectCrmButton } from "./disconnect-button";
 import { LeadBase } from "./lead-base";
+import { SalesSheet } from "./sales-sheet";
 import { WonStages } from "./won-stages";
 
 export default async function ConectarCrmPage({ params }: { params: Promise<{ id: string }> }) {
@@ -55,7 +56,36 @@ export default async function ConectarCrmPage({ params }: { params: Promise<{ id
           <CrmForm clientId={client.id} current={secrets?.provider ?? null} />
         </Card>
 
-        {secrets?.stage_order?.length ? (
+        {secrets ? (
+          <Card title="Ventas desde una planilla" hint="Reemplaza las ventas y la facturación del CRM" className="mt-4">
+            <p className="modal-lead">
+              Si las ventas confirmadas se registran en una planilla de Google Sheets, la facturación sale de ahí y no del
+              CRM. La planilla tiene que tener una pestaña <b>Proyectos</b> (número de proyecto, Teléfono, Total valor
+              pesos, Total valor USD) y otra <b>Cotizaciones</b> (Nro. de Proyecto, Fecha confirmación de proyecto,
+              Vendedor), y estar compartida con {process.env.GOOGLE_DRIVE_USER ?? "la cuenta de Drive del estudio"}. Cada
+              venta se cruza por teléfono con el lead del CRM para saber de qué origen y anuncio vino. Los montos en pesos y
+              en dólares se muestran por separado.
+            </p>
+            {secrets.sales_sheet && (
+              <p className="modal-lead">
+                Conectada:{" "}
+                <a href={secrets.sales_sheet.url} target="_blank" rel="noreferrer">
+                  {secrets.sales_sheet.title ?? "planilla"}
+                </a>
+                {secrets.sales_stats &&
+                  `. Última lectura: ${integer(secrets.sales_stats.projects)} proyectos con fecha de confirmación, ${integer(
+                    secrets.sales_stats.matched,
+                  )} cruzados con un lead del CRM, ${integer(secrets.sales_stats.noPhone)} sin teléfono${
+                    secrets.sales_stats.undated ? ` y ${integer(secrets.sales_stats.undated)} sin fecha de confirmación (no se cuentan)` : ""
+                  }.`}
+              </p>
+            )}
+            {secrets.sales_error && <p className="form-error">{secrets.sales_error}</p>}
+            <SalesSheet clientId={client.id} current={secrets.sales_sheet?.url ?? null} />
+          </Card>
+        ) : null}
+
+        {secrets?.stage_order?.length && !secrets.sales_sheet ? (
           <Card
             title="Qué cuenta como venta ganada"
             hint="Afecta las ganadas y la tasa de conversión"

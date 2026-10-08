@@ -7,6 +7,8 @@ import { isTabKey, parseHiddenTabs, tabInZone, type TabZone } from "@/lib/client
 import { crmProviderLabel, isCrmProvider } from "@/lib/crm-shared";
 import { deleteCrmSecrets, getCrmSecrets, saveCrmSecrets, syncCrmClient } from "@/lib/crm-sync";
 import { driveErrorMessage, getItem, isDriveId } from "@/lib/drive";
+import { getAdsAccount, googleAdsErrorMessage, normalizeCustomerId } from "@/lib/google-ads";
+import { clearGadsData } from "@/lib/google-ads-sync";
 import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
 import { LOGO_MAX_BYTES, LOGO_TYPES, LOGOS_BUCKET, LOGOS_TAG } from "@/lib/logos";
 import { deleteMetaSecrets, getAdAccount, getMetaSecrets, saveMetaSecrets } from "@/lib/meta";
@@ -15,6 +17,7 @@ import { BANNER_MAX_BYTES, BANNER_TYPES, BANNERS_BUCKET, type PortalValidator, p
 import { MEETINGS_TAG } from "@/lib/calendar";
 import { KommoError, kommoAccount, normalizeKommoUrl } from "@/lib/kommo";
 import { normalizeOdooUrl, odooLogin } from "@/lib/odoo";
+import { readSalesSheet, salesSheetConfigured, sheetIdFrom } from "@/lib/sales-sheet";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 export type FormState = { ok: boolean; error: string | null };
@@ -283,6 +286,8 @@ export async function setIntegration(
   if (result.ok && provider === "meta") await deleteMetaSecrets(clientId);
   // Ídem con las credenciales del CRM.
   if (result.ok && provider === "crm" && !change.connected) await deleteCrmSecrets(clientId);
+  // Ídem con las métricas guardadas de Google Ads.
+  if (result.ok && provider === "google_ads" && !change.connected) await clearGadsData(clientId);
   // Al desconectar Notion cambian los tickets visibles: se descarta el cache.
   if (result.ok && provider === "notion") revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
   return result;
@@ -381,6 +386,31 @@ export async function connectDriveFolder(clientId: string, folderId: string): Pr
     connected_at: now,
     updated_at: now,
   });
+}
+
+// Vincula la cuenta de Google Ads del cliente. Se valida contra la API que la
+// cuenta cuelgue de la MCC del estudio y no sea una MCC.
+export async function connectGoogleAdsAccount(clientId: string, customerId: string): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  const id = normalizeCustomerId(customerId);
+  if (!id) return { ok: false, error: "Elegí una cuenta de Google Ads." };
+
+  try {
+    if (!(await getAdsAccount(id))) return { ok: false, error: "Esa cuenta no está bajo la MCC del estudio." };
+  } catch (e) {
+    return { ok: false, error: googleAdsErrorMessage(e) };
+  }
+
+  const now = new Date().toISOString();
+  const result = await writeIntegration(clientId, "google_ads", {
+    connected: true,
+    account_ref: id,
+    connected_at: now,
+    updated_at: now,
+  });
+  // Lo guardado era de la cuenta anterior; la vista hace el backfill de la nueva.
+  if (result.ok) await clearGadsData(clientId);
+  return result;
 }
 
 // Fuerza una lectura fresca de Notion sin esperar a que venza el cache.
@@ -515,6 +545,62 @@ export async function setCrmLeadBase(clientId: string, since: string, stages: st
   });
 
   // Cambia qué oportunidades cuentan: hay que volver a marcarlas.
+  const result = await syncCrmClient(clientId);
+  if (!result.ok) return { ok: false, error: result.error ?? "No se pudo releer el CRM." };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// Planilla de Google Sheets con las ventas confirmadas (lib/sales-sheet.ts). Con
+// ella, las ventas y la facturación del CRM salen de la planilla. Se lee antes de
+// guardarla, así un link mal copiado o sin compartir se avisa acá.
+export async function setCrmSalesSheet(clientId: string, link: string): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!salesSheetConfigured()) return { ok: false, error: "Falta configurar la cuenta de servicio de Google en el servidor." };
+
+  const secrets = await getCrmSecrets(clientId);
+  if (!secrets) return { ok: false, error: "El cliente no tiene un CRM conectado." };
+  const id = sheetIdFrom(link);
+  if (!id) return { ok: false, error: "Pegá el link de la planilla de Google Sheets." };
+
+  let title: string;
+  try {
+    ({ title } = await readSalesSheet(id));
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "No se pudo leer la planilla." };
+  }
+
+  await saveCrmSecrets(clientId, {
+    ...secrets,
+    sales_sheet: { id, url: `https://docs.google.com/spreadsheets/d/${id}`, title },
+    sales_error: null,
+    sales_stats: undefined,
+  });
+
+  // Cambia qué oportunidades son ventas y de cuánto: hay que releer.
+  const result = await syncCrmClient(clientId);
+  if (!result.ok) return { ok: false, error: result.error ?? "No se pudo releer el CRM." };
+
+  revalidatePath("/", "layout");
+  const after = await getCrmSecrets(clientId);
+  return after?.sales_error ? { ok: false, error: after.sales_error } : { ok: true, error: null };
+}
+
+// Deja de usar la planilla: las ventas vuelven a salir del CRM.
+export async function removeCrmSalesSheet(clientId: string): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+
+  const secrets = await getCrmSecrets(clientId);
+  if (!secrets) return { ok: false, error: "El cliente no tiene un CRM conectado." };
+
+  const rest = { ...secrets };
+  delete rest.sales_sheet;
+  delete rest.sales_error;
+  delete rest.sales_stats;
+  await saveCrmSecrets(clientId, rest);
+  await createAdminClient().from("intranet_crm_sales").delete().eq("client_id", clientId);
+
   const result = await syncCrmClient(clientId);
   if (!result.ok) return { ok: false, error: result.error ?? "No se pudo releer el CRM." };
 

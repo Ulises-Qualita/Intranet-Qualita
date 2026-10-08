@@ -2,10 +2,22 @@
 //
 // Junta, para un período, lo mismo que muestra el reporte de referencia
 // (docs/DML_reporte_mensual_5.html) y que la intranet tiene de verdad: pauta de
-// Meta, pipeline del CRM y Clarity. Cada parte es null si no hay integración o
-// datos; el HTML omite la sección en vez de inventar valores.
+// Meta y Google Ads, pipeline del CRM y Clarity. Cada parte es null si no hay
+// integración o datos; el HTML omite la sección en vez de inventar valores.
 import { getCrmSecrets } from "../crm-sync";
-import { type Client, crmPeriod, getLeads, getMetaCampaigns, getMetaDaily, type Lead, type MetaAd } from "../data";
+import {
+  type Client,
+  crmPeriod,
+  getGadsCampaigns,
+  getGadsDaily,
+  getLeads,
+  getMetaCampaigns,
+  getMetaDaily,
+  getSales,
+  type Lead,
+  type MetaAd,
+  salesPeriod,
+} from "../data";
 import { localDate, todayISO } from "../format";
 import { type Period, shiftDate } from "../period";
 import { createClient } from "../supabase/server";
@@ -34,6 +46,17 @@ export type ReportMeta = {
   creativeGroups: { campaign: string; ads: ReportCreative[] }[];
 };
 
+// Google Ads. Sus "leads" son las conversiones que define la cuenta (formularios,
+// llamadas…), con decimales por la atribución: se tratan como los leads de Meta,
+// como en el reporte de referencia.
+export type ReportGads = {
+  spend: number;
+  conversions: number;
+  impressions: number;
+  clicks: number;
+  campaigns: (ReportCampaign & { channel: string | null })[];
+};
+
 export type ReportKpi = { value: string; label: string; tag?: string; up?: boolean };
 
 export type ReportCrm = {
@@ -47,7 +70,19 @@ export type ReportCrm = {
   sellers: { name: string; pct: number; won: number; leads: number }[] | null;
   sources: { name: string; leads: number }[];
   sourcesKnown: number;
-  sales: { won: number; withTicket: number; total: number; average: number | null; bySource: { name: string; leads: number }[] } | null;
+  // fromSheet: las ventas salen de la planilla del cliente, por fecha de
+  // confirmación; total/average en pesos y usd* en dólares, sin convertir.
+  sales: {
+    fromSheet: boolean;
+    won: number;
+    withTicket: number;
+    total: number;
+    average: number | null;
+    usdWithTicket: number;
+    usdTotal: number;
+    usdAverage: number | null;
+    bySource: { name: string; leads: number }[];
+  } | null;
 };
 
 export type ReportClarity = {
@@ -70,8 +105,9 @@ export type ReportData = {
   meta: ReportMeta | null;
   crm: ReportCrm | null;
   clarity: ReportClarity | null;
-  // Se mencionan como pendientes en el reporte (sin integración todavía).
-  googleAds: false;
+  googleAds: ReportGads | null;
+  // Para decir "pendiente" (sin conectar) o "sin actividad" cuando googleAds es null.
+  googleAdsConnected: boolean;
 };
 
 // ---------- Formato de fechas del encabezado ----------
@@ -304,15 +340,34 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
   // ----- Ventas y ticket -----
   const wonLeads = inPeriod.filter((l) => l.status === "won");
   const tickets = wonLeads.map((l) => l.amount).filter((a): a is number => !!a && a > 0);
-  const sales = hasStatus
+  // Con planilla de ventas, la facturación oficial es la de ahí.
+  const allSales = secrets?.sales_sheet ? await getSales(client.id) : null;
+  const sheet = allSales && salesPeriod(allSales, leads, period);
+  const sales: ReportCrm["sales"] = sheet
     ? {
-        won: wonLeads.length,
-        withTicket: tickets.length,
-        total: tickets.reduce((t, a) => t + a, 0),
-        average: tickets.length ? tickets.reduce((t, a) => t + a, 0) / tickets.length : null,
-        bySource: (current.wonSources ?? []).map((s) => ({ name: s.name, leads: s.leads })),
+        fromSheet: true,
+        won: sheet.sales.length,
+        withTicket: sheet.ars.count,
+        total: sheet.ars.total,
+        average: sheet.ars.avg,
+        usdWithTicket: sheet.usd.count,
+        usdTotal: sheet.usd.total,
+        usdAverage: sheet.usd.avg,
+        bySource: sheet.sources.map((s) => ({ name: s.name, leads: s.sales })),
       }
-    : null;
+    : hasStatus
+      ? {
+          fromSheet: false,
+          won: wonLeads.length,
+          withTicket: tickets.length,
+          total: tickets.reduce((t, a) => t + a, 0),
+          average: tickets.length ? tickets.reduce((t, a) => t + a, 0) / tickets.length : null,
+          usdWithTicket: 0,
+          usdTotal: 0,
+          usdAverage: null,
+          bySource: (current.wonSources ?? []).map((s) => ({ name: s.name, leads: s.leads })),
+        }
+      : null;
 
   return {
     total,
@@ -439,11 +494,36 @@ async function readClarity(client: Client, period: Period): Promise<ReportClarit
   };
 }
 
+// ---------- Google Ads ----------
+
+async function readGads(clientId: string, period: Period): Promise<ReportGads | null> {
+  const [daily, campaigns] = await Promise.all([getGadsDaily(clientId, period), getGadsCampaigns(clientId, period)]);
+  if (!daily.length) return null;
+  const sum = (pick: (d: (typeof daily)[number]) => number) => daily.reduce((t, d) => t + pick(d), 0);
+  return {
+    spend: sum((d) => d.cost),
+    conversions: sum((d) => d.conversions),
+    impressions: sum((d) => d.impressions),
+    clicks: sum((d) => d.clicks),
+    campaigns: campaigns
+      .filter((c) => c.cost > 0)
+      .map((c) => ({
+        name: c.name,
+        channel: c.channel,
+        spend: c.cost,
+        leads: c.conversions,
+        impressions: c.impressions,
+        clicks: c.clicks,
+      })),
+  };
+}
+
 // ---------- Todo junto ----------
 
 export async function buildReportData(client: Client, period: Period): Promise<ReportData> {
-  const [meta, crm, clarity] = await Promise.all([
+  const [meta, googleAds, crm, clarity] = await Promise.all([
     client.conn.meta ? readMeta(client.id, period) : null,
+    client.conn.google_ads ? readGads(client.id, period) : null,
     readCrm(client, period),
     readClarity(client, period),
   ]);
@@ -453,6 +533,7 @@ export async function buildReportData(client: Client, period: Period): Promise<R
     meta,
     crm,
     clarity,
-    googleAds: false,
+    googleAds,
+    googleAdsConnected: client.conn.google_ads,
   };
 }

@@ -17,6 +17,9 @@ export const integer = (value: number) => num(value);
 
 export const money = (value: number, decimals = 0) => `$${num(value, decimals)}`;
 
+// Montos en dólares, que en las ventas van aparte y sin convertir.
+export const dollars = (value: number, decimals = 0) => `U$D ${num(value, decimals)}`;
+
 export const percent = (value: number, decimals = 1) => `${num(value, decimals)}%`;
 
 export const ratio = (value: number) => `${num(value, 1)}x`;

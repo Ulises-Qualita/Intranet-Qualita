@@ -9,6 +9,14 @@ export const INTEGRATIONS = [
     help: "Cuenta de Meta Business del cliente de donde salen las métricas de anuncios.",
   },
   {
+    value: "google_ads",
+    label: "Google Ads",
+    title: "Google Ads",
+    refLabel: "Cuenta de Google Ads",
+    placeholder: "123-456-7890",
+    help: "Cuenta de anuncios del cliente bajo la MCC del estudio, de donde salen las métricas de la solapa GADS.",
+  },
+  {
     value: "notion",
     label: "Notion",
     title: "Notion",
@@ -62,6 +70,7 @@ export type IntegrationState = { connected: boolean; accountRef: string | null; 
 // no escribiendo la referencia a mano en el diálogo genérico.
 export const CONNECT_PAGES = {
   meta: { path: "meta/conectar", manualError: "Meta se conecta iniciando sesión con Facebook." },
+  google_ads: { path: "gads/conectar", manualError: "Google Ads se conecta eligiendo la cuenta de la lista de la MCC." },
   notion: { path: "notion/conectar", manualError: "Notion se conecta eligiendo el proyecto de la lista." },
   crm: { path: "crm/conectar", manualError: "El CRM se conecta cargando la cuenta y su clave de API." },
   clarity: { path: "web/conectar", manualError: "Clarity se conecta cargando el token de exportación del proyecto." },
