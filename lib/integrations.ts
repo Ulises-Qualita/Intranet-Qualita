@@ -48,14 +48,6 @@ export const INTEGRATIONS = [
     placeholder: "",
     help: "Carpeta del cliente en la unidad compartida del estudio. El cliente la ve, descarga y sube archivos desde su cuenta.",
   },
-  {
-    value: "whatsapp",
-    label: "WhatsApp",
-    title: "WhatsApp Business",
-    refLabel: "Número de WhatsApp Business",
-    placeholder: "+54 9 11 1234-5678",
-    help: "Línea de WhatsApp Business del cliente para las conversaciones.",
-  },
 ] as const;
 
 export type Integration = (typeof INTEGRATIONS)[number]["value"];

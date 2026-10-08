@@ -155,8 +155,9 @@ function DbTable({ db, columns }: { db: EmbeddedDb; columns?: number[] }) {
 }
 
 // Una solapa por vista de Notion. `views` puede faltar en un portal que quedó en
-// el cache de antes de leer las vistas: ahí se usa la de siempre.
-function DbViews({ db }: { db: EmbeddedDb }) {
+// el cache de antes de leer las vistas: ahí se usa la de siempre. Exportada para
+// el portal, que dibuja el calendario solo, sin el resto del documento.
+export function DbViews({ db }: { db: EmbeddedDb }) {
   const views: DbView[] = db.views?.length
     ? db.views
     : [

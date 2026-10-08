@@ -13,7 +13,17 @@ import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
 import { LOGO_MAX_BYTES, LOGO_TYPES, LOGOS_BUCKET, LOGOS_TAG } from "@/lib/logos";
 import { deleteMetaSecrets, getAdAccount, getMetaSecrets, saveMetaSecrets } from "@/lib/meta";
 import { NOTION_TICKETS_TAG, getPageRef, notionErrorMessage } from "@/lib/notion";
-import { BANNER_MAX_BYTES, BANNER_TYPES, BANNERS_BUCKET, type PortalValidator, parsePortal } from "@/lib/portal";
+import {
+  BANNER_MAX_BYTES,
+  BANNER_TYPES,
+  BANNERS_BUCKET,
+  type BannerPosition,
+  type PortalStage,
+  type PortalValidator,
+  parseBannerPosition,
+  parsePortal,
+  parseStages,
+} from "@/lib/portal";
 import { MEETINGS_TAG } from "@/lib/calendar";
 import { KommoError, kommoAccount, normalizeKommoUrl } from "@/lib/kommo";
 import { normalizeOdooUrl, odooLogin } from "@/lib/odoo";
@@ -646,6 +656,16 @@ export async function savePortalValidator(clientId: string, validator: PortalVal
   });
 }
 
+// Etapas del proyecto (la card del % del portal): se guarda la lista entera, en
+// orden. Sin etapas, la card no aparece.
+export async function savePortalStages(clientId: string, stages: PortalStage[]): Promise<FormState> {
+  const clean = parseStages(stages);
+  return updatePortal(clientId, (portal) => {
+    if (clean.length) portal.stages = clean;
+    else delete portal.stages;
+  });
+}
+
 // Banner: como el logo, va del navegador a Storage con una URL firmada.
 export async function createBannerUpload(
   clientId: string,
@@ -667,16 +687,28 @@ export async function createBannerUpload(
   return { ok: true, path: data.path, token: data.token };
 }
 
-// Ya subido: se guarda cuándo, que es la versión que lleva la URL del banner.
-export async function bannerUploaded(clientId: string): Promise<FormState> {
+// Ya subido: se guarda cuándo, que es la versión que lleva la URL del banner, y
+// qué parte se ve (la acomodada en "Editar portal" antes de subirlo).
+export async function bannerUploaded(clientId: string, position: BannerPosition): Promise<FormState> {
+  const clean = parseBannerPosition(position);
   return updatePortal(clientId, (portal) => {
     portal.banner = Date.now();
+    portal.bannerPosition = clean;
+  });
+}
+
+// Qué parte del banner ya subido se ve, elegida arrastrando la imagen en "Editar portal".
+export async function saveBannerPosition(clientId: string, position: BannerPosition): Promise<FormState> {
+  const clean = parseBannerPosition(position);
+  return updatePortal(clientId, (portal) => {
+    portal.bannerPosition = clean;
   });
 }
 
 export async function removeBanner(clientId: string): Promise<FormState> {
   const result = await updatePortal(clientId, (portal) => {
     delete portal.banner;
+    delete portal.bannerPosition;
   });
   if (!result.ok) return result;
   await createAdminClient().storage.from(BANNERS_BUCKET).remove([clientId]);

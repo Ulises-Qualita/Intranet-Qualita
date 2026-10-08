@@ -41,9 +41,12 @@ export async function OverviewView({
   // Mismo cálculo que la card "Leads generados" de la solapa META.
   const metaLeads = daily.reduce((total, d) => total + d.leads, 0);
 
-  // Conversión = ventas ganadas sobre oportunidades creadas en el período. Sin la
-  // columna de estado en el CRM (won === null) no hay forma de saber cuáles se
-  // ganaron, y la card lo dice en vez de mostrar 0%.
+  // Conversión = ventas del período sobre oportunidades creadas en el período. Con
+  // planilla, las ventas son las confirmadas en el período (como en el recorrido),
+  // aunque el lead sea de un mes anterior: si no, una venta de octubre de un lead de
+  // septiembre no contaba en ningún mes. Sin planilla ni estado en el CRM
+  // (sales === null) no hay forma de saber qué se ganó, y la card lo dice en vez de
+  // mostrar 0%.
   const crm = crmPeriod(leads, range);
   const won = crm.won;
   const opportunities = crm.leads.length;
@@ -129,7 +132,7 @@ export async function OverviewView({
               {locked("Conversión general", "target", "crm")}
               {locked("Ventas", "check", "crm")}
             </>
-          ) : won === null ? (
+          ) : sales === null ? (
             <>
               <KpiLocked label="Conversión general" icon="target" note="El CRM no informa qué se ganó" />
               <KpiLocked label="Ventas" icon="check" note="El CRM no informa qué se ganó" />
@@ -139,11 +142,16 @@ export async function OverviewView({
               <Kpi
                 label="Conversión general"
                 icon="target"
-                value={orDash(safeDiv(won * 100, opportunities), (v) => percent(v))}
+                value={orDash(safeDiv(sales * 100, opportunities), (v) => percent(v))}
                 sub={`ventas sobre oportunidades, ${periodo}`}
                 hero
               />
-              <Kpi label="Ventas" icon="check" value={integer(won)} sub={`de ${integer(opportunities)} oportunidades, ${periodo}`} />
+              <Kpi
+                label={sheet ? "Ventas confirmadas" : "Ventas"}
+                icon="check"
+                value={integer(sales)}
+                sub={`${sheet ? "según la planilla" : `de ${integer(opportunities)} oportunidades`}, ${periodo}`}
+              />
             </>
           )}
 

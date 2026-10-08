@@ -145,6 +145,23 @@ No hay framework de tests configurado todavía.
   misma `EquipoView`): los miembros activos de `intranet_client_assignments`, vía
   `getClientTeam()` con service_role (la cuenta del cliente no ve asignaciones ni
   perfiles por RLS).
+- Hitos del proyecto: **ya no son una solapa** (se sacó a pedido; viven en el Portal
+  del cliente y se cargan en Editar portal → Hitos, `portal/milestones-editor.tsx`:
+  tipo, fecha, título, descripción; cada cambio se guarda al momento con
+  `portal/milestone-actions.ts`, que revalida el portal). Tipos `inicio | hito |
+  entrega | lanzamiento` en `lib/milestones-shared.ts` (client-safe). La línea
+  (`portal/milestone-timeline.tsx`) es **horizontal** y sigue el estilo del
+  [Timeline de Dice UI](https://21st.dev/@diceui/components/timeline) que eligió el
+  usuario (punto de 14 px, conector de 2 px, título / fecha / descripción debajo, texto
+  alineado a la izquierda), con "magia": cumplidos en degradado con tilde, el activo
+  (primer hito de hoy en adelante) con anillo en degradado y halo, y el tramo que
+  llega a él lleno según el tiempo transcurrido, con un brillo y una luz en la punta.
+  Se descartaron (no le gustaron): lista vertical, columnas simples con "Hoy", una
+  cinta a escala real tipo editor de video y el texto centrado. Si no entra,
+  `portal/timeline-scroller.tsx` desplaza de costado hasta el activo (`data-today`).
+  Cumplido / activo / pendiente sale de la fecha, no se guarda. Tabla
+  `intranet_client_milestones` (`docs/sql/2026-10-08-hitos.sql`; RLS: equipo con
+  `clientes` escribe, la cuenta del cliente lee los suyos), `lib/milestones.ts`.
 - Pestaña Reuniones (`/clientes/[slug]/reuniones` y `/mi-empresa/reuniones`, misma
   `ReunionesView`, área `clientes`): reuniones de Google Calendar reconocidas por la
   nomenclatura `"<Cliente> & Qualita <motivo>"` (el nombre se compara con
@@ -372,13 +389,29 @@ No hay framework de tests configurado todavía.
   `intranet_clients.portal` (`lib/portal.ts`, `getPortalSettings`); el banner es un
   objeto por cliente en el bucket público `intranet-client-banners` (como los logos,
   subida con URL firmada) y su versión va en `portal.banner`
-  (`docs/sql/2026-10-05-portal-intranet.sql`). El ícono es el logo del cliente.
+  (`docs/sql/2026-10-05-portal-intranet.sql`). Qué parte del banner se ve la elige
+  el equipo en "Editar portal", arrastrando la vista previa (`banner-crop.tsx`): es
+  el `object-position` en % y va en `portal.bannerPosition`; una imagen nueva arranca
+  centrada. En el portal el banner es una imagen fija, sin controles. El ícono es el logo del cliente.
   Textos de bienvenida y de confidencialidad fijos. El roadmap son los tickets del
   proyecto del cliente con el checkbox "Portal de cliente" tildado
   (`NotionTicket.portal`; el checkbox se elige en `/admin/notion` y, si no, se toma
-  el que diga "portal"), armados como una database (`EmbeddedDb`) para reusar el
-  render de `components/notion-content.tsx`: solapas Calendario, Etapas (etapa,
-  fecha, estado traducido a Pendiente / En curso / Completada) y Reuniones.
+  el que diga "portal"). **Diseño en vidrio** (clases `.pt-*` en `app/globals.css`),
+  elegido por el usuario entre propuestas. De arriba hacia abajo: el banner grande con
+  un vidrio apoyado en su borde (logo + bienvenida); la card del % (`portal-progress.tsx`)
+  con las **etapas del proyecto** (% = completadas / total, "Estamos en" = la primera
+  en curso o, si no, la primera pendiente, y una barra con un segmento por etapa; el
+  anillo se llena al abrir con `@property --pt-p`); el calendario a todo el ancho
+  (`DbViews` de `components/notion-content.tsx` sobre la database de `roadmapDb`:
+  tickets de Notion + reuniones, solapas Calendario y Reuniones; sin tabla de etapas y
+  sin card de próximas reuniones, pedido); la línea de **Hitos** (ver arriba); y, lado
+  a lado, el responsable validador (nombre, cargo y WhatsApp como texto, **sin
+  botón**: el portal lo ve el cliente y el responsable es de su lado) y la
+  confidencialidad. **Editar portal** tiene tres solapas: General (banner y
+  responsable), Etapas (`stages-editor.tsx`: nombre y estado Pendiente / En curso /
+  Completada, en orden; van en `portal.stages`, `parseStages` de `lib/portal.ts`,
+  sin migración) e Hitos (`milestones-editor.tsx`). Los tickets de Notion solo van al
+  calendario; su estado se traduce a Pendiente / En curso / Completada.
 - Links de navegación (sidebar, solapas del cliente y de Administración): usar
   `NavLink` (`components/nav-link.tsx`), no `Link`. Precarga la pantalla entera al
   pasar el mouse, enfocar o tocar. Consecuencia: **una página se puede renderizar sin

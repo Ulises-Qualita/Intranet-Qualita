@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { NotionContent } from "@/components/notion-content";
+import { DbViews } from "@/components/notion-content";
 import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { EmptyState } from "@/components/ui";
@@ -8,11 +8,15 @@ import { isTabHidden } from "@/lib/client-tabs";
 import { type Client, getNotionConfig, getPortalSettings } from "@/lib/data";
 import { getMeetingNotes } from "@/lib/meeting-notes";
 import { getTickets, notionConfigured, notionErrorMessage } from "@/lib/notion";
-import type { BlockNode, DbRow, EmbeddedDb, ExtraEvent, RichText } from "@/lib/notion-blocks";
+import { todayISO } from "@/lib/format";
+import type { DbRow, EmbeddedDb, ExtraEvent } from "@/lib/notion-blocks";
 import { isNotionConfigured, normalizeId, type NotionTicket } from "@/lib/notion-map";
-import { bannerUrl, type PortalValidator, whatsappHref } from "@/lib/portal";
+import { bannerUrl } from "@/lib/portal";
 import type { TaskStatus } from "@/lib/tasks";
 import { PortalEditor } from "./portal-editor";
+import { getMilestones } from "@/lib/milestones";
+import { MilestoneTimeline } from "./milestone-timeline";
+import { PortalProgress } from "./portal-progress";
 
 const TZ = "America/Argentina/Buenos_Aires";
 const hour = new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: TZ });
@@ -60,7 +64,7 @@ type Roadmap =
   | { state: "no-config" }
   | { state: "error"; error: string };
 
-// Etapas del portal: los tickets del proyecto del cliente con el checkbox del
+// Tickets del calendario del portal: los del proyecto del cliente con el checkbox del
 // portal tildado (portalPropOf en lib/notion-map.ts). getTickets() trae todo el
 // estudio en una consulta cacheada; el filtro por proyecto va acá, por request.
 async function portalRoadmap(client: Client): Promise<Roadmap> {
@@ -96,8 +100,9 @@ function withoutClient(title: string, clientName: string) {
 }
 
 // Los tickets armados como la database del roadmap de Notion, para dibujarlos con
-// el mismo render (components/notion-content.tsx): solapas Calendario y Etapas,
-// más la de Reuniones si hay. `tickets` llega en orden de fecha (sortStages).
+// el mismo render (components/notion-content.tsx): solapa Calendario, más la de
+// Reuniones si hay. La tabla de etapas no va: arriba ya están los hitos.
+// `tickets` llega en orden de fecha (sortStages).
 function roadmapDb(tickets: NotionTicket[], clientName: string, meetings: ExtraEvent[]): EmbeddedDb {
   const rows: DbRow[] = tickets.map((t) => ({
     id: t.id,
@@ -108,76 +113,73 @@ function roadmapDb(tickets: NotionTicket[], clientName: string, meetings: ExtraE
     ],
   }));
   return {
-    columns: ["Etapa", "Fecha", "Estado"],
+    columns: ["Tarea", "Fecha", "Estado"],
     rows,
     titleColumn: 0,
     dateColumn: 1,
     views: [
       { id: "calendario", name: "Calendario", kind: "calendar", dateColumn: 1 },
-      { id: "etapas", name: "Etapas", kind: "table", tableColumns: [0, 1, 2] },
     ],
     extraEvents: meetings,
   };
 }
 
-const t = (text: string, extra: Partial<RichText> = {}): RichText[] => [{ text, ...extra }];
-
 // Primero lo que vence antes; sin fecha, al final.
 const sortStages = (tickets: NotionTicket[]) =>
   [...tickets].sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") || a.title.localeCompare(b.title, "es"));
 
-function validatorBlocks(v: PortalValidator): BlockNode[] {
-  const wa = v.phone ? whatsappHref(v.phone) : null;
-  return [
-    { id: "validator-h", type: "heading_2", text: t("🙋 Responsable validador") },
-    { id: "validator-name", type: "paragraph", text: t(v.name, { bold: true }) },
-    ...(v.role ? [{ id: "validator-role", type: "paragraph" as const, text: t(`Cargo: ${v.role}`) }] : []),
-    ...(v.phone
-      ? [{ id: "validator-phone", type: "paragraph" as const, text: [{ text: "WhatsApp: " }, { text: v.phone, href: wa }] }]
-      : []),
-    { id: "validator-note", type: "paragraph", text: t("Es la persona que aprueba los entregables de cada etapa.") },
-  ];
-}
+
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
 
 // Portal del cliente, armado en la intranet: banner y responsable validador los
 // carga el equipo (intranet_clients.portal), el logo es el del cliente, y el
 // roadmap sale de los tickets de Notion marcados para el portal más las reuniones
 // de Google Calendar.
 //
+// Diseño en vidrio (como la solapa Hitos), sobre dos luces de marca: el banner
+// grande con un vidrio apoyado en su borde (logo y bienvenida), el anillo de
+// avance (etapas del proyecto), el calendario (tickets de Notion + reuniones; las
+// reuniones no tienen card aparte), la línea de hitos y, al final, el responsable
+// validador y la confidencialidad. Etapas e hitos se cargan en Editar portal.
+//
 // La usan el equipo (/clientes/[slug]/portal) y la cuenta del propio cliente
 // (/mi-empresa/portal): quien la llama ya validó el acceso. Con `internal` en
 // false, lo que falte configurar no se explica: las instrucciones son para el equipo.
 export async function PortalView({ c, internal }: { c: Client; internal: boolean }) {
-  const [{ settings, missing }, roadmap, meetings] = await Promise.all([
+  const [{ settings, missing }, roadmap, meetings, { milestones, missingTable: milestonesMissing }] = await Promise.all([
     getPortalSettings(c.id),
     portalRoadmap(c),
     portalMeetings(c, internal),
+    getMilestones(c.id),
   ]);
+  const today = todayISO();
 
-  const stages = sortStages(roadmap.state === "ok" ? roadmap.tickets : []);
-  const hasRoadmap = stages.length > 0 || meetings.length > 0;
-  const roadmapBlock: BlockNode = {
-    id: "roadmap",
-    type: "child_database",
-    text: t("Roadmap"),
-    db: roadmapDb(stages, c.name, meetings),
-  };
+  const tickets = sortStages(roadmap.state === "ok" ? roadmap.tickets : []);
+  const hasCalendar = tickets.length > 0 || meetings.length > 0;
+  const db = roadmapDb(tickets, c.name, meetings);
+  const v = settings.validator;
 
-  // Lo que el equipo tiene que hacer para que aparezcan las etapas.
+  // Lo que el equipo tiene que hacer para que los tickets aparezcan en el calendario.
   const roadmapHint =
     roadmap.state === "no-project" ? (
       <>
-        Vinculá el proyecto de Notion de <b>{c.name}</b> para mostrar sus etapas.{" "}
+        Vinculá el proyecto de Notion de <b>{c.name}</b> para mostrar sus tickets en el calendario.{" "}
         <Link href={`/clientes/${c.slug}/notion/conectar`} className="link-connect">
           Vincular proyecto
         </Link>
       </>
     ) : roadmap.state === "no-config" ? (
-      <>Falta configurar Notion en Administración → Notion para mostrar las etapas.</>
-    ) : roadmap.state === "ok" && !stages.length ? (
+      <>Falta configurar Notion en Administración → Notion para mostrar los tickets en el calendario.</>
+    ) : roadmap.state === "ok" && !tickets.length ? (
       <>
         Ningún ticket del proyecto tiene tildado <b>{roadmap.portalProp}</b> en Notion. Tildalo en los que querés mostrar
-        en el calendario y en las etapas.
+        en el calendario.
       </>
     ) : null;
 
@@ -198,73 +200,140 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
 
         {internal && !missing && (
           <div className="portal-toolbar">
-            <PortalEditor clientId={c.id} validator={settings.validator} banner={cover} />
+            <PortalEditor
+              clientId={c.id}
+              clientSlug={c.slug}
+              validator={settings.validator}
+              banner={cover}
+              bannerPosition={settings.bannerPosition}
+              stages={settings.stages}
+              milestones={milestones}
+              milestonesMissing={milestonesMissing}
+            />
           </div>
         )}
 
-        <article className="portal-page">
+        <div className="pt">
           {cover ? (
+            // La parte que se ve la elige el equipo en "Editar portal".
             // eslint-disable-next-line @next/next/no-img-element
-            <img className="portal-cover" src={cover} alt="" fetchPriority="high" />
+            <img
+              className="pt-hero"
+              src={cover}
+              alt=""
+              fetchPriority="high"
+              style={{ objectPosition: `${settings.bannerPosition.x}% ${settings.bannerPosition.y}%` }}
+            />
           ) : (
-            <div className="portal-cover plain" aria-hidden />
+            <div className="pt-hero plain" aria-hidden />
           )}
-          <div className="portal-head with-cover">
+
+          <header className="pt-glass pt-head">
             {c.logoUrl ? (
-              <span className="portal-icon logo" aria-hidden>
+              <span className="pt-logo" aria-hidden>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={c.logoUrl} alt="" />
               </span>
             ) : (
-              <span className="portal-icon initials" aria-hidden>
+              <span className="pt-logo initials" aria-hidden>
                 {c.initials}
               </span>
             )}
-            <h2>Portal de cliente</h2>
-          </div>
+            <div>
+              <h2>Portal de cliente</h2>
+              <p>
+                Bienvenidos al portal de cliente x Qualita Studio. Acá van a encontrar en tiempo real el estado de avance,
+                los próximos pasos y toda la documentación del proyecto.
+              </p>
+            </div>
+          </header>
 
-          <NotionContent
-            blocks={[
-              {
-                id: "welcome",
-                type: "paragraph",
-                text: t(
-                  "Bienvenidos al portal de cliente x Qualita Studio. Acá van a encontrar en tiempo real el estado de avance, los próximos pasos y toda la documentación del proyecto.",
-                ),
-              },
-              ...(hasRoadmap ? [roadmapBlock] : []),
-            ]}
-          />
-
-          {/* Al equipo se le dice por qué no hay etapas aunque el calendario tenga
-              reuniones; al cliente, solo que todavía no hay nada. */}
-          {internal && roadmapHint ? (
-            <EmptyState label="Sin etapas">{roadmapHint}</EmptyState>
+          {/* El % sale de las etapas que define el equipo en Editar portal → Etapas. */}
+          {settings.stages.length > 0 ? (
+            <PortalProgress stages={settings.stages} />
           ) : (
-            !hasRoadmap && <EmptyState label="Pendiente">Todavía no hay etapas cargadas.</EmptyState>
+            internal && (
+              <EmptyState label="Sin etapas">
+                Definí las etapas del proyecto en <b>Editar portal → Etapas</b> para mostrar el avance.
+              </EmptyState>
+            )
           )}
 
-          {internal && !missing && !settings.validator && (
-            <EmptyState label="Sin cargar">
-              Falta el responsable validador. Cargalo desde <b>Editar portal</b>.
-            </EmptyState>
-          )}
+          {internal && roadmapHint && <EmptyState label="Calendario">{roadmapHint}</EmptyState>}
 
-          <NotionContent
-            blocks={[
-              ...(settings.validator ? [{ id: "div-1", type: "divider" as const }, ...validatorBlocks(settings.validator)] : []),
-              { id: "div-2", type: "divider" },
-              {
-                id: "confidential",
-                type: "paragraph",
-                text: [
-                  { text: "Proyecto confidencial", bold: true },
-                  { text: " — Toda la información compartida en este portal es de uso exclusivo para el proyecto." },
-                ],
-              },
-            ]}
-          />
-        </article>
+          <div className="pt-grid">
+            {hasCalendar && (
+              <section className="pt-glass pt-pad pt-cal">
+                <DbViews db={db} />
+              </section>
+            )}
+
+            {/* Los hitos se cargan en Editar portal → Hitos. */}
+            {milestones.length > 0 ? (
+              <section className="pt-glass pt-pad" id="hitos">
+                <div className="pt-sec">
+                  <h3>Hitos</h3>
+                </div>
+                <MilestoneTimeline milestones={milestones} today={today} />
+              </section>
+            ) : (
+              internal &&
+              !milestonesMissing && (
+                <EmptyState label="Sin hitos">
+                  Este cliente todavía no tiene hitos. Cargalos en <b>Editar portal → Hitos</b>.
+                </EmptyState>
+              )
+            )}
+
+            <div className="pt-side">
+              {v ? (
+                <section className="pt-glass pt-pad">
+                  <div className="pt-sec">
+                    <h3>Responsable validador</h3>
+                  </div>
+                  <div className="pt-person">
+                    <span className="pt-avatar" aria-hidden>
+                      {initialsOf(v.name)}
+                    </span>
+                    <b>{v.name}</b>
+                  </div>
+                  {/* Los datos como texto, sin botón: el portal lo lee el cliente, y el
+                      responsable es de su lado (no se van a escribir por acá). */}
+                  <dl className="pt-facts">
+                    {v.role && (
+                      <div>
+                        <dt>Cargo</dt>
+                        <dd>{v.role}</dd>
+                      </div>
+                    )}
+                    {v.phone && (
+                      <div>
+                        <dt>WhatsApp</dt>
+                        <dd>{v.phone}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  <p className="pt-note">Es la persona que aprueba los entregables.</p>
+                </section>
+              ) : (
+                internal &&
+                !missing && (
+                  <EmptyState label="Sin cargar">
+                    Falta el responsable validador. Cargalo desde <b>Editar portal</b>.
+                  </EmptyState>
+                )
+              )}
+
+              <section className="pt-glass pt-pad pt-confid">
+                <span aria-hidden>🔒</span>
+                <p>
+                  <b>Proyecto confidencial.</b> Toda la información compartida en este portal es de uso exclusivo para el
+                  proyecto.
+                </p>
+              </section>
+            </div>
+          </div>
+        </div>
       </section>
     </>
   );

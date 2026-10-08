@@ -1065,29 +1065,169 @@ body {
   .nd-db .nd-table td.title { font-weight: 600; color: var(--ink); }
 }
 
-/* Portal: layout de página de Notion (banner + ícono + título). */
+/* Portal del cliente, en vidrio (como la solapa Hitos): todo va sobre dos luces de
+   marca que se mueven lento (.pt::before / ::after); cada bloque es un vidrio
+   esmerilado (.pt-glass). Arriba el banner grande y, apoyado en su borde, el vidrio
+   con el logo y la bienvenida. Después el anillo de avance, las etapas (las clases
+   .tl-* de Hitos) y, abajo, el calendario con la columna de reuniones, responsable
+   y confidencialidad. */
+@property --pt-p { syntax: "<number>"; inherits: true; initial-value: 0; }
+
 @layer components {
-  .portal-page { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; padding-bottom: 36px; }
-  .portal-cover { display: block; width: 100%; height: 180px; object-fit: cover; }
-  /* Sin banner cargado: el degradado de marca. */
-  .portal-cover.plain { background: var(--grad); }
+  .pt { --pt-blob-a: rgba(181, 12, 197, .17); --pt-blob-b: rgba(254, 111, 97, .16); position: relative; isolation: isolate; display: flex; flex-direction: column; gap: 18px; }
+  .dark .pt { --pt-blob-a: rgba(181, 12, 197, .24); --pt-blob-b: rgba(254, 111, 97, .17); }
+  .pt::before, .pt::after { content: ""; position: absolute; z-index: -1; border-radius: 50%; filter: blur(50px); pointer-events: none; }
+  /* Adentro de la página, con aire para su movimiento (tl-drift las corre ~7% y las
+     agranda 12%): si asoman por el borde, la página entera gana scroll lateral. */
+  .pt::before { width: 46%; height: 45%; left: 7%; top: 30%; background: radial-gradient(closest-side, var(--pt-blob-a), transparent); animation: tl-drift 22s ease-in-out infinite alternate; }
+  .pt::after { width: 42%; height: 45%; right: 8%; top: 50%; background: radial-gradient(closest-side, var(--pt-blob-b), transparent); animation: tl-drift 26s ease-in-out -9s infinite alternate-reverse; }
 
-  /* El contenido comparte el gutter del header para que todo quede alineado. */
-  .portal-page > .notion-doc, .portal-page > .empty-state { padding: 0 44px; }
-  .portal-page > .empty-state { margin: 4px 0 18px; }
-  .portal-head { padding: 28px 44px 6px; }
-  /* Con banner, el ícono lo monta encima como en Notion. position + z-index para
-     que quede por delante del banner (si no, el banner lo tapa). */
-  .portal-head.with-cover { position: relative; z-index: 1; padding-top: 0; margin-top: -34px; }
-  .portal-head h2 { font-family: var(--font-display); font-size: 27px; font-weight: 600; letter-spacing: -.8px; color: var(--navy); line-height: 1.2; margin-top: 14px; }
+  /* Vidrio esmerilado (el que se eligió para la línea de hitos): fondo
+     semitransparente con grilla de puntos, borde claro, brillo arriba y sombra. */
+  .pt-glass { position: relative; border-radius: 26px; background:
+    radial-gradient(circle at 1px 1px, rgba(37, 40, 81, .045) 1px, transparent 1.5px) 0 0 / 18px 18px,
+    rgba(255, 255, 255, .45);
+    -webkit-backdrop-filter: blur(22px) saturate(150%); backdrop-filter: blur(22px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, .7);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 12px 40px -18px rgba(37, 40, 81, .25); }
+  .dark .pt-glass { background:
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, .045) 1px, transparent 1.5px) 0 0 / 18px 18px,
+    rgba(255, 255, 255, .1);
+    border-color: rgba(255, 255, 255, .14);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 16px 48px -20px rgba(0, 0, 0, .6); }
+  .pt-pad { padding: 32px; }
+  #hitos.pt-pad { padding: 32px 32px 30px; }
+  .pt-sec { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 26px; }
+  .pt-sec h3 { margin: 0; font-family: var(--font-display); font-size: 15.5px; font-weight: 600; letter-spacing: -.3px; color: var(--navy); }
+  .pt-sec span { font-size: 12.5px; color: var(--muted); }
+  .pt > .empty-state { margin: 0; }
+  /* Sin esto, el ancho mínimo de la línea de etapas estira los bloques (son ítems
+     flex) en vez de desplazarse de costado dentro de su vidrio. */
+  .pt > * { min-width: 0; }
 
-  .portal-icon { display: block; width: 68px; height: 68px; font-size: 54px; line-height: 68px; }
-  .portal-icon img { width: 68px; height: 68px; object-fit: cover; border-radius: 12px; display: block; }
-  .portal-head.with-cover .portal-icon img { border: 3px solid var(--surface); }
-  /* El ícono es el logo del cliente: entero (contain) sobre blanco, no recortado. */
-  .portal-icon.logo img { object-fit: contain; background: #fff; padding: 6px; }
-  /* #252851 fijo: --navy se aclara en el tema oscuro. */
-  .portal-icon.initials { display: grid; place-items: center; border-radius: 12px; background: #252851; color: #fff; font-family: var(--font-display); font-size: 24px; font-weight: 600; line-height: 1; border: 3px solid var(--surface); }
+  /* Banner y, montado en su borde de abajo, el vidrio con logo y bienvenida. */
+  .pt-hero { display: block; width: 100%; height: 300px; object-fit: cover; border-radius: 28px; box-shadow: 0 20px 50px -28px rgba(37, 40, 81, .45); }
+  .pt-hero.plain { background: var(--grad); }
+  .pt-head { z-index: 1; margin: -128px 28px 0; display: flex; align-items: flex-end; gap: 22px; padding: 22px 26px; }
+  .pt-head h2 { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 600; letter-spacing: -.7px; line-height: 1.2; color: var(--navy); }
+  .pt-head p { margin: 6px 0 0; max-width: 66ch; font-size: 14px; line-height: 1.55; color: var(--muted); }
+  /* Oscuro: el vidrio del encabezado va sobre la foto, que puede ser clara; con un
+     tinte oscuro el texto (claro en este tema) se sigue leyendo. */
+  .dark .pt-head { background: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, .04) 1px, transparent 1.5px) 0 0 / 18px 18px, rgba(22, 20, 42, .62); }
+  /* El logo, entero sobre blanco; las iniciales, con #252851 fijo (--navy se aclara en oscuro). */
+  .pt-logo { flex-shrink: 0; width: 72px; height: 72px; border-radius: 18px; display: grid; place-items: center; overflow: hidden; background: #fff; box-shadow: 0 0 0 4px rgba(255, 255, 255, .7), 0 10px 26px -10px rgba(37, 40, 81, .4); }
+  .pt-logo img { width: 80%; height: 80%; object-fit: contain; }
+  .pt-logo.initials { background: #252851; color: #fff; font-family: var(--font-display); font-size: 24px; font-weight: 600; }
+  .dark .pt-logo { box-shadow: 0 0 0 4px rgba(255, 255, 255, .14), 0 10px 26px -10px rgba(0, 0, 0, .6); }
+
+  /* "Estamos en": el anillo se llena al abrir (anima --pt-p, registrada con @property). */
+  .pt-now { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 24px; padding: 28px 32px; }
+  .pt-ring { --pt-p: var(--p); width: 78px; height: 78px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--magenta), var(--coral) calc(var(--pt-p) * 1%), rgba(37, 40, 81, .1) 0); animation: pt-ring 1.3s cubic-bezier(.2, .75, .2, 1) both; }
+  .dark .pt-ring { background: conic-gradient(var(--magenta), var(--coral) calc(var(--pt-p) * 1%), rgba(255, 255, 255, .1) 0); }
+  @keyframes pt-ring { from { --pt-p: 0; } }
+  .pt-ring b { width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--navy); background: rgba(255, 255, 255, .78); font-variant-numeric: tabular-nums; }
+  .dark .pt-ring b { background: #1e1b38; }
+  .pt-now-txt small { font-size: 12.5px; color: var(--muted); }
+  .pt-now-txt h3 { margin: 3px 0 0; font-family: var(--font-display); font-size: 21px; font-weight: 600; letter-spacing: -.5px; line-height: 1.25; color: var(--navy); }
+  .pt-now-txt p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+  #hitos { scroll-margin-top: 90px; }
+
+
+  /* El calendario ocupa todo el ancho; debajo, lado a lado, el responsable y la
+     confidencialidad (las reuniones ya están en el calendario). */
+  .pt-grid { display: flex; flex-direction: column; gap: 18px; }
+  .pt-grid > * { min-width: 0; }
+  .pt-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; align-items: stretch; }
+  .pt-side > .empty-state { margin: 0; }
+  /* El calendario de Notion, translúcido para que se vea el vidrio. */
+  .pt-cal .nd-cal { --nd-day: rgba(255, 255, 255, .55); --nd-out: rgba(255, 255, 255, .25); --nd-ticket: rgba(255, 255, 255, .9); }
+  .dark .pt-cal .nd-cal { --nd-day: rgba(255, 255, 255, .04); --nd-out: rgba(0, 0, 0, .12); --nd-ticket: rgba(255, 255, 255, .1); }
+  .pt-cal .nd-cal-grid { background: rgba(37, 40, 81, .07); border-color: rgba(255, 255, 255, .6); }
+  .dark .pt-cal .nd-cal-grid { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .08); }
+  .pt-cal .nd-cal-week { background: transparent; }
+  .pt-cal .nd-cal-wd { background: transparent; }
+  .pt-cal .nd-tabs { border-bottom-color: rgba(37, 40, 81, .1); }
+
+  .pt-person { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .pt-avatar { flex-shrink: 0; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-display); font-size: 16px; font-weight: 600; color: #fff; background: var(--grad); }
+  .pt-person > b { display: block; font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--navy); }
+  /* Cada dato en su columna: el nombre del dato chico arriba y el valor abajo. */
+  .pt-facts { margin: 0; display: flex; flex-wrap: wrap; gap: 14px 40px; }
+  .pt-facts dt { font-size: 12px; color: var(--muted); }
+  .pt-facts dd { margin: 3px 0 0; font-size: 14.5px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .pt-note { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+
+  .pt-confid { display: flex; gap: 12px; align-items: flex-start; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+  .pt-confid > span { font-size: 18px; line-height: 1.3; }
+
+  /* Barra de etapas de la card del %: un segmento por etapa. */
+  .pt-steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 4px; width: min(260px, 32vw); }
+  .pt-steps li { flex: 1; height: 8px; border-radius: 99px; background: rgba(37, 40, 81, .1); }
+  .dark .pt-steps li { background: rgba(255, 255, 255, .1); }
+  .pt-steps li.done { background: var(--grad); }
+  .pt-steps li.doing { background: linear-gradient(90deg, var(--magenta) 50%, rgba(181, 12, 197, .25) 50%); }
+  .pt-steps li.current { box-shadow: 0 0 0 3px rgba(181, 12, 197, .18); }
+  /* Texto solo para lectores de pantalla (el nombre y estado de cada segmento). */
+  .pt-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  /* Editar portal: solapas General / Etapas / Hitos y sus listas. */
+  .modal-card.portal-editor-card { max-width: 640px; }
+  .pe-tabs { display: flex; gap: 4px; margin: -4px 0 18px; border-bottom: 1px solid var(--line); }
+  .pe-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--muted); cursor: pointer; }
+  .pe-tabs button:hover { color: var(--ink); }
+  .pe-tabs button.on { color: var(--magenta); border-bottom-color: var(--magenta); }
+  .pe-tabs button span { min-width: 18px; padding: 1px 6px; border-radius: 99px; font-size: 11px; background: var(--surface-2); color: var(--muted); }
+  .pe-tabs button.on span { background: rgba(181, 12, 197, .12); color: var(--magenta); }
+  .pe-panel { display: flex; flex-direction: column; gap: 14px; max-height: min(58vh, 520px); overflow-y: auto; padding-right: 2px; }
+  .pe-panel > .muted { margin: 0; font-size: 13px; line-height: 1.5; }
+  .pe-empty { margin: 0; padding: 18px; border: 1px dashed var(--line-strong); border-radius: 14px; font-size: 13px; color: var(--muted); text-align: center; }
+  .pe-add { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin: 0; background: none; border: 0; padding: 0; font-family: inherit; cursor: pointer; }
+
+  .pe-stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .pe-stages li { display: grid; grid-template-columns: 24px minmax(0, 1fr) 132px auto; gap: 8px; align-items: center; }
+  .pe-num { font-family: var(--font-display); font-size: 13px; font-weight: 600; color: var(--muted-2); text-align: center; }
+  .pe-stages input, .pe-stages select { font-family: inherit; font-size: 13.5px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink); min-width: 0; }
+  .pe-stages input:focus, .pe-stages select:focus { outline: none; border-color: var(--magenta); }
+  .pe-stages select.st-done { color: var(--ok); }
+  .pe-stages select.st-doing { color: var(--magenta); }
+  .pe-row-actions { display: flex; gap: 2px; }
+  .pe-row-actions button { width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 15px; cursor: pointer; }
+  .pe-row-actions button:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+  .pe-row-actions button.danger:hover:not(:disabled) { color: var(--down); }
+  .pe-row-actions button:disabled { opacity: .3; cursor: default; }
+
+  .pe-ms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .pe-ms li { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; }
+  .pe-ms li + li { border-top: 1px solid var(--line); }
+  .pe-ms li.editing { display: block; }
+  .pe-ms b { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pe-ms time { font-size: 12px; color: var(--muted); }
+  .pe-kind { --kind: var(--muted-2); justify-self: start; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; color: var(--kind); background: color-mix(in srgb, var(--kind) 12%, transparent); }
+  .pe-kind.kind-inicio { --kind: var(--magenta); }
+  .pe-kind.kind-entrega { --kind: #2f7de1; }
+  .pe-kind.kind-lanzamiento { --kind: #0e9fbf; }
+  .pe-kind.kind-hito { --kind: #7b6cf0; }
+  .pe-ms-form { padding: 14px; border-radius: 14px; background: var(--surface-2); }
+  .pe-ms-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .pe-ms-actions .link-danger { margin-right: auto; }
+  /* Solo la altura de su texto: no se estira hasta la del responsable. */
+  .pt-side .pt-confid { align-self: start; padding: 22px 28px; }
+  .pt-confid p { margin: 0; }
+  .pt-confid b { color: var(--ink); }
+
+  @media (max-width: 900px) {
+    .pt-grid { grid-template-columns: 1fr; }
+    .pt-hero { height: 200px; border-radius: 22px; }
+    .pt-head { margin: -70px 14px 0; flex-direction: column; align-items: flex-start; gap: 14px; padding: 18px 20px; }
+    .pt-head h2 { font-size: 22px; }
+    .pt-now { grid-template-columns: auto minmax(0, 1fr); padding: 18px 20px; }
+    .pt-now .pt-steps { grid-column: 1 / -1; width: 100%; }
+    .pt-pad, #hitos.pt-pad { padding: 22px 18px 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pt::before, .pt::after, .pt-ring { animation: none; }
+  }
 
   .portal-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 
@@ -1098,15 +1238,21 @@ body {
   .banner-drop:hover { border-color: var(--magenta); color: var(--magenta); }
   .banner-drop.has-banner { border-style: solid; }
   .banner-drop img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Más ancho que el modal común, para que la vista previa del banner tenga una
+     proporción parecida a la del portal (~6:1) y se recorte igual. */
+  .modal-card.portal-editor-card { max-width: 600px; }
+  .banner-crop { position: relative; height: auto; aspect-ratio: 6 / 1; cursor: grab; }
+  /* Absoluta y pegada a los bordes: en la grilla de .banner-drop, con la altura
+     dada por aspect-ratio, el height: 100% no se resuelve y la imagen quedaba con
+     su propia proporción (entera, sin nada que recortar ni mover). */
+  .banner-crop img { position: absolute; inset: 0; touch-action: none; user-select: none; }
+  .banner-crop:active { cursor: grabbing; }
+  .banner-crop-hint { position: absolute; right: 8px; bottom: 8px; font-size: 11.5px; font-weight: 600; color: #fff; background: rgba(0, 0, 0, .5); padding: 4px 9px; border-radius: 7px; pointer-events: none; opacity: 0; transition: opacity .14s; }
+  .banner-crop:hover .banner-crop-hint { opacity: 1; }
   .banner-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .banner-actions > span { font-size: 12px; color: var(--muted); }
   .banner-actions .logo-field-actions { margin-top: 0; }
 
-  @media (max-width: 720px) {
-    .portal-page > .notion-doc, .portal-page > .empty-state { padding: 0 20px; }
-    .portal-head { padding: 22px 20px 6px; }
-    .portal-cover { height: 130px; }
-  }
 }
 
 /* Paleta de opciones de Notion, para que los chips se vean como allá.
@@ -1857,4 +2003,84 @@ body {
     .journey-step, .journey-step + .journey-step { padding: 0 0 0 14px; border-left: 2px solid var(--line); }
     .journey-step + .journey-step::before { display: none; }
   }
+}
+
+/* Línea de hitos (en el Portal del cliente): el Timeline horizontal de Dice UI (punto de 14 px con borde de
+   2 px, conector de 2 px, título / fecha / descripción debajo) con un toque de
+   magia: los cumplidos en degradado con tilde, el activo con un halo que respira,
+   y el tramo que llega a él lleno según el tiempo transcurrido, con una luz en la
+   punta. Al abrir, puntos y tramos entran en una sola secuencia. Todo el
+   movimiento se apaga con prefers-reduced-motion. */
+@layer components {
+  .ms-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; padding: 10px 6px 10px; margin: -10px -6px 0; border-radius: 6px; }
+  .ms-scroll:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+  .ms-scroll.fade-start { mask-image: linear-gradient(90deg, transparent, #000 56px); }
+  .ms-scroll.fade-end { mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent); }
+  .ms-scroll.fade-start.fade-end { mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent); }
+
+  /* Las luces de marca del vidrio (las usa el portal, .pt::before / ::after). */
+  @keyframes tl-drift { from { transform: translate(-6%, -4%) scale(1); } to { transform: translate(8%, 6%) scale(1.12); } }
+
+  .tl { --dot: 14px; --thick: 2px; --gap: 6px; --step: 90ms; display: flex; align-items: flex-start; list-style: none; margin: 0; padding: 0; }
+  /* Todos del mismo ancho, repartidos a lo ancho del escenario; texto a la izquierda. */
+  .tl-item { position: relative; box-sizing: border-box; flex: 1 1 0; min-width: 180px; display: flex; flex-direction: column; gap: 14px; padding-right: 28px; }
+  .tl-item:last-child { padding-right: 0; }
+
+  /* Punto. */
+  .tl-dot { position: relative; z-index: 1; display: grid; place-items: center; width: var(--dot); height: var(--dot); box-sizing: border-box; border-radius: 50%; border: var(--thick) solid var(--line-strong); background: var(--surface); color: #fff; transition: transform .2s cubic-bezier(.3, 1.6, .5, 1); animation: tl-pop .45s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: calc(var(--i) * var(--step) * 2); }
+  .tl-item.completed .tl-dot { border: 0; background: var(--grad); }
+  /* Activo: anillo en degradado (borde transparente sobre dos fondos) y halo. */
+  .tl-item.active .tl-dot { border-color: transparent; background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--grad) border-box; }
+  .tl-item.active .tl-dot::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; background: radial-gradient(circle, rgba(181, 12, 197, .28), rgba(254, 111, 97, 0) 70%); animation: tl-breathe 2.6s ease-in-out infinite; }
+  .tl-item:hover .tl-dot { transform: scale(1.18); }
+  /* Oscuro: los puntos huecos, transparentes (dejan ver el tinte del escenario);
+     el anillo del activo, magenta liso, porque el truco del degradado necesita relleno. */
+  .dark .tl-dot { background-color: transparent; }
+  .dark .tl-item.active .tl-dot { background: transparent; border-color: var(--magenta); }
+  @keyframes tl-pop { from { transform: scale(0); opacity: 0; } }
+  @keyframes tl-breathe { 0%, 100% { transform: scale(.7); opacity: .5; } 50% { transform: scale(1.35); opacity: 1; } }
+
+  /* Conector al siguiente punto: base gris y, encima, lo recorrido (--fill). */
+  .tl-connector { position: absolute; top: calc(var(--dot) / 2 - var(--thick) / 2); left: calc(var(--dot) + var(--gap)); right: var(--gap); height: var(--thick); border-radius: var(--thick); background: var(--line); }
+  .tl-connector::before { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--fill) * 100%); border-radius: inherit; background: linear-gradient(90deg, var(--magenta), var(--coral)); transform-origin: left; animation: tl-draw .6s ease-out both; animation-delay: calc(var(--i) * var(--step) * 2 + var(--step)); }
+  @keyframes tl-draw { from { transform: scaleX(0); } }
+  /* El tramo en curso: un brillo que corre por lo recorrido y una luz en la punta. */
+  .tl-connector.travelling::before { background: linear-gradient(90deg, var(--magenta), var(--coral) 60%, #ffd0c9 80%, var(--coral)) 0 0 / 200% 100%; animation: tl-draw .6s ease-out both, tl-flow 2.4s linear infinite; animation-delay: calc(var(--i) * var(--step) * 2 + var(--step)), 0s; }
+  .tl-connector.travelling::after { content: ""; position: absolute; top: 50%; left: calc(var(--fill) * 100%); width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--coral), 0 0 12px 3px rgba(254, 111, 97, .55); animation: tl-pop .4s ease-out both, tl-glow 1.8s ease-in-out infinite; animation-delay: calc(var(--i) * var(--step) * 2 + var(--step) + .5s), 0s; }
+  @keyframes tl-flow { to { background-position: -200% 0; } }
+  @keyframes tl-glow { 50% { box-shadow: 0 0 0 2px var(--coral), 0 0 18px 6px rgba(254, 111, 97, .35); } }
+
+  /* Contenido: título, fecha y descripción, como en Dice UI. */
+  .tl-content { min-width: 0; display: flex; flex-direction: column; gap: 4px; animation: tl-rise .5s ease-out both; animation-delay: calc(var(--i) * var(--step) * 2 + 60ms); }
+  @keyframes tl-rise { from { opacity: 0; transform: translateY(6px); } }
+  .tl-kind { --kind: var(--muted-2); align-self: flex-start; margin-bottom: 2px; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; color: var(--kind); background: color-mix(in srgb, var(--kind) 12%, transparent); }
+  /* Colores del tipo de hito: ninguno verde, rojo ni naranja, para que no se lean
+     como "está bien" / "hay un problema" (lo que significan en el resto de la intranet). */
+  .tl-item.kind-inicio .tl-kind { --kind: var(--magenta); }
+  .tl-item.kind-entrega .tl-kind { --kind: #2f7de1; }
+  .tl-item.kind-lanzamiento .tl-kind { --kind: #0e9fbf; }
+  .tl-item.kind-hito .tl-kind { --kind: #7b6cf0; }
+  /* Oscuro: el texto se aclara hacia blanco y el fondo se marca más, por contraste. */
+  .dark .tl-kind { color: color-mix(in srgb, var(--kind) 62%, #fff); background: color-mix(in srgb, var(--kind) 24%, transparent); }
+  .tl-title { margin: 0; font-family: var(--font-display); font-size: 14.5px; font-weight: 600; letter-spacing: -.2px; line-height: 1.3; color: var(--navy); transition: color .15s; }
+  .tl-item:hover .tl-title { color: var(--magenta); }
+  .tl-item.pending .tl-title { color: var(--muted); }
+  .tl-time { font-size: 12px; color: var(--muted-2); font-variant-numeric: tabular-nums; }
+  .tl-desc { margin: 4px 0 0; font-size: 13px; line-height: 1.55; color: var(--muted); }
+  .tl-when { align-self: flex-start; margin-top: 6px; font-size: 12px; font-weight: 600; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  /* Los que vienen después del próximo: el mismo dato, sin destacar. */
+  .tl-item.pending .tl-when { background: none; color: var(--muted-2); font-weight: 500; }
+  .tl-content > .link-btn { align-self: flex-start; margin-top: 6px; font-size: 12px; font-weight: 500; color: var(--muted-2); }
+  .tl-content > .link-btn:hover, .tl-content > .link-btn:focus-visible { color: var(--magenta); }
+
+  @media (max-width: 560px) {
+    .tl-item { min-width: 165px; padding-right: 22px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tl-dot, .tl-content, .tl-connector::before, .tl-connector::after, .tl-item.active .tl-dot::after { animation: none !important; }
+    .tl-dot { transition: none; }
+  }
+
+  .stack-form textarea { font-family: inherit; font-size: 14px; line-height: 1.5; padding: 11px 14px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--surface); color: var(--ink); resize: vertical; }
+  .stack-form textarea:focus { outline: none; border-color: var(--magenta); }
 }
