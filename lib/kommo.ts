@@ -128,6 +128,8 @@ type KommoLead = {
   pipeline_id: number;
   responsible_user_id: number | null;
   created_at: number;
+  // Cuándo se cerró (ganada o perdida); null si sigue abierta.
+  closed_at: number | null;
   custom_fields_values: KommoField[] | null;
   _embedded?: {
     tags?: { name: string }[];
@@ -227,6 +229,7 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
         createdAt: new Date(r.created_at * 1000).toISOString(),
         // Kommo no guarda cuándo cambió la etapa (updated_at cambia con cualquier edición).
         stageChangedAt: null,
+        wonAt: won && r.closed_at ? new Date(r.closed_at * 1000).toISOString() : null,
         // Se completan abajo, con los contactos.
         contactCreatedAt: null,
         phoneKey: null,

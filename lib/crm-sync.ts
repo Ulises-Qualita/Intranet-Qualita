@@ -9,7 +9,7 @@ import { crmExclusions, crmStatusOf, type CrmLead, type CrmProvider } from "./cr
 import { todayISO } from "./format";
 import { syncKommoChats } from "./crm-chat-sync";
 import { readKommo, type KommoCredentials } from "./kommo";
-import { getOdooOpportunities, getOdooStages, odooConnect, type OdooCredentials } from "./odoo";
+import { getOdooOpportunities, getOdooStages, getOdooWonDates, odooConnect, type OdooCredentials } from "./odoo";
 import { matchSales, readSalesSheet } from "./sales-sheet";
 import { createAdminClient, isMissingTable } from "./supabase/server";
 
@@ -82,6 +82,19 @@ async function readCrm(secrets: CrmSecrets): Promise<{ leads: CrmLead[]; stages:
       getOdooOpportunities(session),
       getOdooStages(session).catch(() => []),
     ]);
+    // Si el historial no se puede leer, won_at queda vacío y las vistas cuentan
+    // esas ventas por la fecha de creación, como antes.
+    const won = leads.filter((l) => crmStatusOf(l, secrets.won_stages) === "won");
+    const wonDates = await getOdooWonDates(
+      session,
+      won.map((l) => l.externalId),
+      secrets.won_stages,
+    ).catch((e) => {
+      console.error("[crm] historial de etapas de Odoo", e instanceof Error ? e.message : e);
+      return null;
+    });
+    // Sin el paso en el historial, la oportunidad se creó ya ganada.
+    if (wonDates) for (const l of won) l.wonAt = wonDates.get(l.externalId) ?? l.createdAt;
     return { leads, stages };
   }
   if (secrets.provider === "kommo") {
@@ -228,12 +241,16 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     // presupuestos del CRM dejan de contar.
     const sales = secrets.sales_sheet ? await syncSales(db, clientId, secrets.sales_sheet.id, leads, excluded) : null;
     const sold = new Map<string, { ars: number | null; usd: number | null }>();
+    const soldOn = new Map<string, string>();
     for (const sale of sales?.rows ?? []) {
       if (!sale.lead_external_id) continue;
       const total = sold.get(sale.lead_external_id) ?? { ars: null, usd: null };
       if (sale.amount_ars) total.ars = (total.ars ?? 0) + Number(sale.amount_ars);
       if (sale.amount_usd) total.usd = (total.usd ?? 0) + Number(sale.amount_usd);
       sold.set(sale.lead_external_id, total);
+      // Se ganó con la primera venta confirmada.
+      const first = soldOn.get(sale.lead_external_id);
+      if (!first || sale.confirmed_on < first) soldOn.set(sale.lead_external_id, sale.confirmed_on);
     }
     if (sales) {
       for (const l of leads) statuses.set(l.externalId, sold.has(l.externalId) ? "won" : l.lost ? "lost" : "open");
@@ -280,6 +297,16 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         excluded: excluded.get(l.externalId) ?? null,
         // Solo la carga la planilla de ventas; sin ella queda vacía.
         amount_usd: sold.get(l.externalId)?.usd ?? null,
+        // Cuándo se ganó: con planilla, el día de la confirmación (al mediodía de
+        // Argentina, para que no cambie de día al pasarlo a UTC); si no, el CRM.
+        won_at:
+          statuses.get(l.externalId) !== "won"
+            ? null
+            : sales
+              ? soldOn.has(l.externalId)
+                ? `${soldOn.get(l.externalId)}T12:00:00-03:00`
+                : null
+              : l.wonAt,
       }));
 
       // Se sacan de a tandas, de la más nueva a la más vieja, así una migración
@@ -298,7 +325,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
       // Columna inexistente: 42703 si responde Postgres, PGRST204 si PostgREST no
       // la tiene en su schema cache.
       const faltaColumna = (e: { code?: string } | null) => e?.code === "42703" || e?.code === "PGRST204";
-      const tandas = [["amount_usd"], ["contact_created_at", "excluded"], ["stage_changed_at"], ["tags"], ["status", "owner", "ad"]];
+      const tandas = [["won_at"], ["amount_usd"],["contact_created_at", "excluded"], ["stage_changed_at"], ["tags"], ["status", "owner", "ad"]];
       let { error } = await upsert(rows);
       for (let n = 1; n <= tandas.length && faltaColumna(error); n++) {
         ({ error } = await upsert(sinColumnas(tandas.slice(0, n).flat())));

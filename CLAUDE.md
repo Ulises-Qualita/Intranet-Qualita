@@ -180,8 +180,8 @@ No hay framework de tests configurado todavía.
   y la cuenta del cliente solo lee (además, en el Portal el roadmap suma una solapa
   "Reuniones" al lado de Calendario y Etapas, con un calendario solo de reuniones:
   van en `db.extraEvents` y `buildCalendar(…, "extra")` lo arma; el Calendario las
-  muestra mezcladas con las etapas, y la solapa no aparece si no hay reuniones o si
-  la solapa Reuniones del cliente está desactivada): `intranet_meeting_notes` (clave = `Meeting.key`,
+  muestra mezcladas con las etapas, y la solapa no aparece si no hay reuniones; se
+  ven aunque la solapa Reuniones del cliente esté desactivada, pedido): `intranet_meeting_notes` (clave = `Meeting.key`,
   `docs/sql/2026-09-30-reuniones-notas.sql`), `lib/meeting-notes.ts`,
   `saveMeetingNote` valida que la clave sea de una reunión pasada del cliente.
 - Cuenta de servicio de Google: `lib/google.ts` (token por usuario + scope) la
@@ -291,10 +291,17 @@ No hay framework de tests configurado todavía.
   ninguna: el gasto va sin color) y `Kpi` lo dibuja con `change` / `versus` en lugar de
   `sub`. Solo se compara si el período anterior está entero dentro de lo guardado
   (`getMetaFirstDate` en META; primera oportunidad y `CRM_HISTORY_DAYS` en CRM); si no,
-  queda el texto de antes. En CRM se comparan Oportunidades y Ticket promedio, **no**
-  Ganadas ni Total en tickets: todo se cuenta por fecha de creación y el período
-  anterior tuvo más tiempo para cerrar ventas (para compararlas habría que guardar la
-  fecha de cierre). Falta llevarlo a WEB y Vista general.
+  queda el texto de antes. En CRM se comparan Oportunidades, Ticket promedio y
+  Ganadas (esta última solo si hay `won_at`). Falta llevarlo a WEB y Vista general.
+- Ganadas por fecha de cierre: `intranet_leads.won_at`
+  (`docs/sql/2026-10-09-leads-won-at.sql`). `crmPeriod()` recorta las oportunidades
+  (cantidad, origen, embudo) por `created_at` y las ventas (ganadas, tickets, ventas
+  por origen, vendedor, anuncio, etiqueta) por `won_at` (`wonDate()`; sin ella, la de
+  creación). La conversión sigue siendo de la camada creada en el período. Odoo:
+  `getOdooWonDates` lee el historial de etapas (`mail.tracking.value`, último paso de
+  una etapa no ganada a una ganada); `date_last_stage_update` no sirve porque pasar de
+  "Toma de medidas" a "En fábrica" lo pisa. Kommo: `closed_at`. Con planilla: la
+  primera fecha de confirmación.
 - Google Ads (solapa GADS, `/clientes/[slug]/gads`, solo equipo, área `meta`). La conexión
   es con la misma cuenta de servicio de Calendar y Drive (`lib/google.ts`, scope
   `https://www.googleapis.com/auth/adwords` en la delegación de dominio), sin OAuth por
@@ -398,7 +405,7 @@ No hay framework de tests configurado todavía.
   (`NotionTicket.portal`; el checkbox se elige en `/admin/notion` y, si no, se toma
   el que diga "portal"). **Diseño en vidrio** (clases `.pt-*` en `app/globals.css`),
   elegido por el usuario entre propuestas. De arriba hacia abajo: el banner grande con
-  un vidrio apoyado en su borde (logo + bienvenida); la card del % (`portal-progress.tsx`)
+  un vidrio apoyado en su borde (logo, nombre del cliente y título); la bienvenida debajo, fuera del vidrio y con una franja en degradado, separando el banner de las cards; la card del % (`portal-progress.tsx`)
   con las **etapas del proyecto** (% = completadas / total, "Estamos en" = la primera
   en curso o, si no, la primera pendiente, y una barra con un segmento por etapa; el
   anillo se llena al abrir con `@property --pt-p`); el calendario a todo el ancho

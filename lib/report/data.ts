@@ -14,6 +14,7 @@ import {
   getMetaCampaigns,
   getMetaDaily,
   getSales,
+  groupSellers,
   type Lead,
   type MetaAd,
   salesPeriod,
@@ -293,13 +294,15 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
   if (hasStatus) {
     const open = inPeriod.filter((l) => l.status === "open").length;
     const lost = inPeriod.filter((l) => l.status === "lost").length;
-    const won = inPeriod.filter((l) => l.status === "won").length;
+    // Las ventas van por fecha en que se ganaron; la tasa de cierre es de las
+    // captadas en el período.
+    const cohortWon = inPeriod.filter((l) => l.status === "won").length;
     pulse.push({ value: String(open), label: "Abiertas en el pipeline", tag: "a seguir" });
     pulse.push({ value: String(lost), label: "Perdidas / descartadas" });
     pulse.push({
-      value: String(won),
+      value: String(current.won ?? 0),
       label: "Ventas confirmadas",
-      tag: `Tasa de cierre del ${Math.round((won / total) * 100)}%`,
+      tag: `Tasa de cierre del ${Math.round((cohortWon / total) * 100)}%`,
     });
   }
 
@@ -330,15 +333,20 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
     .map(([stage, count]) => ({ stage, count, share: (count / total) * 100 }));
 
   // ----- Equipo -----
+  // "% de leads que ya pasó a venta": de las captadas en el período, no de las
+  // ventas del período (podría pasar el 100%).
   const sellers = hasStatus
-    ? current.sellers
+    ? groupSellers(
+        inPeriod,
+        inPeriod.filter((l) => l.status === "won"),
+      )
         .filter((s) => s.leads > 0)
         .map((s) => ({ name: s.name, won: s.won, leads: s.leads, pct: (s.won / s.leads) * 100 }))
         .sort((a, b) => b.pct - a.pct || b.leads - a.leads)
     : null;
 
   // ----- Ventas y ticket -----
-  const wonLeads = inPeriod.filter((l) => l.status === "won");
+  const wonLeads = current.wonLeads;
   const tickets = wonLeads.map((l) => l.amount).filter((a): a is number => !!a && a > 0);
   // Con planilla de ventas, la facturación oficial es la de ahí.
   const allSales = secrets?.sales_sheet ? await getSales(client.id) : null;

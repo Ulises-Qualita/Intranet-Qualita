@@ -18,7 +18,18 @@ const fullDay = (iso: string) => {
 // deslizando. Los meses llegan armados desde el server; acá solo se elige cuál ver.
 // Cada evento (fila de Notion o reunión) abre su detalle en un diálogo.
 // `twoLines`: la database tiene Entregable y cada evento lo muestra debajo del título.
-export function NotionCalendar({ months, initial, twoLines = false }: { months: CalMonth[]; initial: number; twoLines?: boolean }) {
+// `today` (ISO, del server): los días y eventos anteriores se dibujan apagados.
+export function NotionCalendar({
+  months,
+  initial,
+  twoLines = false,
+  today,
+}: {
+  months: CalMonth[];
+  initial: number;
+  twoLines?: boolean;
+  today: string;
+}) {
   const [index, setIndex] = useState(initial);
   const [open, setOpen] = useState<CalBar | null>(null);
   // Evento bajo el mouse: resalta todas sus barras (un rango que cruza de semana tiene dos).
@@ -111,7 +122,7 @@ export function NotionCalendar({ months, initial, twoLines = false }: { months: 
                 {week.days.map((day, i) => (
                   <div
                     key={day.iso}
-                    className={`nd-cal-day${day.inMonth ? "" : " out"}${day.isToday ? " today" : ""}`}
+                    className={`nd-cal-day${day.inMonth ? "" : " out"}${day.isToday ? " today" : ""}${day.iso < today ? " past" : ""}`}
                     style={{ gridColumn: i + 1 }}
                   >
                     <span className="nd-cal-num">{day.day}</span>
@@ -121,9 +132,12 @@ export function NotionCalendar({ months, initial, twoLines = false }: { months: 
                   const e = bar.event;
                   const classes = [
                     "nd-ev",
-                    // Reunión de Google Calendar (no es una fila de Notion): magenta, con hora.
-                    // Tarea: tarjeta clara con la franja del color de su etapa en Notion.
-                    e.kind === "meeting" ? `nd-meet${e.done ? " past" : ""}` : `nd-task acc-${e.color}`,
+                    // Reunión de Google Calendar (no es una fila de Notion): navy, con hora.
+                    // Tarea: tarjeta teñida con el color de su etapa.
+                    e.kind === "meeting" ? "nd-meet" : `nd-task acc-${e.color}`,
+                    // Ya terminó (su último día es anterior a hoy, o la reunión de hoy ya
+                    // pasó): más apagado.
+                    (bar.end.slice(0, 10) < today || e.done) && "past",
                     bar.fromPrev && "from-prev",
                     bar.toNext && "to-next",
                     // Un rango que cruza de semana son dos barras: se resaltan juntas.

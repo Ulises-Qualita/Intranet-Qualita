@@ -43,6 +43,9 @@ export type CrmLead = {
   createdAt: string;
   // Último cambio de etapa, si el CRM lo informa (Odoo sí, Kommo no).
   stageChangedAt: string | null;
+  // Cuándo se ganó, si el CRM lo informa (Kommo: closed_at; Odoo: historial de
+  // etapas). Las ganadas se cuentan por esta fecha y no por la de creación.
+  wonAt: string | null;
   // Cuándo se creó en el CRM el contacto del lead, si el CRM lo informa (Kommo sí).
   contactCreatedAt: string | null;
   // Teléfono del contacto reducido a sus últimos 10 dígitos: solo para detectar

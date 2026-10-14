@@ -26,11 +26,12 @@ export const CLIENT_BASE = "/mi-empresa";
 // "Editar cliente"; esas no aparecen aunque la integración esté conectada.
 export function clientTabs(client: Client) {
   const tabs: { href: string; label: string; show: boolean; tab?: TabKey }[] = [
+    // El portal, primero de todo (pedido).
+    { href: `${CLIENT_BASE}/portal`, label: "Portal del cliente", show: client.conn.notion, tab: "portal" },
     { href: CLIENT_BASE, label: "Vista general", show: true },
     { href: `${CLIENT_BASE}/meta`, label: "META", show: client.conn.meta, tab: "meta" },
     { href: `${CLIENT_BASE}/crm`, label: "CRM", show: client.conn.crm, tab: "crm" },
     { href: `${CLIENT_BASE}/web`, label: "WEB", show: client.conn.clarity, tab: "web" },
-    { href: `${CLIENT_BASE}/portal`, label: "Portal del cliente", show: client.conn.notion, tab: "portal" },
     { href: `${CLIENT_BASE}/reuniones`, label: "Reuniones", show: calendarConfigured(), tab: "reuniones" },
     { href: `${CLIENT_BASE}/drive`, label: "Drive", show: client.conn.drive && driveConfigured(), tab: "drive" },
     // Siempre visible: si no hay nadie asignado, la vista lo dice.

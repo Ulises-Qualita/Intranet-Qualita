@@ -79,16 +79,18 @@ const isEmptyCell = (cell: DbCell) =>
 // Calendario mensual, un mes a la vez como la vista de Notion. Los meses se arman
 // acá (server) y el componente cliente solo navega.
 function DbCalendar({ db, dateColumn }: { db: EmbeddedDb; dateColumn: number }) {
-  const { months, initial, twoLines } = buildCalendar(db, dateColumn, todayISO());
+  const today = todayISO();
+  const { months, initial, twoLines } = buildCalendar(db, dateColumn, today);
   if (!months.length) return <p className="nd-unsupported">Ninguna fila tiene fecha todavía.</p>;
-  return <NotionCalendar months={months} initial={initial} twoLines={twoLines} />;
+  return <NotionCalendar months={months} initial={initial} twoLines={twoLines} today={today} />;
 }
 
 // Solapa "Reuniones": el mismo calendario, solo con las reuniones de Google
 // Calendar (db.extraEvents). No es una vista de Notion.
 function DbMeetings({ db }: { db: EmbeddedDb }) {
-  const { months, initial, twoLines } = buildCalendar(db, -1, todayISO(), "extra");
-  return <NotionCalendar months={months} initial={initial} twoLines={twoLines} />;
+  const today = todayISO();
+  const { months, initial, twoLines } = buildCalendar(db, -1, today, "extra");
+  return <NotionCalendar months={months} initial={initial} twoLines={twoLines} today={today} />;
 }
 
 // Tablero: una columna por grupo, en el orden y color de Notion. Las tarjetas

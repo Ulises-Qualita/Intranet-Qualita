@@ -4,7 +4,6 @@ import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { EmptyState } from "@/components/ui";
 import { attendeeName, calendarConfigured, getClientMeetings } from "@/lib/calendar";
-import { isTabHidden } from "@/lib/client-tabs";
 import { type Client, getNotionConfig, getPortalSettings } from "@/lib/data";
 import { getMeetingNotes } from "@/lib/meeting-notes";
 import { getTickets, notionConfigured, notionErrorMessage } from "@/lib/notion";
@@ -23,10 +22,11 @@ const hour = new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digi
 const localDay = new Intl.DateTimeFormat("en-CA", { timeZone: TZ });
 
 // Reuniones con el cliente (Google Calendar), en el calendario del roadmap y en su
-// solapa "Reuniones". Nada si Calendar no está configurado, si la solapa Reuniones
-// está desactivada para quien mira, o si falla la lectura: el portal no depende de esto.
-async function portalMeetings(client: Client, internal: boolean): Promise<ExtraEvent[]> {
-  if (!calendarConfigured() || isTabHidden(client.hiddenTabs, internal ? "team" : "client", "reuniones")) return [];
+// solapa "Reuniones". Se ven aunque la solapa Reuniones del cliente esté desactivada
+// (pedido). Nada si Calendar no está configurado o si falla la lectura: el portal
+// no depende de esto.
+async function portalMeetings(client: Client): Promise<ExtraEvent[]> {
+  if (!calendarConfigured()) return [];
   const [{ upcoming, past, error }, notes] = await Promise.all([
     getClientMeetings(client.name),
     getMeetingNotes(client.id),
@@ -85,10 +85,10 @@ async function portalRoadmap(client: Client): Promise<Roadmap> {
 // El estado de Notion traducido para el cliente: los internos (Bloqueado,
 // Feedback…) no se muestran, salen del mismo mapeo que usan las Tareas.
 const STAGE_STATUS: Record<TaskStatus, { name: string; color: string }> = {
-  todo: { name: "Pendiente", color: "gray" },
-  doing: { name: "En curso", color: "blue" },
-  blocked: { name: "En curso", color: "blue" },
-  done: { name: "Completada", color: "green" },
+  todo: { name: "Pendiente", color: "coral" },
+  doing: { name: "En curso", color: "magenta" },
+  blocked: { name: "En curso", color: "magenta" },
+  done: { name: "Completada", color: "lavender" },
 };
 
 // En Notion los tickets suelen llamarse "<Etapa> - <Cliente>"; acá el cliente ya
@@ -155,7 +155,7 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
   const [{ settings, missing }, roadmap, meetings, { milestones, missingTable: milestonesMissing }] = await Promise.all([
     getPortalSettings(c.id),
     portalRoadmap(c),
-    portalMeetings(c, internal),
+    portalMeetings(c),
     getMilestones(c.id),
   ]);
   const today = todayISO();
@@ -240,13 +240,16 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
               </span>
             )}
             <div>
+              <span className="pt-eyebrow">{c.name}</span>
               <h2>Portal de cliente</h2>
-              <p>
-                Bienvenidos al portal de cliente x Qualita Studio. Acá van a encontrar en tiempo real el estado de avance,
-                los próximos pasos y toda la documentación del proyecto.
-              </p>
             </div>
           </header>
+
+          {/* La bienvenida, fuera del vidrio: separa el encabezado de las cards. */}
+          <p className="pt-intro">
+            Bienvenidos al portal de cliente x Qualita Studio. Acá van a encontrar en tiempo real el estado de avance,
+            los próximos pasos y toda la documentación del proyecto.
+          </p>
 
           {/* El % sale de las etapas que define el equipo en Editar portal → Etapas. */}
           {settings.stages.length > 0 ? (

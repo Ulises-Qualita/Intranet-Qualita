@@ -149,6 +149,55 @@ export async function getOdooStages(session: OdooSession) {
   return rows.map((s) => s.name);
 }
 
+// Cuándo se ganó cada oportunidad: el último paso de una etapa no ganada a una
+// ganada, según el historial de etapas (mail.tracking.value). date_last_stage_update
+// no sirve: pasar de "Toma de medidas" a "En fábrica" lo pisa, y la venta del mes
+// pasado aparecería como de hoy. Sin etapas elegidas, valen las is_won de Odoo.
+// Las que no tienen ese paso en el historial (creadas ya en una etapa ganada)
+// quedan afuera del mapa.
+export async function getOdooWonDates(session: OdooSession, leadIds: string[], wonStages: string[] | undefined) {
+  const found = new Map<string, string>();
+  if (!leadIds.length) return found;
+
+  const stages = await query<{ id: number; name: string; is_won: boolean }[]>(session, "crm.stage", "search_read", [
+    [],
+    ["id", "name", "is_won"],
+  ]);
+  const wonIds = stages.filter((s) => (wonStages?.length ? wonStages.includes(s.name) : s.is_won)).map((s) => s.id);
+  if (!wonIds.length) return found;
+
+  const changes = await query<{ mail_message_id: [number, string] | false; create_date: string }[]>(
+    session,
+    "mail.tracking.value",
+    "search_read",
+    [
+      [
+        ["field_id.model", "=", "crm.lead"],
+        ["field_id.name", "=", "stage_id"],
+        ["new_value_integer", "in", wonIds],
+        ["old_value_integer", "not in", wonIds],
+        ["mail_message_id.model", "=", "crm.lead"],
+        ["mail_message_id.res_id", "in", leadIds.map(Number)],
+      ],
+      ["mail_message_id", "create_date"],
+    ],
+  );
+  // El cambio trae el mensaje, no la oportunidad: el id de la oportunidad sale del mensaje.
+  const messageIds = [...new Set(changes.flatMap((c) => (c.mail_message_id ? [c.mail_message_id[0]] : [])))];
+  if (!messageIds.length) return found;
+  const messages = await query<{ id: number; res_id: number }[]>(session, "mail.message", "read", [messageIds, ["res_id"]]);
+  const leadOf = new Map(messages.map((m) => [m.id, String(m.res_id)]));
+
+  for (const change of changes) {
+    const lead = change.mail_message_id ? leadOf.get(change.mail_message_id[0]) : undefined;
+    if (!lead) continue;
+    // UTC y sin zona, como el resto de las fechas de Odoo.
+    const at = `${change.create_date.replace(" ", "T")}Z`;
+    if (at > (found.get(lead) ?? "")) found.set(lead, at);
+  }
+  return found;
+}
+
 // Odoo marca la prioridad con estrellas ('0' a '3'); la intranet usa temperatura.
 const temperatureOf = (priority: string | false | undefined, probability: number | false | undefined) => {
   if (priority === "3") return "hot";
@@ -192,6 +241,8 @@ export async function getOdooOpportunities(session: OdooSession): Promise<CrmLea
     createdAt: r.create_date ? `${r.create_date.replace(" ", "T")}Z` : new Date().toISOString(),
     // Odoo devuelve las fechas en UTC y sin zona.
     stageChangedAt: r.date_last_stage_update ? `${r.date_last_stage_update.replace(" ", "T")}Z` : null,
+    // Sale del historial de etapas (getOdooWonDates), una vez resuelto qué cuenta como ganada.
+    wonAt: null,
     // No se lee el contacto de Odoo: ahí las oportunidades no nacen de una agenda importada.
     contactCreatedAt: null,
     phoneKey: null,

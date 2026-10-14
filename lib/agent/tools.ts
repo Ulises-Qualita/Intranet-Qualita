@@ -322,7 +322,7 @@ const crmResumen: AgentTool = {
   definition: {
     name: "crm_resumen",
     description:
-      "Estado del CRM de un cliente en el período: leads, conversión, ticket promedio, embudo por etapa, rendimiento por vendedor, por anuncio, por origen y por etiqueta. Si el cliente registra las ventas en una planilla, trae además `ventas_planilla`: la facturación oficial, por fecha de confirmación, en pesos y en dólares por separado (no se convierten).",
+      "Estado del CRM de un cliente en el período: leads, conversión, ticket promedio, embudo por etapa, rendimiento por vendedor, por anuncio, por origen y por etiqueta. Los leads se cuentan por fecha de creación; las ganadas, la facturación y los tickets, por la fecha en que se ganaron. conversion_pct es de los leads creados en el período que ya se cerraron. Si el cliente registra las ventas en una planilla, trae además `ventas_planilla`: la facturación oficial, por fecha de confirmación, en pesos y en dólares por separado (no se convierten).",
     input_schema: {
       type: "object",
       properties: { ...CLIENTE_PROP, ...DIAS_PROP },
@@ -359,7 +359,7 @@ const crmResumen: AgentTool = {
       },
       ventas_planilla: sheet
         ? {
-            nota: "Fuente oficial de ventas. Cuenta por fecha de confirmación del proyecto. En los cortes por lead (ganadas, facturación, vendedores y anuncios de arriba), ganada = tiene venta en la planilla y el monto es el de esa venta en pesos; esos cortes van por fecha de creación del lead.",
+            nota: "Fuente oficial de ventas. Cuenta por fecha de confirmación del proyecto. En los cortes por lead (ganadas, facturación, vendedores y anuncios de arriba), ganada = tiene venta en la planilla y el monto es el de esa venta en pesos; también van por fecha de confirmación.",
             ventas: sheet.sales.length,
             facturacion_pesos: round(sheet.ars.total),
             ticket_promedio_pesos: sheet.ars.avg === null ? null : round(sheet.ars.avg),
