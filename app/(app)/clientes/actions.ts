@@ -18,11 +18,11 @@ import {
   BANNER_TYPES,
   BANNERS_BUCKET,
   type BannerPosition,
-  type PortalStage,
+  type PortalPhase,
   type PortalValidator,
   parseBannerPosition,
+  parsePhase,
   parsePortal,
-  parseStages,
 } from "@/lib/portal";
 import { MEETINGS_TAG } from "@/lib/calendar";
 import { KommoError, kommoAccount, normalizeKommoUrl } from "@/lib/kommo";
@@ -656,13 +656,15 @@ export async function savePortalValidator(clientId: string, validator: PortalVal
   });
 }
 
-// Etapas del proyecto (la card del % del portal): se guarda la lista entera, en
-// orden. Sin etapas, la card no aparece.
-export async function savePortalStages(clientId: string, stages: PortalStage[]): Promise<FormState> {
-  const clean = parseStages(stages);
+// Etapa del proyecto (la card del % del portal): en cuál está el cliente y cuánto
+// lleva de ella. null la borra y la card no aparece. `stages` es la lista libre de
+// antes, reemplazada por las tres etapas fijas: se limpia al guardar.
+export async function savePortalPhase(clientId: string, phase: PortalPhase | null): Promise<FormState> {
+  const clean = parsePhase(phase);
   return updatePortal(clientId, (portal) => {
-    if (clean.length) portal.stages = clean;
-    else delete portal.stages;
+    delete portal.stages;
+    if (clean) portal.phase = clean;
+    else delete portal.phase;
   });
 }
 

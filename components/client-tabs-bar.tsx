@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
-import { RANGES, readPeriod } from "@/lib/period";
+import { monthShortcuts, readPeriod } from "@/lib/period";
 import { CustomRange } from "./custom-range";
 import { Icon } from "./icons";
 import { NavLink } from "./nav-link";
@@ -26,12 +26,12 @@ export function ClientTabsBar({ base, tabs, periodTabs }: { base: string; tabs: 
   // Cambiar el período navega dentro de una transición: la vista anterior queda
   // (atenuada por CSS con data-pending) hasta que llegan los números nuevos, en
   // vez de pasar por el esqueleto. Para eso META, CRM y Vista general no tienen
-  // un loading.tsx que se reinicie con ?dias= (ver (general)/ en el layout).
+  // un loading.tsx que se reinicie con ?mes= (ver (general)/ en el layout).
   const [pending, startTransition] = useTransition();
-  const [target, setTarget] = useState<number | null>(null);
+  const [target, setTarget] = useState<string | null>(null);
 
   const query = new URLSearchParams();
-  for (const key of ["dias", "desde", "hasta"]) {
+  for (const key of ["mes", "dias", "desde", "hasta"]) {
     const value = params.get(key);
     if (value) query.set(key, value);
   }
@@ -46,12 +46,12 @@ export function ClientTabsBar({ base, tabs, periodTabs }: { base: string; tabs: 
   // para que la barra no cambie de alto entre solapas.
   const showRange = !!current && pathname === base + current.suffix && periodTabs.includes(current.suffix);
 
-  function navigate(href: string, days: number | null = null) {
-    setTarget(days);
+  function navigate(href: string, month: string | null = null) {
+    setTarget(month);
     startTransition(() => router.push(href));
   }
   // Mientras carga, el atajo elegido ya se ve marcado.
-  const shownDays = pending ? target : period.days;
+  const shownMonth = pending ? target : (period.month ?? null);
 
   return (
     <div className="client-tabbar" data-pending={pending || undefined}>
@@ -75,14 +75,15 @@ export function ClientTabsBar({ base, tabs, periodTabs }: { base: string; tabs: 
       )}
       <div className={`client-tabbar-range${showRange ? "" : " off"}`} inert={!showRange}>
         <div className="range">
-          {RANGES.map((r) => (
+          {/* Los últimos tres meses; el actual, hasta hoy. */}
+          {monthShortcuts().map((m) => (
             <button
-              key={r}
+              key={m.month}
               type="button"
-              className={r === shownDays ? "on" : undefined}
-              onClick={() => navigate(`${pathname}?dias=${r}`, r)}
+              className={m.month === shownMonth ? "on" : undefined}
+              onClick={() => navigate(`${pathname}?mes=${m.month}`, m.month)}
             >
-              {r} días
+              {m.label}
             </button>
           ))}
           <CustomRange basePath={pathname} period={period} navigate={(href) => navigate(href)} />

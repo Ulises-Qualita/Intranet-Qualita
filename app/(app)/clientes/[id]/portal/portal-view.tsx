@@ -206,7 +206,7 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
               validator={settings.validator}
               banner={cover}
               bannerPosition={settings.bannerPosition}
-              stages={settings.stages}
+              phase={settings.phase}
               milestones={milestones}
               milestonesMissing={milestonesMissing}
             />
@@ -248,13 +248,13 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
             </div>
           </header>
 
-          {/* El % sale de las etapas que define el equipo en Editar portal → Etapas. */}
-          {settings.stages.length > 0 ? (
-            <PortalProgress stages={settings.stages} />
+          {/* El % sale de la etapa que elige el equipo en Editar portal → Etapas. */}
+          {settings.phase ? (
+            <PortalProgress phase={settings.phase} />
           ) : (
             internal && (
               <EmptyState label="Sin etapas">
-                Definí las etapas del proyecto en <b>Editar portal → Etapas</b> para mostrar el avance.
+                Elegí la etapa del proyecto en <b>Editar portal → Etapas</b> para mostrar el avance.
               </EmptyState>
             )
           )}

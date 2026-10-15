@@ -568,13 +568,15 @@ export type Lead = {
   // Parte en dólares de la venta, solo con planilla de ventas (`amount` lleva la
   // parte en pesos).
   amount_usd: number | null;
+  // Cuándo pasó a ganada (ver CrmLead.wonAt); null si no se sabe.
+  won_at: string | null;
 };
 
 const LEAD_COLUMNS = "id, external_id, name, source, amount, stage, temperature, created_at";
 // Columnas agregadas después (ver docs/sql/), de a tandas y de la más vieja a la
 // más nueva: mientras la base no tenga alguna, se lee sin ella (y sin las
 // posteriores) en vez de romper.
-const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"], ["stage_changed_at"], ["excluded"], ["amount_usd"]];
+const LEAD_EXTRA_COLUMNS = [["status", "owner", "ad"], ["tags"], ["stage_changed_at"], ["excluded"], ["amount_usd"], ["won_at"]];
 
 // Fila como está guardada: `excluded` trae el motivo de los leads que no cuentan
 // como oportunidad nueva (crmExclusions en lib/crm-shared.ts).
@@ -626,8 +628,13 @@ export async function getLeads(clientId: string): Promise<Lead[]> {
     stage_changed_at: l.stage_changed_at ?? null,
     amount: l.amount === null ? null : Number(l.amount),
     amount_usd: l.amount_usd === null || l.amount_usd === undefined ? null : Number(l.amount_usd),
+    won_at: l.won_at ?? null,
   }));
 }
+
+// Día en que se cuenta la venta: cuando pasó a ganada o, si no se sabe, cuando se
+// creó la oportunidad. Solo para las ganadas.
+export const saleDay = (lead: Lead) => localDate(lead.won_at ?? lead.created_at);
 
 // ---------- Ventas desde la planilla (intranet_crm_sales) ----------
 
@@ -763,21 +770,27 @@ function stripSharedPrefix(names: string[]) {
   return new Map(real.map((words) => [words.join(" "), words.slice(shared).join(" ")]));
 }
 
-// Rendimiento por vendedor. El ticket promedio sale de las ventas que lo tienen
-// cargado, igual que el KPI: las vacías no cuentan como cero.
-function groupSellers(leads: Lead[]): SellerStats[] {
+// Rendimiento por vendedor: oportunidades creadas en el período (leads) y ventas
+// del período por fecha de venta (sold), que pueden ser de leads anteriores. El
+// ticket promedio sale de las ventas que lo tienen cargado, igual que el KPI: las
+// vacías no cuentan como cero.
+function groupSellers(leads: Lead[], sold: Lead[]): SellerStats[] {
   const bySeller = new Map<string, SellerStats>();
-
-  for (const lead of leads) {
+  const sellerOf = (lead: Lead) => {
     const name = lead.owner ?? UNASSIGNED;
     const seller = bySeller.get(name) ?? { name, leads: 0, won: 0, tickets: 0, ticketAvg: null, ticketTotal: 0 };
-    seller.leads += 1;
-    if (lead.status === "won") seller.won += 1;
+    bySeller.set(name, seller);
+    return seller;
+  };
+
+  for (const lead of leads) sellerOf(lead).leads += 1;
+  for (const lead of sold) {
+    const seller = sellerOf(lead);
+    seller.won += 1;
     if (lead.amount && lead.amount > 0) {
       seller.tickets += 1;
       seller.ticketTotal += lead.amount;
     }
-    bySeller.set(name, seller);
   }
 
   const shortNames = stripSharedPrefix([...bySeller.keys()]);
@@ -793,24 +806,33 @@ function groupSellers(leads: Lead[]): SellerStats[] {
 // usdTotal: la parte en dólares de las ventas, solo con planilla de ventas.
 export type AdStats = { name: string; leads: number; won: number; tickets: number; ticketTotal: number; usdTotal: number };
 
-// Rendimiento por anuncio. Solo entran las oportunidades que traen el anuncio
-// cargado: el resto no se puede atribuir y contarlas como "sin anuncio" mezclaría
-// las que vinieron por otro canal con las que nadie completó.
-function groupAds(leads: Lead[]): AdStats[] {
+// Rendimiento por anuncio: oportunidades creadas en el período y ventas del
+// período por fecha de venta, como los vendedores. Solo entran las que traen el
+// anuncio cargado: el resto no se puede atribuir y contarlas como "sin anuncio"
+// mezclaría las que vinieron por otro canal con las que nadie completó.
+function groupAds(leads: Lead[], sold: Lead[]): AdStats[] {
   const byAd = new Map<string, AdStats>();
+  const adOf = (lead: Lead) => {
+    const name = lead.ad?.trim();
+    if (!name) return null;
+    const ad = byAd.get(name) ?? { name, leads: 0, won: 0, tickets: 0, ticketTotal: 0, usdTotal: 0 };
+    byAd.set(name, ad);
+    return ad;
+  };
 
   for (const lead of leads) {
-    const name = lead.ad?.trim();
-    if (!name) continue;
-    const ad = byAd.get(name) ?? { name, leads: 0, won: 0, tickets: 0, ticketTotal: 0, usdTotal: 0 };
-    ad.leads += 1;
-    if (lead.status === "won") ad.won += 1;
+    const ad = adOf(lead);
+    if (ad) ad.leads += 1;
+  }
+  for (const lead of sold) {
+    const ad = adOf(lead);
+    if (!ad) continue;
+    ad.won += 1;
     if (lead.amount && lead.amount > 0) {
       ad.tickets += 1;
       ad.ticketTotal += lead.amount;
     }
     if (lead.amount_usd && lead.amount_usd > 0) ad.usdTotal += lead.amount_usd;
-    byAd.set(name, ad);
   }
 
   return [...byAd.values()].sort((a, b) => b.leads - a.leads || b.ticketTotal - a.ticketTotal);
@@ -835,7 +857,7 @@ function isShortNameOf(crm: string[], meta: string[]) {
 // corto que lo contiene; entre varios, el de más gasto. Los que no aparecen en
 // Meta (Google Ads, ids sueltos) quedan como estaban. Varios nombres del CRM
 // pueden caer en el mismo anuncio: se suman.
-export function withMetaAdNames(crmAds: AdStats[], metaAds: MetaAd[]): AdStats[] {
+export function withMetaAdNames(crmAds: AdStats[], metaAds: Pick<MetaAd, "name" | "spend">[]): AdStats[] {
   const spend = new Map<string, number>();
   for (const ad of metaAds) spend.set(ad.name.trim(), (spend.get(ad.name.trim()) ?? 0) + ad.spend);
   const meta = [...spend.keys()].map((name) => ({ name, tokens: adTokens(name) }));
@@ -895,58 +917,72 @@ function groupSources(leads: Lead[]): SourceStats[] {
 
 export type TagStats = { name: string; leads: number; won: number; ticketTotal: number };
 
-// Oportunidades por etiqueta. Una oportunidad puede tener varias, así que la
-// suma de las filas no da el total de oportunidades.
-function groupTags(leads: Lead[]): TagStats[] | null {
-  if (leads.some((l) => l.tags === null)) return null;
+// Oportunidades por etiqueta (creadas en el período) y sus ventas (por fecha de
+// venta). Una oportunidad puede tener varias, así que la suma de las filas no da
+// el total de oportunidades.
+function groupTags(leads: Lead[], sold: Lead[]): TagStats[] | null {
+  if ([...leads, ...sold].some((l) => l.tags === null)) return null;
   const byTag = new Map<string, TagStats>();
-  for (const lead of leads) {
+  const tagOf = (name: string) => {
+    const tag = byTag.get(name) ?? { name, leads: 0, won: 0, ticketTotal: 0 };
+    byTag.set(name, tag);
+    return tag;
+  };
+  for (const lead of leads) for (const name of lead.tags ?? []) tagOf(name).leads += 1;
+  for (const lead of sold) {
     for (const name of lead.tags ?? []) {
-      const tag = byTag.get(name) ?? { name, leads: 0, won: 0, ticketTotal: 0 };
-      tag.leads += 1;
-      if (lead.status === "won") tag.won += 1;
+      const tag = tagOf(name);
+      tag.won += 1;
       if (lead.amount && lead.amount > 0) tag.ticketTotal += lead.amount;
-      byTag.set(name, tag);
     }
   }
   return [...byTag.values()].sort((a, b) => b.leads - a.leads);
 }
 
-// Corte por período para la vista de CRM: qué leads entran y qué se calcula
-// sobre ellos, siempre por fecha de creación.
+// Corte por período para la vista de CRM. Las oportunidades van por fecha de
+// creación; las ventas (ganadas, tickets, facturación), por fecha de venta: un
+// lead de agosto que se gana en octubre es una venta de octubre (saleDay).
 export function crmPeriod(leads: Lead[], period: Period | number) {
   const { since, until } = toPeriod(period);
   const inPeriod = leads.filter((l) => {
     const day = localDate(l.created_at);
     return day >= since && day <= until;
   });
+  const sold = leads.filter((l) => {
+    if (l.status !== "won") return false;
+    const day = saleDay(l);
+    return day >= since && day <= until;
+  });
   // Sin la columna de estado no se puede saber qué pasó con cada lead.
   const hasStatus = leads.some((l) => l.status);
+  // La conversión sí es de las creadas en el período: qué parte de ellas se ganó.
   const closed = inPeriod.filter((l) => l.status === "won" || l.status === "lost").length;
-  const won = inPeriod.filter((l) => l.status === "won").length;
+  const wonOfPeriod = inPeriod.filter((l) => l.status === "won").length;
   // En el CRM el origen es opcional: el porcentaje se calcula sobre las que lo
   // tienen cargado, no sobre el total, que daría un número diluido.
   const withSource = inPeriod.filter((l) => l.source).length;
 
   // El ticket lo carga el vendedor al cerrar la venta, así que promedia solo
   // sobre las que lo tienen: contar las vacías como cero hundiría el número.
-  const tickets = inPeriod.map((l) => l.amount).filter((a): a is number => a !== null && a > 0);
+  const tickets = sold.map((l) => l.amount).filter((a): a is number => a !== null && a > 0);
 
   return {
     leads: inPeriod,
-    won: hasStatus ? won : null,
-    conversion: hasStatus && closed ? (won * 100) / closed : null,
+    // Las ventas del período, por fecha de venta.
+    sold,
+    won: hasStatus ? sold.length : null,
+    conversion: hasStatus && closed ? (wonOfPeriod * 100) / closed : null,
     withSource,
     fromMeta: inPeriod.filter((l) => l.source && META_SOURCE.test(l.source)).length,
     tickets: tickets.length,
     ticketAvg: tickets.length ? tickets.reduce((total, t) => total + t, 0) / tickets.length : null,
     ticketTotal: tickets.reduce((total, t) => total + t, 0),
-    sellers: groupSellers(inPeriod),
+    sellers: groupSellers(inPeriod, sold),
     sources: groupSources(inPeriod),
     // Sin la columna de estado no hay forma de saber cuáles son ventas.
-    wonSources: hasStatus ? groupSources(inPeriod.filter((l) => l.status === "won")) : null,
-    ads: groupAds(inPeriod),
-    tags: groupTags(inPeriod),
+    wonSources: hasStatus ? groupSources(sold) : null,
+    ads: groupAds(inPeriod, sold),
+    tags: groupTags(inPeriod, sold),
   };
 }
 

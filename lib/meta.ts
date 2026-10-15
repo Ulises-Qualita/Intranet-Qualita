@@ -354,3 +354,146 @@ export async function getAdPreview(token: string, adId: string): Promise<AdPrevi
   }
   return null;
 }
+
+// ---------- Configuración de la cuenta (para "Analizar plataforma") ----------
+//
+// Se lee en vivo al pedir un análisis (no se guarda): estructura de campañas,
+// conjuntos y anuncios con su configuración, el rendimiento del período por
+// anuncio y algunos cortes. Lo arma lib/analysis/meta-data.ts.
+
+export type AnalysisInsight = {
+  spend: number;
+  impressions: number;
+  reach: number;
+  frequency: number;
+  clicks: number;
+  linkClicks: number;
+  leads: number;
+  purchases: number;
+  revenue: number;
+};
+
+type RawPeriodInsight = RawInsight & {
+  frequency?: string;
+  inline_link_clicks?: string;
+  adset_id?: string;
+  adset_name?: string;
+  age?: string;
+  gender?: string;
+  publisher_platform?: string;
+  platform_position?: string;
+  device_platform?: string;
+  date_stop?: string;
+};
+
+const ANALYSIS_FIELDS = "impressions,reach,frequency,clicks,inline_link_clicks,spend,actions,action_values";
+
+const toAnalysis = (r: RawPeriodInsight): AnalysisInsight => ({
+  spend: Number(r.spend ?? 0),
+  impressions: Number(r.impressions ?? 0),
+  reach: Number(r.reach ?? 0),
+  frequency: Number(r.frequency ?? 0),
+  clicks: Number(r.clicks ?? 0),
+  linkClicks: Number(r.inline_link_clicks ?? 0),
+  leads: pick(r.actions, LEAD_TYPES),
+  purchases: pick(r.actions, PURCHASE_TYPES),
+  revenue: pick(r.action_values, PURCHASE_TYPES),
+});
+
+export type AdPeriodInsight = AnalysisInsight & {
+  adId: string;
+  adName: string;
+  adsetId: string | null;
+  campaignId: string | null;
+};
+
+// Un total por anuncio en el período (sin desglose por día).
+export async function getAdPeriodInsights(token: string, accountId: string, since: string, until: string) {
+  const rows = await all<RawPeriodInsight>(
+    `${accountId}/insights`,
+    { level: "ad", fields: `ad_id,ad_name,adset_id,campaign_id,${ANALYSIS_FIELDS}`, time_range: timeRange(since, until) },
+    token,
+  );
+  return rows
+    .filter((r) => r.ad_id)
+    .map((r): AdPeriodInsight => ({
+      ...toAnalysis(r),
+      adId: r.ad_id!,
+      adName: r.ad_name || r.ad_id!,
+      adsetId: r.adset_id ?? null,
+      campaignId: r.campaign_id ?? null,
+    }));
+}
+
+// Total por campaña en un período (para comparar con el anterior) o por semana
+// (time_increment 7, para ver desgaste: frecuencia que sube, CTR que baja).
+export async function getCampaignInsights(token: string, accountId: string, since: string, until: string, weekly = false) {
+  const rows = await all<RawPeriodInsight>(
+    `${accountId}/insights`,
+    {
+      level: "campaign",
+      fields: `campaign_id,${ANALYSIS_FIELDS}`,
+      time_range: timeRange(since, until),
+      ...(weekly ? { time_increment: "7" } : {}),
+    },
+    token,
+  );
+  return rows
+    .filter((r) => r.campaign_id)
+    .map((r) => ({ ...toAnalysis(r), campaignId: r.campaign_id!, start: r.date_start, end: r.date_stop ?? r.date_start }));
+}
+
+// Cortes de toda la cuenta en el período: edad y sexo, ubicación, dispositivo.
+export async function getBreakdownInsights(token: string, accountId: string, since: string, until: string, breakdowns: string) {
+  const rows = await all<RawPeriodInsight>(
+    `${accountId}/insights`,
+    { level: "account", fields: ANALYSIS_FIELDS, breakdowns, time_range: timeRange(since, until) },
+    token,
+  );
+  return rows.map((r) => ({
+    ...toAnalysis(r),
+    segment: breakdowns
+      .split(",")
+      .map((b) => r[b as keyof RawPeriodInsight])
+      .filter(Boolean)
+      .join(" · "),
+  }));
+}
+
+// Ids de lo que está activo hoy (aunque no haya gastado en el período).
+export async function getActiveAdIds(token: string, accountId: string) {
+  const rows = await all<{ id: string }>(
+    `${accountId}/ads`,
+    { fields: "id", filtering: JSON.stringify([{ field: "effective_status", operator: "IN", value: ["ACTIVE"] }]) },
+    token,
+  );
+  return rows.map((r) => r.id);
+}
+
+// Detalle de varios anuncios, conjuntos o campañas de la cuenta por id, de a 50
+// por pedido. Se filtra el listado de la cuenta y no se usa ?ids=a,b,c, que Meta
+// rechaza en las versiones nuevas de la API. Un id que no vuelve (borrado) se omite.
+export async function getByIds<T>(
+  token: string,
+  accountId: string,
+  edge: "ads" | "adsets" | "campaigns",
+  ids: string[],
+  fields: string,
+): Promise<(T & { id: string })[]> {
+  const out: (T & { id: string })[] = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const filtering = JSON.stringify([{ field: "id", operator: "IN", value: ids.slice(i, i + 50) }]);
+    // Página chica: con el creativo o la segmentación expandidos, 200 por página
+    // puede superar el límite de datos de Meta.
+    out.push(...(await all<T & { id: string }>(`${accountId}/${edge}`, { fields: `id,${fields}`, filtering, limit: "50" }, token)));
+  }
+  return out;
+}
+
+export async function getAccountInfo(token: string, accountId: string) {
+  return graph<{ name?: string; currency?: string; timezone_name?: string; account_status?: number }>(
+    accountId,
+    { fields: "name,currency,timezone_name,account_status" },
+    token,
+  );
+}

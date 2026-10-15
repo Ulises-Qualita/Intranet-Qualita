@@ -8,8 +8,9 @@ import {
   BANNER_MAX_BYTES,
   BANNER_TYPES,
   BANNERS_BUCKET,
+  PROJECT_STAGES,
   type BannerPosition,
-  type PortalStage,
+  type PortalPhase,
   type PortalValidator,
   VALIDATOR_MAX,
 } from "@/lib/portal";
@@ -61,7 +62,7 @@ async function uploadBanner(clientId: string, file: File, position: BannerPositi
 const EMPTY: PortalValidator = { name: "", role: "", phone: "" };
 
 // "Editar portal" (solo equipo), en tres solapas: General (banner y responsable
-// validador), Etapas (las del % del portal) e Hitos (la línea de hitos). El logo es
+// validador), Etapas (en cuál está el cliente, para el % del portal) e Hitos (la línea de hitos). El logo es
 // el del cliente y se cambia en Editar cliente; los tickets del calendario salen de
 // Notion. General y Etapas se guardan con "Guardar"; cada hito, al momento.
 export function PortalEditor({
@@ -70,7 +71,7 @@ export function PortalEditor({
   validator,
   banner,
   bannerPosition,
-  stages,
+  phase,
   milestones,
   milestonesMissing,
 }: {
@@ -79,7 +80,7 @@ export function PortalEditor({
   validator: PortalValidator | null;
   banner: string | null;
   bannerPosition: BannerPosition;
-  stages: PortalStage[];
+  phase: PortalPhase | null;
   milestones: Milestone[];
   milestonesMissing: boolean;
 }) {
@@ -190,14 +191,14 @@ export function PortalEditor({
                 disabled={pending}
               >
                 {t.label}
-                {t.id === "etapas" && stages.length > 0 && <span>{stages.length}</span>}
+                {t.id === "etapas" && phase && <span>{PROJECT_STAGES.findIndex((s) => s.id === phase.stage) + 1}/3</span>}
                 {t.id === "hitos" && milestones.length > 0 && <span>{milestones.length}</span>}
               </button>
             ))}
           </div>
 
           {tab === "etapas" && (
-            <StagesEditor key={session} clientId={clientId} stages={stages} onCancel={close} onSaved={close} />
+            <StagesEditor key={session} clientId={clientId} phase={phase} onCancel={close} onSaved={close} />
           )}
 
           {tab === "hitos" && (

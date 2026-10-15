@@ -33,7 +33,8 @@ export function CustomRange({
   const [open, setOpen] = useState(false);
   const [from, setFrom] = useState(period.since);
   const [to, setTo] = useState(period.until);
-  const active = period.days === null;
+  // Marcado solo con un rango elegido a mano (no un mes ni "últimos N días").
+  const active = period.days === null && !period.month;
   const today = todayISO();
 
   // Se cierra con Escape o con un click afuera.

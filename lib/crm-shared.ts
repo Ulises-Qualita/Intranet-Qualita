@@ -52,6 +52,10 @@ export type CrmLead = {
   lost: boolean;
   // Lo que el propio CRM considera ganado, cuando no hay etapas elegidas a mano.
   wonByCrm: boolean;
+  // Cuándo pasó a ganada: la venta cuenta en ese mes, no en el de la creación.
+  // Odoo: primera entrada a una etapa ganada según su historial; Kommo: cierre
+  // como ganada. null si el CRM no lo informa (la vista usa la fecha de creación).
+  wonAt: string | null;
 };
 
 // El monto de la venta lo cargan los vendedores a mano, así que llega como número

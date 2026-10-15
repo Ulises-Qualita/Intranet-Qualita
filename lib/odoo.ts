@@ -14,9 +14,11 @@ export type OdooCredentials = {
 
 export class OdooError extends Error {}
 
-// Oportunidades a traer: las abiertas más las cerradas de los últimos 90 días,
+// Oportunidades a traer: las abiertas más las cerradas de los últimos LEAD_DAYS días,
 // que es lo que necesita el embudo y la tasa de conversión del período.
-const LEAD_DAYS = 90;
+// 95 y no 90: el selector muestra los últimos tres meses calendario, y el primero
+// puede arrancar hasta 92 días atrás (CRM_HISTORY_DAYS en lib/period.ts).
+const LEAD_DAYS = 95;
 
 const LEAD_FIELDS = [
   "id",
@@ -189,9 +191,9 @@ export async function getOdooOpportunities(session: OdooSession): Promise<CrmLea
     ad: textOf(propertyOf(r.lead_properties, AD_PROPERTY)),
     tags: (r.tag_ids ?? []).map((id) => tagName.get(id)).filter((t): t is string => !!t),
     temperature: temperatureOf(r.priority, r.probability),
-    createdAt: r.create_date ? `${r.create_date.replace(" ", "T")}Z` : new Date().toISOString(),
     // Odoo devuelve las fechas en UTC y sin zona.
-    stageChangedAt: r.date_last_stage_update ? `${r.date_last_stage_update.replace(" ", "T")}Z` : null,
+    createdAt: r.create_date ? utc(r.create_date) : new Date().toISOString(),
+    stageChangedAt: r.date_last_stage_update ? utc(r.date_last_stage_update) : null,
     // No se lee el contacto de Odoo: ahí las oportunidades no nacen de una agenda importada.
     contactCreatedAt: null,
     phoneKey: null,
@@ -201,5 +203,74 @@ export async function getOdooOpportunities(session: OdooSession): Promise<CrmLea
     // como ganadas. Por eso el criterio final son las etapas elegidas por cliente.
     lost: r.active === false,
     wonByCrm: r.probability === 100 && r.active !== false,
+    // Lo completa getOdooWonDates, solo para las ganadas.
+    wonAt: null,
   }));
+}
+
+// Ids por consulta del historial (van en el dominio).
+const HISTORY_BATCH = 200;
+
+const utc = (odooDate: string) => `${odooDate.replace(" ", "T")}Z`;
+
+// Cuándo pasó a ganada cada oportunidad: la primera vez que entró a una etapa
+// ganada, según el historial de cambios de etapa de Odoo (mail.tracking.value).
+// Es la primera y no la última porque después de la venta el lead sigue
+// avanzando por etapas ganadas (En fábrica → En producción…), y eso no es otra
+// venta. Las ganadas son las etapas elegidas por cliente o, si no hay, las que
+// Odoo marca como ganadas. Las que no tienen esa entrada en el historial (se
+// crearon ya ganadas, o son anteriores al historial) quedan afuera.
+export async function getOdooWonDates(
+  session: OdooSession,
+  leadIds: string[],
+  wonStages: string[] | undefined,
+): Promise<Map<string, string>> {
+  const won = new Map<string, string>();
+  if (!leadIds.length) return won;
+
+  const stages = await query<{ id: number; name: string; is_won: boolean }[]>(session, "crm.stage", "search_read", [
+    [],
+    ["id", "name", "is_won"],
+  ]);
+  const wonStageIds = new Set(
+    stages.filter((s) => (wonStages?.length ? wonStages.includes(s.name) : s.is_won)).map((s) => s.id),
+  );
+  if (!wonStageIds.size) return won;
+
+  for (let i = 0; i < leadIds.length; i += HISTORY_BATCH) {
+    const ids = leadIds.slice(i, i + HISTORY_BATCH).map(Number);
+    const [changes, messages] = await Promise.all([
+      query<{ new_value_integer: number | false; mail_message_id: [number, string] | false; create_date: string }[]>(
+        session,
+        "mail.tracking.value",
+        "search_read",
+        [
+          [
+            ["field_id.name", "=", "stage_id"],
+            ["mail_message_id.model", "=", "crm.lead"],
+            ["mail_message_id.res_id", "in", ids],
+          ],
+          ["new_value_integer", "mail_message_id", "create_date"],
+        ],
+      ),
+      query<{ id: number; res_id: number }[]>(session, "mail.message", "search_read", [
+        [
+          ["model", "=", "crm.lead"],
+          ["res_id", "in", ids],
+          ["tracking_value_ids", "!=", false],
+        ],
+        ["res_id"],
+      ]),
+    ]);
+    const leadOf = new Map(messages.map((m) => [m.id, String(m.res_id)]));
+    for (const change of changes) {
+      if (!change.new_value_integer || !wonStageIds.has(change.new_value_integer) || !change.mail_message_id) continue;
+      const lead = leadOf.get(change.mail_message_id[0]);
+      if (!lead) continue;
+      const at = utc(change.create_date);
+      const first = won.get(lead);
+      if (!first || at < first) won.set(lead, at);
+    }
+  }
+  return won;
 }

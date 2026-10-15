@@ -2,44 +2,42 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/icons";
-import { type PortalStage, STAGE_NAME_MAX, STAGE_STATUSES, STAGES_MAX, type StageStatus } from "@/lib/portal";
-import { savePortalStages } from "../../actions";
+import { PROJECT_STAGES, type PortalPhase, type StageId, phasePercent } from "@/lib/portal";
+import { savePortalPhase } from "../../actions";
 
-const newId = () => Math.random().toString(36).slice(2, 10);
-
-// Editar portal → Etapas: la lista de etapas del proyecto, en orden, con su estado.
-// De acá sale la card del % del portal. Se guarda la lista entera con "Guardar".
+// Editar portal → Etapas: las tres etapas son fijas; acá se elige en cuál está el
+// cliente (las anteriores cuentan como completadas) y cuánto lleva de ella. De acá
+// sale la card del % del portal. Se guarda con "Guardar".
 export function StagesEditor({
   clientId,
-  stages,
+  phase,
   onCancel,
   onSaved,
 }: {
   clientId: string;
-  stages: PortalStage[];
+  phase: PortalPhase | null;
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const [list, setList] = useState<PortalStage[]>(stages);
+  const [stage, setStage] = useState<StageId | null>(phase?.stage ?? null);
+  const [progress, setProgress] = useState(phase && phase.stage !== "motor" ? phase.progress : 0);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
-  const update = (id: string, change: Partial<PortalStage>) =>
-    setList((l) => l.map((s) => (s.id === id ? { ...s, ...change } : s)));
-  const move = (i: number, by: -1 | 1) =>
-    setList((l) => {
-      const next = [...l];
-      [next[i], next[i + by]] = [next[i + by], next[i]];
-      return next;
-    });
+  const next: PortalPhase | null = stage ? { stage, progress } : null;
+  const pct = next ? phasePercent(next) : null;
 
-  function save() {
+  function pick(id: StageId) {
+    // Al cambiar de etapa, el avance arranca de cero.
+    if (id !== stage) setProgress(0);
+    setStage(id);
+  }
+
+  function save(value: PortalPhase | null) {
     setError(null);
-    if (list.some((s) => !s.name.trim())) return setError("Poné un nombre a cada etapa (o quitá las vacías).");
     startTransition(async () => {
-      const result = await savePortalStages(clientId, list);
+      const result = await savePortalPhase(clientId, value);
       if (!result.ok) return setError(result.error);
       router.refresh();
       onSaved();
@@ -50,81 +48,68 @@ export function StagesEditor({
     <>
       <div className="pe-panel">
         <p className="muted">
-          En orden. El portal muestra el % de etapas completadas y, en &quot;Estamos en&quot;, la primera en curso (o, si no
-          hay, la primera pendiente).
+          Todos los clientes pasan por las mismas tres etapas. Elegí en cuál está: las anteriores se muestran completadas.
+          Motor de Demanda es la pauta, un servicio mensual: el portal muestra ∞ en lugar del %.
         </p>
 
-        {list.length === 0 ? (
-          <p className="pe-empty">Todavía no hay etapas. Sin etapas, el portal no muestra la card del avance.</p>
-        ) : (
-          <ol className="pe-stages">
-            {list.map((s, i) => (
-              <li key={s.id}>
-                <span className="pe-num">{i + 1}</span>
+        <ol className="pe-stages" role="radiogroup" aria-label="Etapa actual">
+          {PROJECT_STAGES.map((s, i) => (
+            <li key={s.id}>
+              <label>
                 <input
-                  value={s.name}
-                  onChange={(e) => update(s.id, { name: e.target.value })}
-                  maxLength={STAGE_NAME_MAX}
-                  placeholder="Ej.: Diseño de la web"
-                  aria-label={`Nombre de la etapa ${i + 1}`}
-                  autoComplete="off"
+                  type="radio"
+                  name="portal-stage"
+                  checked={stage === s.id}
+                  onChange={() => pick(s.id)}
                   disabled={pending}
                 />
-                <select
-                  value={s.status}
-                  onChange={(e) => update(s.id, { status: e.target.value as StageStatus })}
-                  aria-label={`Estado de la etapa ${i + 1}`}
-                  disabled={pending}
-                  className={`st-${s.status}`}
-                >
-                  {STAGE_STATUSES.map((st) => (
-                    <option key={st.value} value={st.value}>
-                      {st.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="pe-row-actions">
-                  <button type="button" onClick={() => move(i, -1)} disabled={pending || i === 0} aria-label="Subir">
-                    {"↑︎"}
-                  </button>
-                  <button type="button" onClick={() => move(i, 1)} disabled={pending || i === list.length - 1} aria-label="Bajar">
-                    {"↓︎"}
-                  </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() => setList((l) => l.filter((x) => x.id !== s.id))}
-                    disabled={pending}
-                    aria-label="Quitar etapa"
-                  >
-                    ×
-                  </button>
+                <span className="pe-num">{i + 1}</span>
+                <span>
+                  <b>{s.name}</b>
+                  <small>{s.ongoing ? "Servicio mensual, sin fin" : `Del ${i * 50}% al ${(i + 1) * 50}% del proyecto`}</small>
                 </span>
-              </li>
-            ))}
-          </ol>
+              </label>
+            </li>
+          ))}
+        </ol>
+
+        {stage && stage !== "motor" && (
+          <label className="pe-progress">
+            <span>Avance de la etapa</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={progress}
+              onChange={(e) => setProgress(Number(e.target.value))}
+              disabled={pending}
+            />
+            <output>{progress}%</output>
+          </label>
         )}
 
-        {list.length < STAGES_MAX && (
-          <button
-            type="button"
-            className="link-connect pe-add"
-            onClick={() => setList((l) => [...l, { id: newId(), name: "", status: "todo" }])}
-            disabled={pending}
-          >
-            <Icon name="plus" size={14} strokeWidth={2.2} />
-            Agregar etapa
-          </button>
-        )}
+        <p className="muted">
+          {pct === null
+            ? stage
+              ? "El portal va a mostrar ∞ y “Servicio mensual activo”."
+              : "Sin etapa elegida, el portal no muestra la card del avance."
+            : `El portal va a mostrar ${pct}% del proyecto.`}
+        </p>
       </div>
 
       {error && <p className="form-error modal-error">{error}</p>}
 
       <div className="modal-actions">
+        {phase && (
+          <button type="button" className="btn-secondary" onClick={() => save(null)} disabled={pending} style={{ marginRight: "auto" }}>
+            Quitar etapa
+          </button>
+        )}
         <button type="button" className="btn-secondary" onClick={onCancel} disabled={pending}>
           Cancelar
         </button>
-        <button type="button" className="btn-primary" onClick={save} disabled={pending}>
+        <button type="button" className="btn-primary" onClick={() => save(next)} disabled={pending || !next}>
           {pending ? "Guardando…" : "Guardar"}
         </button>
       </div>

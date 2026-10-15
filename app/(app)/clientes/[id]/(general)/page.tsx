@@ -10,7 +10,7 @@ export default async function ClienteGeneralPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ dias?: string; desde?: string; hasta?: string }>;
+  searchParams: Promise<{ mes?: string; dias?: string; desde?: string; hasta?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   // En paralelo: getClient lee con la sesión del usuario (RLS), sin acceso no trae nada.

@@ -7,7 +7,9 @@ import { Card, EmptyState, Kpi, MissingIntegration } from "@/components/ui";
 import { type Better, compare } from "@/lib/compare";
 import { type Client, getMetaCampaigns, getMetaDaily, getMetaFirstDate, type MetaDaily } from "@/lib/data";
 import { compact, integer, money, orDash, percent, safeDiv, shortDate, todayISO } from "@/lib/format";
-import { META_HISTORY_DAYS, type Period, periodPhrase, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
+import { META_HISTORY_DAYS, type Period, periodPhrase, periodQuery, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
+import { AnalysisBar } from "@/components/analysis/analysis-bar";
+import { featureEnabled } from "@/lib/features";
 import { prepareMetaView } from "@/lib/meta-sync";
 import { CampaignTable } from "./campaign-table";
 
@@ -45,6 +47,8 @@ export async function MetaView({
 
   // Asegura datos la primera vez y programa el refresco si quedaron viejos.
   const secrets = await prepareMetaView(c.id, c.integrations.meta.accountRef);
+  // "Analizar plataforma": solo el equipo y solo si un admin la activó.
+  const showAnalysis = internal && (await featureEnabled("platformAnalysis"));
   // Para comparar: el período anterior del mismo largo, y desde cuándo hay datos.
   const previous = previousPeriod(range);
   const [daily, campaigns, before, firstDate] = await Promise.all([
@@ -104,6 +108,17 @@ export async function MetaView({
           }
           internal={internal}
         />
+        {/* Analizar plataforma: solo el equipo (la página ya validó el área META). */}
+        {showAnalysis && (
+          <AnalysisBar
+            clientId={c.id}
+            clientSlug={c.slug}
+            platform="meta"
+            period={periodQuery(range)}
+            periodLabel={range.label}
+            href={`/clientes/${c.slug}/meta/analisis`}
+          />
+        )}
         {beforeHistory && (
           <p className="hint-text mb-4">
             Meta guarda los últimos {META_HISTORY_DAYS} días: antes de esa fecha no hay datos para mostrar.

@@ -109,19 +109,6 @@ propio de dominio queda **comentado** en el SQL para no duplicar comportamiento.
  
 Archivo fuente: `docs/supabase-intranet-shared.sql`.
  
-#### Tablas a crear (roadmap)
- 
-Cuando pasemos de datos mock a reales, con prefijo `intranet_`:
-- `intranet_clients` — clientes (nombre, dominio/web, rubro, activo).
-- `intranet_client_integrations` — conexión por cliente y por servicio
-  (`meta`, `crm`, `whatsapp`): estado, tokens/refs (los secretos, del lado server).
-- `intranet_tasks` — tareas por cliente (título, estado, prioridad, responsable,
-  vencimiento).
-- Cache de métricas: `intranet_meta_ads`, `intranet_meta_metrics`,
-  `intranet_crm_pipeline`, `intranet_leads` — para no pegarle a las APIs externas
-  en cada carga.
-Todas con RLS que respete `role` y `areas` del usuario.
- 
 ---
  
 ## 4. Autenticación y control de acceso
@@ -228,52 +215,6 @@ navegación. El resto, superficies neutras con bordes finos.
 - **Pantalla de login** con botón Google.
 ---
  
-## 7. Estructura de carpetas sugerida (Next.js App Router)
- 
-```
-/
-├─ app/
-│  ├─ (auth)/login/page.tsx        # pantalla de login (Google)
-│  ├─ (app)/                       # layout protegido (requiere sesión)
-│  │  ├─ page.tsx                  # Inicio (estudio)
-│  │  ├─ equipo/…                  # Equipo
-│  │  ├─ configuracion/…           # Configuración (integraciones por cliente)
-│  │  ├─ admin/…                   # Administración (solo admin)
-│  │  └─ clientes/[id]/            # cliente: general/meta/crm/tareas
-│  └─ api/
-│     ├─ integraciones/…           # OAuth Meta/CRM por cliente (server)
-│     └─ agente/…                  # endpoint del agente Claude (roadmap)
-├─ components/                     # UI (basada en el mockup)
-├─ lib/
-│  └─ supabase/                    # client.ts (browser) y server.ts (SSR)
-├─ docs/
-│  ├─ qualita-intranet.html        # mockup de diseño (fuente visual)
-│  └─ supabase-intranet-shared.sql # esquema de la intranet
-└─ AGENTS.md
-```
- 
----
- 
-## 8. Roadmap: agente de IA (Claude) en la intranet
- 
-Burbuja de chat flotante para que el equipo haga consultas sobre clientes
-("¿cómo viene SVN este mes?", "¿qué tareas quedan de Arteplac?").
- 
-Arquitectura:
-1. Burbuja (front) → llama a un **endpoint propio** (`app/api/agente`), nunca a
-   Anthropic directo.
-2. El endpoint tiene la `ANTHROPIC_API_KEY` (solo server), busca en Supabase los
-   datos del/los cliente(s) relevantes y se los pasa a Claude con la pregunta.
-3. **Respeta permisos:** filtra por `role` y `areas` del usuario antes de darle
-   datos a Claude. Si el usuario no tiene acceso al CRM de un cliente, el agente no
-   debe exponer esos datos.
-Fases: (a) versión simple con contexto por prompt; (b) agente con *tools* (buscar
-cliente, traer métricas Meta, listar tareas) donde Claude decide qué consultar.
- 
-Hacerlo **después** de tener login + datos reales fluyendo.
- 
----
- 
 ## 9. Convenciones y reglas
  
 - Prefijo `intranet_` en toda tabla nueva; sufijo `_intranet` en triggers propios.
@@ -284,17 +225,3 @@ Hacerlo **después** de tener login + datos reales fluyendo.
 - Control de acceso duplicado: front (UX) + server/RLS (seguridad).
 - El diseño sigue el mockup de `docs/`; mantener Lexend + DM Sans y el uso
   medido del degradado.
----
- 
-## 10. Estado actual
- 
-- [x] Mockup completo del front (en `docs/qualita-intranet.html`).
-- [x] Proyecto Supabase (compartido) con `intranet_profiles`, RLS, trigger de alta
-      y backfill de usuarios existentes.
-- [x] Usuario admin definido.
-- [ ] Proyecto Next.js + conexión a Supabase (`@supabase/ssr`).
-- [ ] Login con Google + gating por `role`/`areas`.
-- [ ] Panel de administración escribiendo en `intranet_profiles`.
-- [ ] Tablas de clientes/tareas + integración real Meta y CRM.
-- [x] Agente de Claude (burbuja flotante, fase b: con *tools*).
- 

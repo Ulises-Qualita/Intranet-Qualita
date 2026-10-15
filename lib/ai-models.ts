@@ -24,6 +24,11 @@ export type AiEffort = (typeof AI_EFFORTS)[number]["id"];
 export const AI_TASKS = [
   { key: "agente", label: "Agente Q", detail: "El chat del equipo." },
   { key: "reporte", label: "Reportes", detail: "Los textos de un reporte nuevo y los cambios pedidos por chat." },
+  {
+    key: "analisis",
+    label: "Análisis de plataforma",
+    detail: "Las recomendaciones de \"Analizar plataforma\" en META y GADS. Sin esfuerzo elegido usa Alto.",
+  },
 ] as const;
 
 export type AiTask = (typeof AI_TASKS)[number]["key"];

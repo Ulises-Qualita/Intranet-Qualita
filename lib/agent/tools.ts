@@ -359,7 +359,7 @@ const crmResumen: AgentTool = {
       },
       ventas_planilla: sheet
         ? {
-            nota: "Fuente oficial de ventas. Cuenta por fecha de confirmación del proyecto. En los cortes por lead (ganadas, facturación, vendedores y anuncios de arriba), ganada = tiene venta en la planilla y el monto es el de esa venta en pesos; esos cortes van por fecha de creación del lead.",
+            nota: "Fuente oficial de ventas. Cuenta por fecha de confirmación del proyecto. En los cortes por lead (ganadas, facturación, vendedores y anuncios de arriba), ganada = tiene venta en la planilla y el monto es el de esa venta en pesos; las oportunidades van por fecha de creación del lead y las ventas por fecha de venta (con planilla, la de confirmación).",
             ventas: sheet.sales.length,
             facturacion_pesos: round(sheet.ars.total),
             ticket_promedio_pesos: sheet.ars.avg === null ? null : round(sheet.ars.avg),

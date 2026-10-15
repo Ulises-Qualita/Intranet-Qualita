@@ -41,5 +41,7 @@ export async function saveMeetingNote(clientSlug: string, meetingKey: string, te
   }
 
   revalidatePath(`/clientes/${client.slug}/reuniones`);
+  // La misma reunión se ve en la pantalla Reuniones del sidebar.
+  revalidatePath("/reuniones");
   return { ok: true };
 }

@@ -73,18 +73,17 @@ export async function CrmView({
     secrets?.sales_sheet ? getSales(c.id) : null,
   ]);
 
-  // Todo el bloque se recorta por fecha de creación, según el selector del topbar.
+  // Las oportunidades se recortan por fecha de creación y las ventas (ganadas,
+  // tickets) por fecha de venta, según el selector del topbar.
   const { leads, won, tickets, ticketAvg, ticketTotal, sellers, sources, wonSources, ads: crmAds } = crmPeriod(all, range);
   // El CRM puede guardar el anuncio con un nombre corto: se pasa al nombre de Meta
   // para que la tabla y los videos crucen con lo que muestra la solapa META.
   const ads = campaigns ? withMetaAdNames(crmAds, campaigns.flatMap((cp) => cp.ads)) : crmAds;
   const periodo = range.label;
 
-  // Comparación contra el período anterior, solo en lo que es parejo de comparar:
-  // cuántas oportunidades entraron y de cuánto fue el ticket. Ganadas y total en
-  // tickets NO se comparan: todo se cuenta por fecha de creación, y las
-  // oportunidades del período anterior tuvieron más tiempo para cerrarse, así que
-  // el período actual siempre saldría perdiendo.
+  // Comparación contra el período anterior. Las ventas se cuentan por fecha de
+  // venta (no de creación del lead), así que ganadas y total en tickets también
+  // son parejas de comparar.
   const previous = previousPeriod(range);
   // Solo si el período anterior está entero dentro de lo que hay: ni más atrás de
   // lo que trae el CRM, ni antes de la primera oportunidad cargada (un CRM recién
@@ -101,6 +100,8 @@ export async function CrmView({
   const antes = `Antes (${previous.label})`;
   const leadsChange = before && compare(leads.length, before.leads.length, { better: "up", format: integer, versus: antes });
   const ticketChange = before && compare(ticketAvg, before.ticketAvg, { better: "up", format: (v) => money(v), versus: antes });
+  const wonChange = before && compare(won, before.won, { better: "up", format: integer, versus: antes });
+  const ticketTotalChange = before && compare(ticketTotal, before.ticketTotal, { better: "up", format: (v) => money(v), versus: antes });
   const top = campaigns && topVideoAds(campaigns, ads);
 
   // Con planilla de ventas, las ventas y la facturación salen de ahí y se cuentan
@@ -195,7 +196,14 @@ export async function CrmView({
                 {won === null ? (
                   <KpiLocked label="Ganadas" icon="check" note={internal ? "Falta correr la migración de estados" : "Sin datos"} />
                 ) : (
-                  <Kpi label="Ganadas" icon="check" value={integer(won)} sub={periodo} />
+                  <Kpi
+                    label="Ganadas"
+                    icon="check"
+                    value={integer(won)}
+                    sub={`por fecha de venta · ${periodo}`}
+                    change={wonChange}
+                    versus={versus}
+                  />
                 )}
                 {ticketAvg === null ? (
                   <>
@@ -209,6 +217,8 @@ export async function CrmView({
                       icon="money"
                       value={money(ticketTotal)}
                       sub={`${tickets} ${tickets === 1 ? "venta con ticket" : "ventas con ticket"}`}
+                      change={ticketTotalChange}
+                      versus={versus}
                     />
                     <Kpi label="Ticket promedio" icon="money" value={money(ticketAvg)} sub={periodo} change={ticketChange} versus={versus} />
                   </>

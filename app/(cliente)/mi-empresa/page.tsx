@@ -7,7 +7,7 @@ import { readPeriod } from "@/lib/period";
 export default async function MiEmpresaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dias?: string; desde?: string; hasta?: string }>;
+  searchParams: Promise<{ mes?: string; dias?: string; desde?: string; hasta?: string }>;
 }) {
   const [zone, query] = await Promise.all([getClientZone(), searchParams]);
   if (!zone) return null;

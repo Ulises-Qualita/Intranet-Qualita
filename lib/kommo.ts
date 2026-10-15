@@ -13,8 +13,10 @@ export type KommoCredentials = {
 
 export class KommoError extends Error {}
 
-// Mismo criterio que Odoo: las abiertas más las cerradas de los últimos 90 días.
-const LEAD_DAYS = 90;
+// Mismo criterio que Odoo: las abiertas más las cerradas de los últimos LEAD_DAYS días.
+// 95 y no 90: el selector muestra los últimos tres meses calendario, y el primero
+// puede arrancar hasta 92 días atrás (CRM_HISTORY_DAYS en lib/period.ts).
+const LEAD_DAYS = 95;
 const PAGE_LIMIT = 250;
 // Tope de páginas por sync (10.000 leads): Kommo no permite pedir "abiertas o
 // recientes" en una sola consulta, así que se recorre por fecha de creación.
@@ -56,12 +58,36 @@ export function normalizeKommoUrl(raw: string) {
   return `https://${url.hostname.toLowerCase()}`;
 }
 
+// Kommo admite 7 pedidos por segundo por cuenta y responde 429 si se pasan (y si
+// se insiste, bloquea la IP). Todos los pedidos de una cuenta salen espaciados por
+// este margen, aunque se lancen en paralelo, y un 429 se reintenta esperando lo
+// que pida Kommo (Retry-After) o cada vez más. Dos syncs a la vez desde procesos
+// distintos (el cron y una vista abierta) igual pueden chocar: ahí actúa el reintento.
+const MIN_GAP_MS = 180;
+const RETRIES = 4;
+const nextSlot = new Map<string, number>();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitSlot(account: string) {
+  const now = Date.now();
+  const at = Math.max(now, nextSlot.get(account) ?? 0);
+  nextSlot.set(account, at + MIN_GAP_MS);
+  if (at > now) await sleep(at - now);
+}
+
+async function request(url: string, token: string, attempt = 0): Promise<Response> {
+  await waitSlot(new URL(url).host);
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (res.status !== 429 || attempt >= RETRIES) return res;
+  const retryAfter = Number(res.headers.get("retry-after"));
+  await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 10) * 1000 : 1000 * 2 ** attempt);
+  return request(url, token, attempt + 1);
+}
+
 async function api<T>({ url, token }: KommoCredentials, path: string, params: Record<string, string | number> = {}) {
   const query = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
-  const res = await fetch(`${url}/api/v4/${path}${query.size ? `?${query}` : ""}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+  const res = await request(`${url}/api/v4/${path}${query.size ? `?${query}` : ""}`, token);
+  if (res.status === 429) throw new KommoError("Kommo está limitando los pedidos (429): se pidió demasiado seguido. Se reintenta en el próximo sync.");
   // Kommo responde 204 cuando una lista no tiene (más) resultados.
   if (res.status === 204) return null;
   if (res.status === 401) throw new KommoError("Kommo rechazó el token: puede haber vencido o haber sido revocado. Generá uno nuevo.");
@@ -128,6 +154,8 @@ type KommoLead = {
   pipeline_id: number;
   responsible_user_id: number | null;
   created_at: number;
+  // Cuándo se cerró (ganada o perdida); null si sigue abierta.
+  closed_at?: number | null;
   custom_fields_values: KommoField[] | null;
   _embedded?: {
     tags?: { name: string }[];
@@ -205,8 +233,9 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
     for (const r of rows) {
       const won = r.status_id === WON_STATUS;
       const lost = r.status_id === LOST_STATUS;
-      // Las cerradas viejas no suman al período; las abiertas se traen siempre.
-      if ((won || lost) && r.created_at < since) continue;
+      // Las cerradas antes del período no suman; las abiertas se traen siempre. Se
+      // mira el cierre y no la creación: una venta de hoy cuenta aunque el lead sea viejo.
+      if ((won || lost) && (r.closed_at || r.created_at) < since) continue;
 
       const contacts = r._embedded?.contacts ?? [];
       const contact = contacts.find((c) => c.is_main) ?? contacts[0];
@@ -232,6 +261,7 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
         phoneKey: null,
         lost,
         wonByCrm: won,
+        wonAt: won && r.closed_at ? new Date(r.closed_at * 1000).toISOString() : null,
       });
     }
     if (rows.length < PAGE_LIMIT) break;

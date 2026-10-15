@@ -6,13 +6,13 @@ import { readPeriod } from "@/lib/period";
 import { GadsView } from "./gads-view";
 
 // Google Ads, solo para el equipo. Usa el período del encabezado del cliente
-// (?dias= / ?desde=&hasta=), como META y CRM: por eso no lleva loading.tsx.
+// (?mes= / ?desde=&hasta=), como META y CRM: por eso no lleva loading.tsx.
 export default async function ClienteGadsPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ dias?: string; desde?: string; hasta?: string }>;
+  searchParams: Promise<{ mes?: string; dias?: string; desde?: string; hasta?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   // Misma área que META: es la publicidad del cliente.

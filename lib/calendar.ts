@@ -51,6 +51,8 @@ export type Meeting = {
   allDay: boolean;
   meetUrl: string | null;
   attendees: { email: string; name: string | null }[];
+  // Quien la creó: un evento sin invitados no trae attendees, solo esto.
+  organizer: string | null;
 };
 
 type RawEvent = {
@@ -61,10 +63,11 @@ type RawEvent = {
   hangoutLink?: string;
   conferenceData?: { entryPoints?: { entryPointType?: string; uri?: string }[] };
   attendees?: { email?: string; displayName?: string; resource?: boolean }[];
+  organizer?: { email?: string };
 };
 
 const EVENT_FIELDS =
-  "nextPageToken,items(iCalUID,summary,start,end,hangoutLink,conferenceData/entryPoints(entryPointType,uri),attendees(email,displayName,resource))";
+  "nextPageToken,items(iCalUID,summary,start,end,hangoutLink,conferenceData/entryPoints(entryPointType,uri),attendees(email,displayName,resource),organizer(email))";
 
 // Nombre de un participante para mostrar: mayúscula al principio de cada palabra
 // (sin tocar el resto: "mcDonald" queda) y, sin nombre en Calendar, el mail:
@@ -119,6 +122,7 @@ function toMeeting(e: RawEvent): Meeting | null {
     attendees: (e.attendees ?? [])
       .filter((a) => a.email && !a.resource)
       .map((a) => ({ email: a.email!, name: a.displayName ?? null })),
+    organizer: e.organizer?.email ?? null,
   };
 }
 
@@ -185,17 +189,16 @@ const getStudioMeetings = unstable_cache(
 
 export type ClientMeetings = { upcoming: Meeting[]; past: Meeting[]; error: string | null };
 
-// Reuniones de un cliente. Quien la llama ya validó el acceso a ese cliente:
-// getTeam usa service_role.
-export async function getClientMeetings(clientName: string): Promise<ClientMeetings> {
+// Las reuniones del estudio que cumplen `keep`, separadas en próximas y pasadas.
+// getTeam usa service_role: quien la llama ya validó el acceso.
+async function meetingsWhere(keep: (m: Meeting) => boolean): Promise<ClientMeetings> {
   if (!calendarConfigured()) return { upcoming: [], past: [], error: "config" };
   try {
     const emails = (await getTeam())
       .filter((m) => m.active && isQualitaEmail(m.email))
       .map((m) => m.email!.toLowerCase())
       .sort();
-    const target = normalizeName(clientName);
-    const mine = (await getStudioMeetings(emails)).filter((m) => normalizeName(m.clientName) === target);
+    const mine = (await getStudioMeetings(emails)).filter(keep);
     const now = Date.now();
     // En curso cuenta como próxima: es la que tiene el link para entrar.
     return {
@@ -210,4 +213,17 @@ export async function getClientMeetings(clientName: string): Promise<ClientMeeti
       error: e instanceof Error ? e.message : "No se pudo leer Google Calendar.",
     };
   }
+}
+
+// Reuniones de un cliente. Quien la llama ya validó el acceso a ese cliente.
+export async function getClientMeetings(clientName: string): Promise<ClientMeetings> {
+  const target = normalizeName(clientName);
+  return meetingsWhere((m) => normalizeName(m.clientName) === target);
+}
+
+// Reuniones con clientes en las que participa un miembro del equipo (invitado u
+// organizador), de todos los clientes: la pantalla Reuniones del sidebar.
+export async function getMemberMeetings(email: string): Promise<ClientMeetings> {
+  const me = email.toLowerCase();
+  return meetingsWhere((m) => m.organizer?.toLowerCase() === me || m.attendees.some((a) => a.email.toLowerCase() === me));
 }

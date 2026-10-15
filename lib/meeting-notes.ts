@@ -11,12 +11,16 @@ export type MeetingNotes = {
   missingTable: boolean;
 };
 
-export async function getMeetingNotes(clientId: string): Promise<MeetingNotes> {
+// De un cliente o de varios (la pantalla Reuniones del sidebar): la clave de una
+// reunión es única entre clientes.
+export async function getMeetingNotes(clientId: string | string[]): Promise<MeetingNotes> {
+  const ids = Array.isArray(clientId) ? clientId : [clientId];
+  if (!ids.length) return { byKey: {}, missingTable: false };
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("intranet_meeting_notes")
     .select("meeting_key, notes, updated_at, updated_by")
-    .eq("client_id", clientId)
+    .in("client_id", ids)
     .returns<{ meeting_key: string; notes: string; updated_at: string; updated_by: string | null }[]>();
   if (error) {
     if (!isMissingTable(error)) console.error("[reuniones] notas", clientId, error);

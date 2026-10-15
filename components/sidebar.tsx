@@ -17,6 +17,8 @@ const STUDIO_NAV: { href: string; label: string; icon: IconName; area: AreaKey |
   { href: "/", label: "Inicio", icon: "home", area: "inicio" },
   { href: "/clientes", label: "Clientes", icon: "briefcase", area: "clientes" },
   { href: "/equipo", label: "Equipo", icon: "team", area: "equipo" },
+  // Las reuniones con clientes de quien entra, de su propio calendario.
+  { href: "/reuniones", label: "Reuniones", icon: "calendar", area: null },
   { href: "/agente", label: "Agente", icon: "sparkles", area: null },
   { href: "/foro", label: "Foro", icon: "chat", area: null },
   { href: "/admin", label: "Administración", icon: "settings", area: "admin" },

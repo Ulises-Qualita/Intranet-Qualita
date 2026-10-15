@@ -132,7 +132,7 @@ function summary(data: ReportData) {
         usdAverage: crm.sales.usdAverage && Math.round(crm.sales.usdAverage),
         nota: crm.sales.fromSheet
           ? "Ventas de la planilla oficial del cliente, por fecha de confirmación. total/average en pesos y usdTotal/usdAverage en dólares: son partes distintas de las ventas, no se suman ni se convierten."
-          : "Ventas según el CRM, por fecha de creación del lead.",
+          : "Ventas según el CRM, por fecha de venta (cuando pasó a ganada).",
       },
     },
     clarity: clarity && {

@@ -293,13 +293,15 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
   if (hasStatus) {
     const open = inPeriod.filter((l) => l.status === "open").length;
     const lost = inPeriod.filter((l) => l.status === "lost").length;
-    const won = inPeriod.filter((l) => l.status === "won").length;
+    // Ventas por fecha de venta (pueden ser de leads creados antes del período).
+    const won = current.sold.length;
     pulse.push({ value: String(open), label: "Abiertas en el pipeline", tag: "a seguir" });
     pulse.push({ value: String(lost), label: "Perdidas / descartadas" });
     pulse.push({
       value: String(won),
       label: "Ventas confirmadas",
-      tag: `Tasa de cierre del ${Math.round((won / total) * 100)}%`,
+      // La tasa sí es de las creadas en el período: qué parte de ellas ya se ganó.
+      tag: `Tasa de cierre del ${Math.round((inPeriod.filter((l) => l.status === "won").length / total) * 100)}%`,
     });
   }
 
@@ -338,7 +340,7 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
     : null;
 
   // ----- Ventas y ticket -----
-  const wonLeads = inPeriod.filter((l) => l.status === "won");
+  const wonLeads = current.sold;
   const tickets = wonLeads.map((l) => l.amount).filter((a): a is number => !!a && a > 0);
   // Con planilla de ventas, la facturación oficial es la de ahí.
   const allSales = secrets?.sales_sheet ? await getSales(client.id) : null;

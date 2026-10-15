@@ -6,6 +6,7 @@ import { getSession } from "@/lib/auth";
 import { AI_SETTINGS_KEY } from "@/lib/ai-config";
 import { AI_TASKS, type AiConfig, isAiEffort, isAiModel } from "@/lib/ai-models";
 import { NOTION_SETTINGS_KEY } from "@/lib/data";
+import { FEATURES_SETTINGS_KEY, getFeatures, isFeatureKey } from "@/lib/features";
 import { NOTION_TICKETS_TAG, getDataSource, notionErrorMessage, type NotionProperty } from "@/lib/notion";
 import type { NotionConfig } from "@/lib/notion-map";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -131,6 +132,28 @@ export async function saveAiConfig(config: AiConfig): Promise<ActionResult> {
   }
 
   revalidatePath("/admin/gastos");
+  return { ok: true, error: null };
+}
+
+// ---------- Funciones en prueba (intranet_settings, fila "features") ----------
+
+// Activa o desactiva una función para todo el equipo. Solo admin.
+export async function setFeature(key: string, enabled: boolean): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede activar funciones." };
+  if (!isFeatureKey(key)) return { ok: false, error: "Función desconocida." };
+
+  const current = await getFeatures();
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("intranet_settings")
+    .upsert({ key: FEATURES_SETTINGS_KEY, value: { ...current, [key]: enabled === true }, updated_at: new Date().toISOString() });
+  if (error) {
+    console.error("[admin] setFeature", error);
+    return { ok: false, error: "No se pudo guardar el cambio." };
+  }
+
+  // La función aparece o desaparece en las pantallas de los clientes.
+  revalidatePath("/", "layout");
   return { ok: true, error: null };
 }
 

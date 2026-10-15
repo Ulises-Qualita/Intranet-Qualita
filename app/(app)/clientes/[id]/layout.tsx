@@ -33,8 +33,8 @@ const CLIENT_NAV = (
   ] satisfies ClientNavItem[]
 ).filter((item) => SHOW_TASKS || item.suffix !== "/tareas");
 
-// Las solapas que se recortan por período (?dias= / ?desde=&hasta=, lib/period.ts).
-// Ninguna de ellas puede tener un loading.tsx propio: ?dias= lo reiniciaría y el
+// Las solapas que se recortan por período (?mes= / ?desde=&hasta=, lib/period.ts).
+// Ninguna de ellas puede tener un loading.tsx propio: ?mes= lo reiniciaría y el
 // cambio de período volvería a vaciar la pantalla. Por lo mismo Vista general vive
 // en el grupo (general)/ y no directo en [id]/, donde la tomaría el loading.tsx de
 // las solapas.

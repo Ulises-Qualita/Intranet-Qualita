@@ -9,7 +9,7 @@ import { crmExclusions, crmStatusOf, type CrmLead, type CrmProvider } from "./cr
 import { todayISO } from "./format";
 import { syncKommoChats } from "./crm-chat-sync";
 import { readKommo, type KommoCredentials } from "./kommo";
-import { getOdooOpportunities, getOdooStages, odooConnect, type OdooCredentials } from "./odoo";
+import { getOdooOpportunities, getOdooStages, getOdooWonDates, odooConnect, type OdooCredentials } from "./odoo";
 import { matchSales, readSalesSheet } from "./sales-sheet";
 import { createAdminClient, isMissingTable } from "./supabase/server";
 
@@ -82,6 +82,16 @@ async function readCrm(secrets: CrmSecrets): Promise<{ leads: CrmLead[]; stages:
       getOdooOpportunities(session),
       getOdooStages(session).catch(() => []),
     ]);
+    // Fecha de la venta, del historial de etapas. Con planilla la fecha sale de ahí.
+    // Si el historial falla, se sigue sin ella (la vista usa la de creación).
+    if (!secrets.sales_sheet) {
+      const won = leads.filter((l) => crmStatusOf(l, secrets.won_stages) === "won").map((l) => l.externalId);
+      const dates = await getOdooWonDates(session, won, secrets.won_stages).catch((e) => {
+        console.error("[crm] historial de etapas de Odoo", e instanceof Error ? e.message : e);
+        return new Map<string, string>();
+      });
+      for (const lead of leads) lead.wonAt = dates.get(lead.externalId) ?? null;
+    }
     return { leads, stages };
   }
   if (secrets.provider === "kommo") {
@@ -227,14 +237,23 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     // es el de esa venta (pesos y dólares por separado). Las etapas ganadas y los
     // presupuestos del CRM dejan de contar.
     const sales = secrets.sales_sheet ? await syncSales(db, clientId, secrets.sales_sheet.id, leads, excluded) : null;
-    const sold = new Map<string, { ars: number | null; usd: number | null }>();
+    // La venta cuenta el día de la primera confirmación de la planilla.
+    const sold = new Map<string, { ars: number | null; usd: number | null; on: string }>();
     for (const sale of sales?.rows ?? []) {
       if (!sale.lead_external_id) continue;
-      const total = sold.get(sale.lead_external_id) ?? { ars: null, usd: null };
+      const total = sold.get(sale.lead_external_id) ?? { ars: null, usd: null, on: sale.confirmed_on };
       if (sale.amount_ars) total.ars = (total.ars ?? 0) + Number(sale.amount_ars);
       if (sale.amount_usd) total.usd = (total.usd ?? 0) + Number(sale.amount_usd);
+      if (sale.confirmed_on < total.on) total.on = sale.confirmed_on;
       sold.set(sale.lead_external_id, total);
     }
+    const wonAt = (l: CrmLead) => {
+      if (statuses.get(l.externalId) !== "won") return null;
+      if (!sales) return l.wonAt;
+      const on = sold.get(l.externalId)?.on;
+      // Mediodía de Argentina: el día no se corre al pasarlo a UTC y volver.
+      return on ? `${on}T12:00:00-03:00` : null;
+    };
     if (sales) {
       for (const l of leads) statuses.set(l.externalId, sold.has(l.externalId) ? "won" : l.lost ? "lost" : "open");
     }
@@ -280,6 +299,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         excluded: excluded.get(l.externalId) ?? null,
         // Solo la carga la planilla de ventas; sin ella queda vacía.
         amount_usd: sold.get(l.externalId)?.usd ?? null,
+        won_at: wonAt(l),
       }));
 
       // Se sacan de a tandas, de la más nueva a la más vieja, así una migración
@@ -298,7 +318,14 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
       // Columna inexistente: 42703 si responde Postgres, PGRST204 si PostgREST no
       // la tiene en su schema cache.
       const faltaColumna = (e: { code?: string } | null) => e?.code === "42703" || e?.code === "PGRST204";
-      const tandas = [["amount_usd"], ["contact_created_at", "excluded"], ["stage_changed_at"], ["tags"], ["status", "owner", "ad"]];
+      const tandas = [
+        ["won_at"],
+        ["amount_usd"],
+        ["contact_created_at", "excluded"],
+        ["stage_changed_at"],
+        ["tags"],
+        ["status", "owner", "ad"],
+      ];
       let { error } = await upsert(rows);
       for (let n = 1; n <= tandas.length && faltaColumna(error); n++) {
         ({ error } = await upsert(sinColumnas(tandas.slice(0, n).flat())));
