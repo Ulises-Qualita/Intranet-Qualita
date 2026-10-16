@@ -1,6 +1,7 @@
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState } from "@/components/ui";
 import { getSession } from "@/lib/auth";
+import { featureEnabled } from "@/lib/features";
 import { getThreads } from "@/lib/forum";
 import { ForumList } from "./forum-list";
 import { NewPost } from "./new-post";
@@ -8,6 +9,21 @@ import { NewPost } from "./new-post";
 // El foro es de toda la intranet, no de un área: alcanza con tener la cuenta
 // activa, igual que el agente.
 export default async function ForoPage() {
+  // Oculto por ahora (pedido): se prende en Administración → Funciones en prueba.
+  if (!(await featureEnabled("forum"))) {
+    return (
+      <>
+        <Topbar crumb="Qualita" title="Foro" />
+        <section className="view">
+          <Card title="Foro">
+            <EmptyState label="Desactivado">
+              El foro está desactivado por ahora. Un administrador lo puede activar en <b>Administración → Funciones en prueba</b>.
+            </EmptyState>
+          </Card>
+        </section>
+      </>
+    );
+  }
   const session = await getSession();
   if (!session?.profile?.active) {
     return (

@@ -9,6 +9,7 @@ import { agentSuggestions } from "@/lib/agent/suggestions";
 import { AREAS, canAccess, type AreaKey } from "@/lib/auth-shared";
 import { getSession } from "@/lib/auth";
 import { getClients } from "@/lib/data";
+import { featureEnabled } from "@/lib/features";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // proxy.ts ya redirige sin sesión; esto es la segunda barrera.
@@ -37,7 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const access = Object.fromEntries(AREAS.map(([k]) => [k, canAccess(profile, k)])) as Record<AreaKey, boolean>;
-  const clients = access.clientes ? await getClients() : [];
+  const [clients, forum] = await Promise.all([access.clientes ? getClients() : [], featureEnabled("forum")]);
 
   return (
     // El provider guarda la conversación del agente: al estar en el layout,
@@ -46,7 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Presencia en el layout: cualquier pantalla abierta cuenta como en línea. */}
       <PresenceProvider userId={user.id}>
         <div className="shell">
-          <Sidebar user={user} access={access} clients={clients} />
+          <Sidebar user={user} access={access} clients={clients} hidden={forum ? [] : ["/foro"]} />
           <div className="main">{children}</div>
           {/* El agente solo consulta áreas habilitadas; sin ninguna no tendría nada
               que responder, así que directamente no aparece. */}

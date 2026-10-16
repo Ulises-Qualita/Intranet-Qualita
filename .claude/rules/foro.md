@@ -15,3 +15,4 @@ paths:
   modelo client-safe. El **estado solo lo mueve un admin**, y eso no se puede
   expresar con RLS (una política no ve el valor anterior de la fila): va como
   trigger `forum_status_guard_intranet`.
+- **Oculto por ahora** (pedido, 2026-10-16): es la función `forum` de `lib/features.ts`, apagada por defecto. Apagada, el sidebar no muestra "Foro" (`hidden` de `Sidebar`, desde `app/(app)/layout.tsx`), `/foro` muestra "Desactivado" y las acciones no escriben. Se prende en Administración → Funciones en prueba; los posts quedan guardados.

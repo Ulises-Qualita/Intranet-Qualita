@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
+import { featureEnabled } from "@/lib/features";
 import { isForumKind, isForumStatus } from "@/lib/forum-shared";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,9 +13,10 @@ const BODY_MAX = 4000;
 
 // Perfil activo del equipo. Las políticas de la base exigen lo mismo; esto evita
 // el viaje y devuelve un mensaje legible.
+// Con el foro apagado (Administración → Funciones en prueba) tampoco se escribe.
 async function requireMember() {
-  const session = await getSession();
-  return session?.profile?.active ? session : null;
+  const [session, on] = await Promise.all([getSession(), featureEnabled("forum")]);
+  return on && session?.profile?.active ? session : null;
 }
 
 const text = (value: FormDataEntryValue | null) => (typeof value === "string" ? value.trim() : "");

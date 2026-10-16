@@ -13,6 +13,11 @@ export const FEATURES = [
     detail:
       "Botón en las solapas META (y GADS, cuando esté) que analiza la cuenta publicitaria con Claude y deja recomendaciones para tildar. Solo lo ve el equipo con el área META.",
   },
+  {
+    key: "forum",
+    label: "Foro",
+    detail: "El foro del equipo en el menú lateral. Apagado, no aparece en el menú y /foro no se puede abrir; los posts quedan guardados.",
+  },
 ] as const;
 
 export type FeatureKey = (typeof FEATURES)[number]["key"];

@@ -30,10 +30,13 @@ export function Sidebar({
   user,
   access,
   clients,
+  hidden = [],
 }: {
   user: SessionUser;
   access: Record<AreaKey, boolean>;
   clients: Client[];
+  // Items apagados en Administración → Funciones en prueba (p. ej. "/foro").
+  hidden?: string[];
 }) {
   const pathname = usePathname();
 
@@ -49,7 +52,9 @@ export function Sidebar({
         </div>
 
         <div className="nav-title">Qualita</div>
-        {STUDIO_NAV.filter((item) => (item.area ? access[item.area] : Object.values(access).some(Boolean))).map((item) => (
+        {STUDIO_NAV.filter(
+          (item) => !hidden.includes(item.href) && (item.area ? access[item.area] : Object.values(access).some(Boolean)),
+        ).map((item) => (
           // Administración tiene solapas con ruta propia (/admin/cuentas…): sigue marcada en todas.
           <NavLink
             key={item.href}
