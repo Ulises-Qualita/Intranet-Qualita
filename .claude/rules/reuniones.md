@@ -26,8 +26,8 @@ paths:
   y la cuenta del cliente solo lee (además, en el Portal el roadmap suma una solapa
   "Reuniones" al lado de Calendario y Etapas, con un calendario solo de reuniones:
   van en `db.extraEvents` y `buildCalendar(…, "extra")` lo arma; el Calendario las
-  muestra mezcladas con las etapas, y la solapa no aparece si no hay reuniones o si
-  la solapa Reuniones del cliente está desactivada): `intranet_meeting_notes` (clave = `Meeting.key`,
+  muestra mezcladas con las etapas, y la solapa no aparece si no hay reuniones; se
+  ven aunque la solapa Reuniones del cliente esté desactivada, pedido): `intranet_meeting_notes` (clave = `Meeting.key`,
   `docs/sql/2026-09-30-reuniones-notas.sql`), `lib/meeting-notes.ts`,
   `saveMeetingNote` valida que la clave sea de una reunión pasada del cliente.
 - Reuniones, solo equipo con el área `tareas`: al abrir en el calendario un día con

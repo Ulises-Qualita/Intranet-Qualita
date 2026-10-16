@@ -1136,9 +1136,14 @@ body {
   /* Banner y, montado en su borde de abajo, el vidrio con logo y bienvenida. */
   .pt-hero { display: block; width: 100%; height: 300px; object-fit: cover; border-radius: 28px; box-shadow: 0 20px 50px -28px rgba(37, 40, 81, .45); }
   .pt-hero.plain { background: var(--grad); }
-  .pt-head { z-index: 1; margin: -128px 28px 0; display: flex; align-items: flex-end; gap: 22px; padding: 22px 26px; }
+  .pt-head { z-index: 1; margin: -96px 28px 0; display: flex; align-items: center; gap: 22px; padding: 22px 26px; }
   .pt-head h2 { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 600; letter-spacing: -.7px; line-height: 1.2; color: var(--navy); }
-  .pt-head p { margin: 6px 0 0; max-width: 66ch; font-size: 14px; line-height: 1.55; color: var(--muted); }
+  .pt-eyebrow { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--magenta); }
+  .dark .pt-eyebrow { color: #e07cec; }
+  /* Bienvenida debajo del encabezado, sin vidrio, con una franja de la marca:
+     separa el banner de las cards. Alineada con el contenido del vidrio. */
+  .pt-intro { position: relative; margin: 8px 54px 10px; padding-left: 18px; max-width: 72ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .pt-intro::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 3px; border-radius: 3px; background: var(--grad); }
   /* Oscuro: el vidrio del encabezado va sobre la foto, que puede ser clara; con un
      tinte oscuro el texto (claro en este tema) se sigue leyendo. */
   .dark .pt-head { background: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, .04) 1px, transparent 1.5px) 0 0 / 18px 18px, rgba(22, 20, 42, .62); }
@@ -1258,6 +1263,7 @@ body {
     .pt-grid { grid-template-columns: 1fr; }
     .pt-hero { height: 200px; border-radius: 22px; }
     .pt-head { margin: -70px 14px 0; flex-direction: column; align-items: flex-start; gap: 14px; padding: 18px 20px; }
+    .pt-intro { margin: 4px 14px 6px; font-size: 14px; }
     .pt-head h2 { font-size: 22px; }
     .pt-now { grid-template-columns: auto minmax(0, 1fr); padding: 18px 20px; }
     .pt-now .pt-steps { grid-column: 1 / -1; width: 100%; }
@@ -1308,6 +1314,10 @@ body {
   .c-purple  { background: rgba(144, 101, 176, .17); color: #7a51a0; }
   .c-pink    { background: rgba(193, 76, 138, .16);  color: #a8437a; }
   .c-red     { background: rgba(212, 76, 71, .16);   color: #b03e3a; }
+  /* Colores de la marca, para las etapas del portal. */
+  .c-coral    { background: rgba(254, 111, 97, .2);  color: #c9412f; }
+  .c-magenta  { background: rgba(181, 12, 197, .13); color: #9a0aa8; }
+  .c-lavender { background: rgba(108, 95, 211, .15); color: #5548b8; }
   .dark .c-gray, .dark .c-default { color: #b6b5ce; }
   .dark .c-brown { color: #c8a08c; }
   .dark .c-orange { color: #e3a566; }
@@ -1317,6 +1327,9 @@ body {
   .dark .c-purple { color: #bb97d8; }
   .dark .c-pink { color: #dd8bb6; }
   .dark .c-red { color: #e58b85; }
+  .dark .c-coral { color: #ff9a8f; }
+  .dark .c-magenta { color: #e07cec; }
+  .dark .c-lavender { color: #b1a9f5; }
 }
 
 /* Calendario mensual de una database embebida. */
@@ -1368,31 +1381,51 @@ body {
   /* Segunda línea: badges del Entregable (color de Notion o uno fijo por nombre) o el horario de una reunión. */
   .nd-ev-sub { display: flex; gap: 4px; margin-top: 4px; overflow: hidden; font-size: 11.5px; font-weight: 500; line-height: 18px; }
   .nd-badge { flex-shrink: 0; padding: 1px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; line-height: 16px; }
-  /* Tarea de Notion: tarjeta un poco más clara que el día, con la franja del color
-     de su etapa. .hot = bajo el mouse (todas sus barras, si cruza de semana). */
-  .nd-task { background: var(--nd-ticket); border-color: var(--line); border-left: 3px solid var(--acc); color: var(--ink); box-shadow: 0 1px 2px rgba(37, 40, 81, .08); }
-  .nd-task.hot { border-color: var(--line-strong); border-left-color: var(--acc); box-shadow: 0 4px 12px -4px rgba(37, 40, 81, .28); }
-  .dark .nd-task { box-shadow: 0 1px 2px rgba(0, 0, 0, .35); }
+  /* Tarea de Notion: tarjeta teñida con el color de su etapa (--tint, una capa
+     sobre el fondo del ticket) y la franja en ese color. .hot = bajo el mouse
+     (todas sus barras, si cruza de semana). rgba literales: color-mix() con
+     variables no es confiable acá (ver la paleta de Notion arriba). */
+  .nd-task { background: linear-gradient(var(--tint), var(--tint)), var(--nd-ticket); border-color: var(--tint); border-left: 3px solid var(--acc); color: var(--navy); box-shadow: 0 1px 2px rgba(37, 40, 81, .08); }
+  .nd-task.hot { border-color: var(--acc); box-shadow: 0 4px 12px -4px rgba(37, 40, 81, .28); }
+  .dark .nd-task { color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .35); }
   .dark .nd-task.hot { box-shadow: 0 4px 14px -4px rgba(0, 0, 0, .6); }
-  .acc-default, .acc-gray { --acc: var(--line-strong); }
-  .acc-brown { --acc: #9f6b53; } .acc-orange { --acc: #d9730d; } .acc-yellow { --acc: #cb912f; } .acc-green { --acc: #12a36b; }
-  .acc-blue { --acc: #337ea9; } .acc-purple { --acc: #9065b0; } .acc-pink { --acc: #c14c8a; } .acc-red { --acc: #d44c47; }
-  /* Reunión de Google Calendar sumada al calendario del portal: magenta de la
-     marca, para que no se confunda con las etapas de Notion. Las pasadas, en un tono más suave. */
-  .nd-meet { background: var(--magenta); color: #fff; }
-  .nd-meet svg { display: inline; vertical-align: -1px; margin-right: 3px; }
+  /* Colores de la marca para las etapas del portal (Pendiente / En curso / Completada). */
+  .acc-coral { --acc: #f2584a; --tint: rgba(254, 111, 97, .22); }
+  .acc-magenta { --acc: #b50cc5; --tint: rgba(181, 12, 197, .15); }
+  .acc-lavender { --acc: #6c5fd3; --tint: rgba(108, 95, 211, .17); }
+  .dark .acc-coral { --acc: #fe6f61; --tint: rgba(254, 111, 97, .26); }
+  .dark .acc-magenta { --acc: #d64be6; --tint: rgba(214, 75, 230, .24); }
+  .dark .acc-lavender { --acc: #9d93f0; --tint: rgba(157, 147, 240, .24); }
+  /* Paleta de Notion; sin color propio, lavanda de la marca (en gris parecían deshabilitadas). */
+  .acc-default, .acc-gray { --acc: #7d72c4; --tint: rgba(125, 114, 196, .16); }
+  .acc-brown { --acc: #9f6b53; --tint: rgba(159, 107, 83, .16); } .acc-orange { --acc: #d9730d; --tint: rgba(217, 115, 13, .16); }
+  .acc-yellow { --acc: #cb912f; --tint: rgba(203, 145, 47, .18); } .acc-green { --acc: #12a36b; --tint: rgba(18, 163, 107, .16); }
+  .acc-blue { --acc: #337ea9; --tint: rgba(51, 126, 169, .16); } .acc-purple { --acc: #9065b0; --tint: rgba(144, 101, 176, .17); }
+  .acc-pink { --acc: #c14c8a; --tint: rgba(193, 76, 138, .16); } .acc-red { --acc: #d44c47; --tint: rgba(212, 76, 71, .16); }
+  /* Reunión de Google Calendar sumada al calendario del portal: navy de la marca,
+     sólido, para que se distinga de las etapas y contraste con el fondo. */
+  .nd-meet { background: var(--navy); color: #fff; box-shadow: 0 1px 3px rgba(37, 40, 81, .25); }
+  .dark .nd-meet { background: #d9d4ff; color: #252851; }
+  .nd-meet svg { display: inline; vertical-align: -1px; margin-right: 3px; color: var(--coral); }
+  .dark .nd-meet svg { color: var(--magenta); }
   .nd-meet b { font-weight: 700; font-variant-numeric: tabular-nums; }
-  .nd-meet:hover { filter: brightness(1.08); box-shadow: none; }
-  /* Tinte de marca y no gris: en gris parecían deshabilitadas. */
-  .nd-meet.past { background: color-mix(in srgb, var(--magenta) 16%, var(--surface)); color: var(--ink); box-shadow: inset 3px 0 0 var(--magenta); }
+  .nd-meet.hot { box-shadow: 0 4px 12px -4px rgba(37, 40, 81, .45); }
+  /* Lo que ya pasó (días y eventos), más apagado. */
+  .nd-ev.past { opacity: .5; }
+  .nd-ev.past.hot, .nd-ev.past:focus-visible { opacity: .85; }
+  .nd-cal-day.past .nd-cal-num { opacity: .45; }
+  .nd-cal-day.past { background-image: linear-gradient(rgba(37, 40, 81, .035), rgba(37, 40, 81, .035)); }
+  .dark .nd-cal-day.past { background-image: linear-gradient(rgba(0, 0, 0, .14), rgba(0, 0, 0, .14)); }
 
   /* Detalle de un evento del calendario (diálogo). */
   .nd-detail { max-width: 460px; }
   .nd-detail .modal-head { margin-bottom: 12px; }
   .nd-detail h2 { margin: 0 0 6px; font-size: 20px; line-height: 1.25; }
   .nd-detail-kind { font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
-  .nd-detail-kind.meet { background: var(--magenta); color: #fff; }
-  .nd-detail-kind.meet.past { background: color-mix(in srgb, var(--magenta) 16%, var(--surface)); color: var(--ink); }
+  .nd-detail-kind.meet { background: var(--navy); color: #fff; }
+  .nd-detail-kind.meet.past { background: rgba(37, 40, 81, .12); color: var(--ink); }
+  .dark .nd-detail-kind.meet { background: #d9d4ff; color: #252851; }
+  .dark .nd-detail-kind.meet.past { background: rgba(217, 212, 255, .16); color: var(--ink); }
   .modal-card .nd-detail-date { display: flex; align-items: center; gap: 7px; margin: 0 0 18px; font-size: 13.5px; color: var(--muted); }
   .nd-detail-props { display: flex; flex-direction: column; margin: 0 0 18px; border-top: 1px solid var(--line); }
   .nd-detail-props > div { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }

@@ -23,7 +23,7 @@ paths:
   (`NotionTicket.portal`; el checkbox se elige en `/admin/notion` y, si no, se toma
   el que diga "portal"). **Diseño en vidrio** (clases `.pt-*` en `app/globals.css`),
   elegido por el usuario entre propuestas. De arriba hacia abajo: el banner grande con
-  un vidrio apoyado en su borde (logo + bienvenida); la card del % (`portal-progress.tsx`)
+  un vidrio apoyado en su borde (logo, nombre del cliente y título); la bienvenida debajo, fuera del vidrio y con una franja en degradado (`.pt-intro`), separando el banner de las cards; en `/mi-empresa` la solapa del portal va primera (`lib/client-zone.ts`, pedido); la card del % (`portal-progress.tsx`)
   con las **etapas del proyecto**, que son **fijas e iguales para todos los clientes**
   (`PROJECT_STAGES`): Arquitectura de Marca → Infraestructura Digital → Motor de
   Demanda. El equipo elige la actual y su avance 0–100 (`portal.phase`,
