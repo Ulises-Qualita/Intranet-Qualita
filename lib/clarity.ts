@@ -100,10 +100,18 @@ const toNumber = (value: unknown): number | null => {
 // La documentación de Clarity solo detalla los campos de la métrica Traffic. Para
 // el resto se prueban los nombres conocidos y, si ninguno aparece, se toma el
 // primer número de la fila: es preferible a devolver cero y dar un dato falso.
-function readField(row: Record<string, unknown> | undefined, candidates: string[]): number | null {
+// Los candidatos van en orden de prioridad: se busca el primero, después el
+// segundo… (no el primer campo de la fila que coincida con alguno: Clarity manda
+// sessionsCount antes que subTotal y la fricción terminaba siendo las sesiones).
+// `guess` en false: sin el campo, null (para la fricción, adivinar daba las sesiones).
+function readField(row: Record<string, unknown> | undefined, candidates: string[], guess = true): number | null {
   if (!row) return null;
-  const byName = Object.entries(row).find(([key]) => candidates.some((c) => clean(c) === clean(key)));
-  if (byName) return toNumber(byName[1]);
+  const entries = Object.entries(row);
+  for (const c of candidates) {
+    const byName = entries.find(([key]) => clean(key) === clean(c));
+    if (byName) return toNumber(byName[1]);
+  }
+  if (!guess) return null;
 
   const DIMENSIONS = new Set(["browser", "device", "os", "country/region", "source", "medium", "campaign", "channel", "url"]);
   const first = Object.entries(row).find(([key, value]) => !DIMENSIONS.has(clean(key)) && toNumber(value) !== null);
@@ -117,8 +125,12 @@ const metricValue = (metrics: ClarityMetric[], name: string, candidates: string[
 // página o por dimensión aunque no se pida ningún corte.
 function metricTotal(metrics: ClarityMetric[], name: string, candidates: string[]): number {
   const rows = findMetric(metrics, name)?.information ?? [];
-  return rows.reduce((total, row) => total + (readField(row, candidates) ?? 0), 0);
+  return rows.reduce((total, row) => total + (readField(row, candidates, false) ?? 0), 0);
 }
+
+// Fricción: subTotal es la cantidad de veces que pasó en el día. sessionsCount
+// NO va: es el total de sesiones, igual en todas las métricas.
+const FRICTION_FIELDS = ["subTotal"];
 
 export type ClarityDay = {
   sessions: number;
@@ -171,12 +183,12 @@ export function parseClarityDay(overall: ClarityMetric[]): { day: ClarityDay; pa
     scroll_depth: metricValue(overall, "ScrollDepth", ["averageScrollDepth", "scrollDepth"]),
     total_time: metricValue(overall, "EngagementTime", ["totalTime", "totalEngagementTime"]),
     active_time: metricValue(overall, "EngagementTime", ["activeTime", "activeEngagementTime"]),
-    rage_clicks: metricTotal(overall, "RageClickCount", ["sessionsWithRageClicks", "subTotal", "sessionsCount"]),
-    dead_clicks: metricTotal(overall, "DeadClickCount", ["sessionsWithDeadClicks", "subTotal", "sessionsCount"]),
-    excessive_scroll: metricTotal(overall, "ExcessiveScroll", ["sessionsWithExcessiveScrolls", "subTotal", "sessionsCount"]),
-    quickbacks: metricTotal(overall, "QuickbackClick", ["sessionsWithQuickbackClick", "subTotal", "sessionsCount"]),
-    script_errors: metricTotal(overall, "ScriptErrorCount", ["sessionsWithScriptErrors", "subTotal", "sessionsCount"]),
-    error_clicks: metricTotal(overall, "ErrorClickCount", ["sessionsWithErrorClicks", "subTotal", "sessionsCount"]),
+    rage_clicks: metricTotal(overall, "RageClickCount", FRICTION_FIELDS),
+    dead_clicks: metricTotal(overall, "DeadClickCount", FRICTION_FIELDS),
+    excessive_scroll: metricTotal(overall, "ExcessiveScroll", FRICTION_FIELDS),
+    quickbacks: metricTotal(overall, "QuickbackClick", FRICTION_FIELDS),
+    script_errors: metricTotal(overall, "ScriptErrorCount", FRICTION_FIELDS),
+    error_clicks: metricTotal(overall, "ErrorClickCount", FRICTION_FIELDS),
     devices: ranking(overall, "Device", "name", "sessionsCount", "Otro"),
     // Sin referencia = entró directo (URL tipeada, favorito, app que no la informa).
     sources: ranking(overall, "ReferrerUrl", "name", "sessionsCount", "Directo"),

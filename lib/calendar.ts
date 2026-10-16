@@ -44,7 +44,9 @@ async function accessTokenFor(email: string) {
 export type Meeting = {
   // Mismo evento en los calendarios de varios miembros → una sola reunión.
   key: string;
-  clientName: string;
+  // null en un evento que no sigue la nomenclatura (reunión interna, personal…):
+  // solo aparece en la pantalla Reuniones del sidebar, con su título en `reason`.
+  clientName: string | null;
   reason: string | null;
   start: string;
   end: string;
@@ -62,12 +64,13 @@ type RawEvent = {
   end?: { dateTime?: string; date?: string };
   hangoutLink?: string;
   conferenceData?: { entryPoints?: { entryPointType?: string; uri?: string }[] };
-  attendees?: { email?: string; displayName?: string; resource?: boolean }[];
+  attendees?: { email?: string; displayName?: string; resource?: boolean; self?: boolean; responseStatus?: string }[];
   organizer?: { email?: string };
+  eventType?: string;
 };
 
 const EVENT_FIELDS =
-  "nextPageToken,items(iCalUID,summary,start,end,hangoutLink,conferenceData/entryPoints(entryPointType,uri),attendees(email,displayName,resource),organizer(email))";
+  "nextPageToken,items(iCalUID,summary,start,end,hangoutLink,conferenceData/entryPoints(entryPointType,uri),attendees(email,displayName,resource,self,responseStatus),organizer(email),eventType)";
 
 // Nombre de un participante para mostrar: mayúscula al principio de cada palabra
 // (sin tocar el resto: "mcDonald" queda) y, sin nombre en Calendar, el mail:
@@ -103,8 +106,10 @@ export function parseMeetingTitle(title: string) {
 // eventos de todo el día traen solo la fecha, que se toma en horario de Argentina.
 export const meetingTime = (value: string) => Date.parse(value.length === 10 ? `${value}T00:00:00-03:00` : value);
 
-function toMeeting(e: RawEvent): Meeting | null {
-  const parsed = e.summary ? parseMeetingTitle(e.summary) : null;
+// `any`: también los eventos que no son de un cliente (el calendario propio de
+// un miembro); si no, solo los que siguen la nomenclatura.
+function toMeeting(e: RawEvent, any = false): Meeting | null {
+  const parsed = (e.summary ? parseMeetingTitle(e.summary) : null) ?? (any ? { clientName: null, reason: e.summary?.trim() || "Sin título" } : null);
   const start = e.start?.dateTime ?? e.start?.date;
   const end = e.end?.dateTime ?? e.end?.date ?? start;
   if (!parsed || !start || !end) return null;
@@ -126,7 +131,7 @@ function toMeeting(e: RawEvent): Meeting | null {
   };
 }
 
-async function memberMeetings(email: string, timeMin: string, timeMax: string) {
+async function memberMeetings(email: string, timeMin: string, timeMax: string, all = false) {
   const token = await accessTokenFor(email);
   const meetings: Meeting[] = [];
   let pageToken: string | undefined;
@@ -140,7 +145,7 @@ async function memberMeetings(email: string, timeMin: string, timeMax: string) {
       orderBy: "startTime",
       maxResults: "2500",
       // Achica la respuesta; el filtro real por nomenclatura es parseMeetingTitle.
-      q: "Qualita",
+      ...(all ? {} : { q: "Qualita" }),
       fields: EVENT_FIELDS,
       ...(pageToken ? { pageToken } : {}),
     }).toString();
@@ -148,7 +153,13 @@ async function memberMeetings(email: string, timeMin: string, timeMax: string) {
     const body = await res.json().catch(() => null);
     if (!res.ok || !body) throw new CalendarError(body?.error?.message ?? `Google Calendar respondió ${res.status}`);
     for (const e of (body.items ?? []) as RawEvent[]) {
-      const m = toMeeting(e);
+      if (all) {
+        // Del calendario propio no van la ubicación de trabajo ni los cumpleaños
+        // (no son reuniones), ni lo que el miembro rechazó.
+        if (e.eventType === "workingLocation" || e.eventType === "birthday") continue;
+        if (e.attendees?.some((a) => a.self && a.responseStatus === "declined")) continue;
+      }
+      const m = toMeeting(e, all);
       if (m) meetings.push(m);
     }
     pageToken = body.nextPageToken;
@@ -218,12 +229,34 @@ async function meetingsWhere(keep: (m: Meeting) => boolean): Promise<ClientMeeti
 // Reuniones de un cliente. Quien la llama ya validó el acceso a ese cliente.
 export async function getClientMeetings(clientName: string): Promise<ClientMeetings> {
   const target = normalizeName(clientName);
-  return meetingsWhere((m) => normalizeName(m.clientName) === target);
+  return meetingsWhere((m) => m.clientName !== null && normalizeName(m.clientName) === target);
 }
 
-// Reuniones con clientes en las que participa un miembro del equipo (invitado u
-// organizador), de todos los clientes: la pantalla Reuniones del sidebar.
+// Todo el calendario propio de un miembro (reuniones con clientes, internas y el
+// resto de sus eventos), para la pantalla Reuniones del sidebar. Se lee como él
+// y solo lo ve él. Cacheado por mail, igual que la consulta del estudio.
+const getOwnCalendar = unstable_cache(
+  async (email: string): Promise<Meeting[]> => {
+    const now = Date.now();
+    const timeMin = new Date(now - PAST_DAYS * 86_400_000).toISOString();
+    const timeMax = new Date(now + FUTURE_DAYS * 86_400_000).toISOString();
+    return (await memberMeetings(email, timeMin, timeMax, true)).sort((a, b) => meetingTime(a.start) - meetingTime(b.start));
+  },
+  ["calendar-own"],
+  { revalidate: CACHE_TTL, tags: [MEETINGS_TAG] },
+);
+
 export async function getMemberMeetings(email: string): Promise<ClientMeetings> {
-  const me = email.toLowerCase();
-  return meetingsWhere((m) => m.organizer?.toLowerCase() === me || m.attendees.some((a) => a.email.toLowerCase() === me));
+  if (!calendarConfigured()) return { upcoming: [], past: [], error: "config" };
+  try {
+    const mine = await getOwnCalendar(email.toLowerCase());
+    const now = Date.now();
+    return {
+      upcoming: mine.filter((m) => meetingTime(m.end) >= now),
+      past: mine.filter((m) => meetingTime(m.end) < now).reverse(),
+      error: null,
+    };
+  } catch (e) {
+    return { upcoming: [], past: [], error: e instanceof Error ? e.message : "No se pudo leer Google Calendar." };
+  }
 }

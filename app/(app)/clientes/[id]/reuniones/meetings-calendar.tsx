@@ -102,28 +102,13 @@ function dayTitle(iso: string, today: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-// Último día de un mes "2026-11" → "2026-11-30".
-const lastDayOf = (ym: string) => {
-  const [y, m] = ym.split("-").map(Number);
-  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-};
-
-const plural = (n: number) => `${n} ${n === 1 ? "reunión" : "reuniones"}`;
+export const plural = (n: number) => `${n} ${n === 1 ? "reunión" : "reuniones"}`;
 
 // Lunes de la semana de un día.
-const weekOf = (iso: string) => addDays(iso, -((utc(iso).getUTCDay() + 6) % 7));
+export const weekOf = (iso: string) => addDays(iso, -((utc(iso).getUTCDay() + 6) % 7));
 const weekStartLabel = fmt({ day: "numeric", month: "long" });
 
-// "13 – 19 de octubre" o "29 de septiembre – 5 de octubre".
-const dayMonth = fmt({ day: "numeric", month: "long" });
-const dayOnly = fmt({ day: "numeric" });
-function weekRange(monday: string) {
-  const sunday = addDays(monday, 6);
-  const sameMonth = monday.slice(0, 7) === sunday.slice(0, 7);
-  return `${(sameMonth ? dayOnly : dayMonth).format(utc(monday))} – ${dayMonth.format(utc(sunday))}`;
-}
-
-function weekTitle(monday: string, today: string) {
+export function weekTitle(monday: string, today: string) {
   const current = weekOf(today);
   if (monday === current) return "Esta semana";
   if (monday === addDays(current, 7)) return "Próxima semana";
@@ -142,24 +127,17 @@ export function MeetingsCalendar({
   today,
   prep = null,
   emptyText = "No hay reuniones agendadas con este cliente.",
-  view = "month",
 }: {
   meetings: CalMeeting[];
   months: string[];
   today: string;
   prep?: MeetingPrep | null;
   emptyText?: string;
-  // "week": la semana con cada reunión completa (pantalla Reuniones del sidebar).
-  view?: "month" | "week";
 }) {
   const initial = Math.max(0, months.indexOf(today.slice(0, 7)));
   const [index, setIndex] = useState(initial);
   const [picked, setPicked] = useState<string | null>(null);
-  // Vista semanal: el lunes de la semana a la vista, dentro de la ventana de Calendar.
-  const thisWeek = weekOf(today);
-  const [monday, setMonday] = useState(thisWeek);
-  const firstWeek = weekOf(`${months[0]}-01`);
-  const lastWeek = weekOf(lastDayOf(months.at(-1)!));
+
   const ym = months[index];
   const { label, days } = useMemo(() => monthGrid(ym), [ym]);
 
@@ -188,71 +166,14 @@ export function MeetingsCalendar({
     setPicked(day);
     const i = months.indexOf(day.slice(0, 7));
     if (i >= 0) setIndex(i);
-    setMonday(weekOf(day));
   };
   const backToToday = () => {
     setIndex(initial);
-    setMonday(thisWeek);
     setPicked(null);
-  };
-  const goWeek = (n: number) => {
-    const next = addDays(monday, 7 * n);
-    if (next >= firstWeek && next <= lastWeek) setMonday(next);
   };
 
   return (
-    <div className={`mcal${view === "week" ? " weekly" : ""}`}>
-      {view === "week" ? (
-        <div className="mcal-month">
-          <div className="mcal-head">
-            <div className="mcal-side-title">
-              <h3 aria-live="polite">{weekTitle(monday, today)}</h3>
-              <span>{weekRange(monday)}</span>
-            </div>
-            <div className="mcal-nav">
-              <button type="button" className="mcal-today" onClick={backToToday} disabled={monday === thisWeek && !picked}>
-                Hoy
-              </button>
-              <button type="button" className="mcal-arrow" onClick={() => goWeek(-1)} disabled={monday <= firstWeek} aria-label="Semana anterior">
-                <Icon name="chevron" size={16} className="flip" />
-              </button>
-              <button type="button" className="mcal-arrow" onClick={() => goWeek(1)} disabled={monday >= lastWeek} aria-label="Semana siguiente">
-                <Icon name="chevron" size={16} />
-              </button>
-            </div>
-          </div>
-
-          <div key={monday} className="mcal-grid mcal-wk">
-            {Array.from({ length: 7 }, (_, i) => addDays(monday, i)).map((iso, i) => {
-              const list = byDay.get(iso) ?? [];
-              const classes = ["mcal-wkd", iso < today && "gone", iso === today && "today", picked === iso && "on"].filter(Boolean);
-              return (
-                <button
-                  key={iso}
-                  type="button"
-                  className={classes.join(" ")}
-                  onClick={() => setPicked(picked === iso ? null : iso)}
-                  aria-pressed={picked === iso}
-                  aria-label={`${dayTitle(iso, today)}${list.length ? `, ${plural(list.length)}` : ""}`}
-                >
-                  <span className="mcal-wkh" aria-hidden>
-                    <small>{WEEKDAYS[i]}</small>
-                    <span className="mcal-n">{utc(iso).getUTCDate()}</span>
-                  </span>
-                  {/* En la semana entra cada reunión entera: hora, cliente y motivo. */}
-                  {list.map((m) => (
-                    <span key={m.key} className={`mcal-wev ${m.status}`} aria-hidden>
-                      <b>{m.startLabel ? `${m.startLabel} – ${m.endLabel}` : "Todo el día"}</b>
-                      {m.client && <strong>{m.client}</strong>}
-                      <span>{m.title}</span>
-                    </span>
-                  ))}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
+    <div className="mcal">
       <div className="mcal-month">
         <div className="mcal-head">
           <h3 aria-live="polite">{label}</h3>
@@ -317,7 +238,6 @@ export function MeetingsCalendar({
           })}
         </div>
       </div>
-      )}
 
       <div className="mcal-side">
         <div className="mcal-head">
@@ -366,14 +286,19 @@ export function MeetingsCalendar({
 }
 
 // `onOpen`: en la lista de próximas, tocar la card la abre sola (con sus tareas).
-function MeetingCard({
+// `detail`: dentro del diálogo de la pantalla Reuniones del sidebar. El cliente
+// va en el encabezado del diálogo (no en la card) y "Unirse", debajo de los
+// participantes en vez de a la derecha.
+export function MeetingCard({
   m,
   prep,
   onOpen,
+  detail = false,
 }: {
   m: CalMeeting;
   prep: MeetingPrep | null;
   onOpen?: () => void;
+  detail?: boolean;
 }) {
   const date = utc(m.day);
   const { editSlug, clientId } = m;
@@ -381,6 +306,19 @@ function MeetingCard({
   const tasks = prep && clientId ? prep.tasks.filter((t) => t.clientId === clientId && t.due <= m.day) : [];
   const undated = (clientId && prep?.undated[clientId]) || 0;
   const connectHref = clientId ? prep?.connectHrefs[clientId] : undefined;
+  const join = m.status !== "past" && m.meetUrl && (
+    <a
+      className="mcard-join"
+      href={m.meetUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Unirse a ${m.title}`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Icon name="media" size={15} strokeWidth={2} />
+      Unirse
+    </a>
+  );
 
   return (
     // Toda la card abre; el título es el mismo control para teclado y lectores de pantalla.
@@ -392,7 +330,7 @@ function MeetingCard({
       </div>
 
       <div className="mcard-body">
-        {m.client && <span className="mcard-client">{m.client}</span>}
+        {m.client && !detail && <span className="mcard-client">{m.client}</span>}
         <div className="mcard-top">
           <h4>
             {onOpen ? (
@@ -431,6 +369,7 @@ function MeetingCard({
             <span className="mcard-names">{m.attendees.map((a) => a.name).join(", ")}</span>
           </div>
         )}
+        {detail && join}
         {/* Descripción de una pasada: el equipo la escribe acá; el cliente solo la lee. */}
         {m.status === "past" &&
           (editSlug ? (
@@ -440,19 +379,7 @@ function MeetingCard({
           ))}
       </div>
 
-      {m.status !== "past" && m.meetUrl && (
-        <a
-          className="mcard-join"
-          href={m.meetUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Unirse a ${m.title}`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Icon name="media" size={15} strokeWidth={2} />
-          Unirse
-        </a>
-      )}
+      {!detail && join}
 
       {/* Tareas a cerrar antes de esta reunión: a todo el ancho, debajo de la card. */}
       {prep && clientId && (

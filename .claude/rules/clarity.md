@@ -23,3 +23,11 @@ paths:
   respuesta general ya trae `Device`, `ReferrerUrl` y `PopularPages`, así que la foto
   diaria es **una sola consulta** (`parseClarityDay`; los cortes por dimensión volvían
   vacíos). `docs/sql/2026-09-28-clarity-recalculo.sql` recalcula los días viejos desde `raw`.
+- Fricción (rage clicks, clics muertos, etc.): el número es **`subTotal`** de cada
+  métrica (`FRICTION_FIELDS` en `lib/clarity.ts`), sin adivinar otro campo. Cada fila
+  trae también `sessionsCount`, que es el **total de sesiones del día** (igual en
+  todas): leerlo hacía que todas las cards mostraran el mismo número. `readField` busca
+  los candidatos **en orden de prioridad** (antes tomaba el primer campo de la fila
+  que coincidiera con alguno, y Clarity manda `sessionsCount` primero). Los días
+  guardados se corrigen desde `raw` con `docs/sql/2026-09-28-clarity-recalculo.sql`
+  (el 2026-10-16 se corrieron las 38 filas).

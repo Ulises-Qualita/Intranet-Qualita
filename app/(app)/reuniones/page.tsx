@@ -2,17 +2,17 @@ import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState } from "@/components/ui";
 import { buildMeetings } from "@/app/(app)/clientes/[id]/reuniones/build";
-import { MeetingsCalendar } from "@/app/(app)/clientes/[id]/reuniones/meetings-calendar";
 import { getSession } from "@/lib/auth";
 import { canAccess } from "@/lib/auth-shared";
 import { calendarConfigured, getMemberMeetings, normalizeName } from "@/lib/calendar";
 import { getClients, getTasksResult, getTeam } from "@/lib/data";
 import { getMeetingNotes } from "@/lib/meeting-notes";
+import { TeamMeetings } from "./team-meetings";
 
-// Reuniones del sidebar: las reuniones con clientes ("<Cliente> & Qualita
-// <motivo>") en las que participa quien entra, de todos los clientes. Mismo
-// calendario que la solapa Reuniones de cada cliente, con el nombre del cliente
-// en cada reunión. Como el foro, no es de un área: son las reuniones de su propio
+// Reuniones del sidebar: todo el calendario de Google de quien entra (las
+// reuniones con clientes, "<Cliente> & Qualita <motivo>", y el resto): la semana
+// por horario con el estilo del calendario del portal y las próximas debajo
+// (team-meetings.tsx), con el nombre del cliente en cada reunión. Como el foro, no es de un área: son las reuniones de su propio
 // calendario. Las descripciones se editan con el área Clientes y las tareas
 // para la próxima reunión se ven con el área Tareas, igual que en la solapa.
 export default async function ReunionesPage() {
@@ -55,9 +55,9 @@ export default async function ReunionesPage() {
   ]);
   const byName = new Map(clients.map((c) => [normalizeName(c.name), c]));
   const notes = await getMeetingNotes(clients.map((c) => c.id));
-  const { calendar, prep, today, months } = buildMeetings({
+  const { calendar, prep, today } = buildMeetings({
     meetings,
-    clientOf: (m) => byName.get(normalizeName(m.clientName)) ?? null,
+    clientOf: (m) => (m.clientName ? (byName.get(normalizeName(m.clientName)) ?? null) : null),
     notes,
     team,
     internal: true,
@@ -71,17 +71,7 @@ export default async function ReunionesPage() {
       <Topbar crumb="Qualita" title={title} />
       <section className="view">
         <SyncStatus source="Google Calendar" live error={meetings.error} internal />
-        <div className="card pad-lg">
-          {/* Las pasadas se ven tocando su día; ahí se escribe la descripción. */}
-          <MeetingsCalendar
-            meetings={calendar}
-            months={months}
-            today={today}
-            prep={prep}
-            emptyText="No tenés reuniones con clientes agendadas."
-            view="week"
-          />
-        </div>
+        <TeamMeetings meetings={calendar} today={today} prep={prep} />
       </section>
     </>
   );

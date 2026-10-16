@@ -38,14 +38,16 @@ paths:
   `prep` y cada card filtra por su día. Las abiertas sin vencimiento solo se cuentan.
   No depende de `SHOW_TASKS`. La cuenta del cliente no recibe `prep`.
 - Pantalla **Reuniones del sidebar** (`/reuniones`, `app/(app)/reuniones/page.tsx`,
-  pedido del usuario): las reuniones con clientes en las que participa quien entra
-  (invitado u organizador, `getMemberMeetings` de `lib/calendar.ts`), de todos los
-  clientes, con el mismo `MeetingsCalendar`; cada reunión lleva el nombre del cliente
-  (`CalMeeting.client`, en la celda del mes y arriba de la card). Como el foro, no es
+  pedido del usuario): **todo el calendario de Google de quien entra**, no solo las
+  reuniones con clientes (`getMemberMeetings` de `lib/calendar.ts` lee su calendario
+  primario sin el filtro `q: "Qualita"`, cacheado 5 min por mail; afuera la ubicación
+  de trabajo, los cumpleaños y lo que rechazó). Los eventos sin la nomenclatura llegan
+  con `clientName: null` y su título en `reason`, sin notas ni tareas, y en la semana
+  van en lavanda (`.ws-ev.other`); las reuniones con clientes, en navy, con el nombre del cliente en cada reunión (`CalMeeting.client`, arriba de la card). Como el foro, no es
   de un área (cuenta activa alcanza); las descripciones se editan con el área
   `clientes` y las tareas para la próxima reunión salen con el área `tareas`, filtradas
   por el cliente de cada reunión. El cliente se cruza por nombre contra `getClients()`
   (RLS): si no lo ve, la reunión aparece sin notas ni tareas. La lógica que arma
   reuniones y tareas está en `clientes/[id]/reuniones/build.ts` (`buildMeetings`) y
   la comparten las dos pantallas; `saveMeetingNote` revalida también `/reuniones`.
-- La pantalla del sidebar usa `view="week"` de `MeetingsCalendar` (pedido del usuario: semanal, no mensual): la semana de lunes a domingo con cada reunión entera (hora, cliente, motivo), navegable dentro de la ventana de Calendar; la solapa del cliente sigue mensual.
+- Diseño de la pantalla del sidebar (pedido del usuario, tras descartar la semana en columnas, una grilla tipo Google con su propio estilo y el calendario del portal en mes/semana sin horas): **la semana con las horas en filas, como Google Calendar, pero con el estilo del calendario del portal** (`app/(app)/reuniones/week-schedule.tsx`, clases `.ws-*` sobre `.nd-cal`: mismos bordes, fondos de día y reuniones `.nd-ev.nd-meet` en navy con el ícono). Con la **estética del portal** (pedido): todo dentro de `.pt` (luces de marca) y cada bloque en vidrio (`.pt-glass`; el calendario en `.pt-cal`, con días translúcidos y líneas suaves vía `--ws-line`); los eventos que no son con un cliente usan `.nd-task acc-lavender` como las tareas del portal. Horario visible fijo de 9 a 18 (pedido), 72 px por hora; cada bloque mide exactamente lo que dura (sin alto mínimo en minutos: un Warm Up de 10 min estirado a 20 pasaba la línea de la hora siguiente), con clases `short` y `tiny` (una línea chica) para las cortas; las que caen enteras antes o después van en franjas "Antes de las 9" (arriba) y "Después de las 18" (abajo), como las de todo el día, para que ninguna quede en una hora que no es la suya (antes se pegaban al borde y se veían fuera de lugar); las que lo pasan en parte se recortan; cada reunión en su horario con el alto de lo que dura (las que se pisan se reparten el ancho; las cortas en una línea); las de todo el día en una franja arriba; línea coral de la hora actual (se calcula al montar). Navega de a semana entre la primera y la última con reuniones (siempre incluye la actual). Debajo, **Próximas reuniones**: solo las de esta semana y la próxima (pedido), una card (`MeetingCard`) por fila, separadas por semana (`team-meetings.tsx`, `.tm-*`). En el diálogo (`MeetingCard detail`) el cliente va en el encabezado sobre "Reunión" y "Unirse" debajo de los participantes. Tocar una reunión abre su card en un diálogo: tareas a cerrar si viene, descripción editable si pasó. La solapa Reuniones de cada cliente sigue con `MeetingsCalendar` (mes + panel); el calendario del portal (`NotionCalendar`) no se tocó.

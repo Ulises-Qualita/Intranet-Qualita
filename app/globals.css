@@ -349,25 +349,6 @@ body {
   .mcal-ev span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mcal-ev.live { background: var(--ok); }
   .mcal-ev.past { background: var(--surface-2); color: var(--muted); box-shadow: inset 2px 0 0 var(--line-strong); }
-  /* Vista semanal (pantalla Reuniones del sidebar): la semana ocupa más ancho y
-     cada día lista sus reuniones enteras. */
-  .mcal.weekly { grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); }
-  .mcal-wk { grid-template-columns: repeat(7, minmax(0, 1fr)); }
-  .mcal-wkd { min-width: 0; min-height: 360px; display: flex; flex-direction: column; gap: 6px; padding: 8px 6px; border: none; background: var(--surface); font-family: inherit; text-align: left; cursor: pointer; transition: background .12s, box-shadow .12s; }
-  .mcal-wkd:hover { background: var(--surface-2); }
-  .mcal-wkd.on { box-shadow: inset 0 0 0 2px var(--magenta); }
-  .mcal-wkd:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--magenta); }
-  .mcal-wkh { display: flex; flex-direction: column; align-items: center; gap: 3px; padding-bottom: 6px; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
-  .mcal-wkh small { font-size: 11.5px; font-weight: 600; color: var(--muted); }
-  .mcal-wkh .mcal-n { align-self: center; }
-  .mcal-wkd.gone .mcal-n { color: var(--muted-2); }
-  .mcal-wkd.today .mcal-n { background: var(--grad); color: #fff; }
-  .mcal-wev { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 6px 7px; border-radius: 8px; background: var(--magenta); color: #fff; font-size: 11.5px; line-height: 1.3; }
-  .mcal-wev b { font-size: 11px; font-weight: 600; opacity: .9; font-variant-numeric: tabular-nums; }
-  .mcal-wev strong { font-weight: 700; overflow-wrap: anywhere; }
-  .mcal-wev span { overflow-wrap: anywhere; }
-  .mcal-wev.live { background: var(--ok); }
-  .mcal-wev.past { background: var(--surface-2); color: var(--muted); box-shadow: inset 2px 0 0 var(--line-strong); }
   .mcal-more { padding-left: 5px; font-size: 11px; font-weight: 600; color: var(--muted); }
 
   /* Próximas: cards con bloque de fecha, horario, cuánto falta y participantes. */
@@ -385,6 +366,37 @@ body {
   .mcard-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   /* Pantalla Reuniones del sidebar: de qué cliente es cada reunión. */
   .mcard-client { display: block; margin-bottom: 2px; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--magenta); }
+  /* Pantalla Reuniones del sidebar (team-meetings.tsx): el calendario del portal
+     arriba y las próximas debajo, en cards por semana; cada reunión abre su card
+     en un diálogo. */
+  .tm-upcoming { display: flex; flex-direction: column; gap: 14px; }
+  .tm-upcoming-head { display: flex; align-items: baseline; gap: 10px; }
+  .tm-upcoming-head h3 { margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 600; letter-spacing: -.4px; color: var(--navy); }
+  .tm-upcoming-head span { font-size: 12.5px; color: var(--muted); }
+  .tm-week { display: flex; flex-direction: column; gap: 10px; }
+  .tm-week h4 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 12.5px; font-weight: 700; color: var(--navy); }
+  .tm-week h4::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .tm-week h4 small { order: 2; font-size: 12px; font-weight: 500; color: var(--muted-2); }
+  /* Una card por fila (pedido). */
+  .tm-cards { display: flex; flex-direction: column; gap: 10px; }
+  .tm-cards .mcard { background: rgba(255, 255, 255, .6); border-color: rgba(255, 255, 255, .7); }
+  .dark .tm-cards .mcard { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .08); }
+  .tm-upcoming .mcal-empty { border-color: rgba(37, 40, 81, .15); }
+  .tm-detail { width: min(560px, calc(100vw - 32px)); max-width: none; text-align: left; }
+  .tm-detail .mcard { border: none; padding: 0; box-shadow: none; background: none; }
+  /* En el diálogo: el cliente arriba a la izquierda sobre "Reunión", la fecha
+     alineada con el título y "Unirse" debajo de los participantes. */
+  .tm-detail .modal-head { align-items: flex-start; margin-bottom: 16px; }
+  .tm-detail-kind { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+  .tm-detail-kind b { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--magenta); }
+  .tm-detail-kind span { font-size: 13px; color: var(--muted); }
+  .tm-detail .mcard { flex-wrap: wrap; align-items: flex-start; }
+  .tm-detail .mcard-date { margin-top: 1px; }
+  .tm-detail .mcard-join { align-self: flex-start; margin-top: 4px; }
+  /* Sin scroll propio en las tareas (pedido): si no entra, se desplaza el diálogo
+     entero, sin barra visible. */
+  .tm-detail { max-height: calc(100dvh - 48px); overflow-y: auto; scrollbar-width: none; }
+  .tm-detail::-webkit-scrollbar { display: none; }
   .mcard-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
   .mcard-top h4 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--ink); }
   .mcard-badge { flex-shrink: 0; padding: 3px 9px; border-radius: 20px; background: var(--surface-2); font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
@@ -452,7 +464,6 @@ body {
   .meet-note-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
   .meet-note-actions .muted { margin-right: auto; font-size: 12px; }
   @media (max-width: 1150px) {
-    .mcal, .mcal.weekly { grid-template-columns: 1fr; }
     .mcal-month { padding: 0 0 22px; border-right: none; border-bottom: 1px solid var(--line); }
     .mcal-side { padding: 22px 0 0; }
     .mcal-list { max-height: none; }
@@ -464,12 +475,6 @@ body {
     .mcal-ev { height: 5px; padding: 0; border-radius: 3px; }
     .mcal-ev b, .mcal-ev span, .mcal-more { display: none; }
     .mcal-ev.past { box-shadow: none; background: var(--line-strong); }
-    /* La semana, un día debajo del otro. */
-    .mcal-wk { grid-template-columns: 1fr; }
-    .mcal-wkd { min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
-    .mcal-wkh { flex-direction: row; width: 100%; justify-content: flex-start; gap: 8px; }
-    .mcal-wkh .mcal-n { align-self: auto; }
-    .mcal-wev { flex: 1 1 140px; }
     .mcard { flex-wrap: wrap; }
     .mcard-join { margin-left: 66px; }
   }
@@ -1412,6 +1417,55 @@ body {
   .nd-meet.hot { box-shadow: 0 4px 12px -4px rgba(37, 40, 81, .45); }
   /* Lo que ya pasó (días y eventos), más apagado. */
   .nd-ev.past { opacity: .5; }
+  /* Semana por horario (pantalla Reuniones del sidebar, week-schedule.tsx): las
+     horas en filas como Google Calendar, con el estilo del calendario del portal. */
+  .ws { --ws-gutter: 58px; --ws-line: var(--line); }
+  /* En vidrio (.pt-cal), como el calendario del portal: días translúcidos y líneas suaves. */
+  .pt-cal .ws { --ws-line: rgba(37, 40, 81, .08); }
+  .dark .pt-cal .ws { --ws-line: rgba(255, 255, 255, .07); }
+  .pt-cal .ws-grid { border-color: rgba(255, 255, 255, .6); }
+  .dark .pt-cal .ws-grid { border-color: rgba(255, 255, 255, .08); }
+  .pt-cal .ws-head { background: transparent; }
+  .ws-title::first-letter { text-transform: none; }
+  .ws-grid { border: 1px solid var(--ws-line); border-radius: 12px; overflow: hidden; background: var(--nd-day); animation: nd-cal-in .22s ease; }
+  .ws-row { display: grid; grid-template-columns: var(--ws-gutter) repeat(7, minmax(0, 1fr)); }
+  .ws-head, .ws-strip { border-bottom: 1px solid var(--ws-line); }
+  .ws-strip.late { border-top: 1px solid var(--ws-line); border-bottom: none; }
+  .ws-strip .ws-gutter { font-size: 10px; line-height: 1.2; }
+  .ws-head { background: var(--surface); }
+  .ws-gutter { display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; font-size: 10.5px; font-weight: 500; color: var(--muted-2); text-align: right; }
+  .ws-day { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 4px; border-left: 1px solid var(--ws-line); }
+  .ws-day small { font-size: 11.5px; font-weight: 500; color: var(--muted-2); }
+  .ws-day .nd-cal-num { font-size: 13px; color: var(--ink); }
+  .ws-day.past small, .ws-day.past .nd-cal-num { opacity: .45; }
+  .ws-day.today small { color: var(--magenta); font-weight: 600; }
+  .ws-day.today .nd-cal-num { background: var(--grad); color: #fff; border-radius: 20px; min-width: 24px; text-align: center; }
+  .ws-cell { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 4px 0; border-left: 1px solid var(--ws-line); }
+  .ws-body { position: relative; }
+  .ws-hours { position: relative; display: block; padding: 0; }
+  .ws-hours span { position: absolute; right: 8px; transform: translateY(-50%); font-variant-numeric: tabular-nums; }
+  .ws-hours span:first-child { transform: translateY(2px); }
+  .ws-col { position: relative; min-width: 0; border-left: 1px solid var(--ws-line); background-image: linear-gradient(to bottom, var(--ws-line) 1px, transparent 1px); }
+  .ws-col.past { background-color: rgba(37, 40, 81, .035); }
+  .dark .ws-col.past { background-color: rgba(0, 0, 0, .14); }
+  .ws-col.today { background-color: color-mix(in srgb, var(--magenta) 4%, transparent); }
+  .ws-ev { position: absolute; display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 5px 8px; overflow: hidden; }
+  .ws-cell .ws-ev { position: relative; height: auto; margin: 0 4px; }
+  .ws-ev:hover { box-shadow: 0 4px 12px -4px rgba(37, 40, 81, .45); z-index: 2; }
+  .ws-sub { font-size: 11px; font-weight: 500; opacity: .8; }
+  .ws-ev.short { justify-content: center; padding-top: 1px; padding-bottom: 1px; }
+  .ws-ev.short .ws-sub { display: none; }
+  /* Reunión muy corta (10 min): una línea chica que no pasa de su horario. */
+  .ws-ev.tiny { justify-content: center; padding: 0 6px; font-size: 10.5px; line-height: 1; border-radius: 4px; }
+  .ws-ev.tiny .ws-sub, .ws-ev.tiny svg { display: none; }
+  .ws-ev.tiny.nd-task { border-left-width: 2px; }
+  .ws-now { position: absolute; left: -1px; right: 0; z-index: 3; height: 2px; background: var(--coral); pointer-events: none; }
+  .ws-now::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--coral); }
+  @media (max-width: 820px) {
+    .ws-grid { overflow-x: auto; }
+    .ws-row { min-width: 680px; }
+  }
+
   .nd-ev.past.hot, .nd-ev.past:focus-visible { opacity: .85; }
   .nd-cal-day.past .nd-cal-num { opacity: .45; }
   .nd-cal-day.past { background-image: linear-gradient(rgba(37, 40, 81, .035), rgba(37, 40, 81, .035)); }
