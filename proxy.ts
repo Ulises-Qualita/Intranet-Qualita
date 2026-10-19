@@ -8,6 +8,9 @@ const PUBLIC_PATHS = ["/login", "/auth/", "/api/cron/"];
 
 // Zona de las cuentas de clientes (mail + contraseña). Todo lo demás es del equipo.
 const CLIENT_ZONE = "/mi-empresa";
+// Donde entra el cliente: el Portal (pedido). Si no lo tiene, su layout lo manda a
+// Vista general.
+const CLIENT_HOME = "/mi-empresa/portal";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -54,8 +57,8 @@ export async function proxy(request: NextRequest) {
   };
 
   if (!signedIn && !isPublic) return redirectTo("/login");
-  if (signedIn && pathname === "/login") return redirectTo(staff ? "/" : CLIENT_ZONE);
-  if (signedIn && !staff && !isPublic && !inClientZone) return redirectTo(CLIENT_ZONE);
+  if (signedIn && pathname === "/login") return redirectTo(staff ? "/" : CLIENT_HOME);
+  if (signedIn && !staff && !isPublic && !inClientZone) return redirectTo(CLIENT_HOME);
   if (staff && inClientZone) return redirectTo("/");
 
   return response;

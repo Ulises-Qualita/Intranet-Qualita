@@ -35,7 +35,7 @@ export function AssigneesPicker({
   }
 
   return (
-    <Card title="Responsables" hint={`${assigned.size} asignado${assigned.size === 1 ? "" : "s"}`}>
+    <Card title="Acceso al cliente" hint={`${assigned.size} con acceso`}>
       {team.length === 0 ? (
         <EmptyState>No hay miembros activos. Agregalos desde Administración.</EmptyState>
       ) : (

@@ -61,7 +61,11 @@ No hay framework de tests configurado todavía.
   del grupo dibuja el `Topbar` y la barra (`admin-tabs.tsx`, con las clases
   `client-tabbar` / `client-tab`), las páginas no dibujan `Topbar` y el `loading.tsx`
   usa `TabSkeleton`. `/admin/notion` queda fuera del grupo. Las acciones de cuentas
-  revalidan `/admin/cuentas`.
+  revalidan `/admin/cuentas`. Cuentas de clientes: "Ver acceso" muestra la contraseña
+  actual a pedido; Auth guarda solo el hash, así que la intranet guarda una copia
+  cifrada (AES-256-GCM, `lib/client-passwords.ts`, tabla sin políticas
+  `intranet_client_passwords`, `docs/sql/2026-10-19-claves-clientes.sql`) al crear o
+  cambiar la contraseña. Las cuentas anteriores no la tienen: se genera una nueva.
 - Puesto (`intranet_profiles.job_title`, `docs/sql/2026-09-26-perfil-puesto.sql`):
   texto libre que define el admin en `/admin` (Diseñador/a, Project manager…), **solo
   para mostrar**; los permisos siguen siendo `role` + `areas`. `getTeam()` lo expone

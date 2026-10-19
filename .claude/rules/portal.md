@@ -23,7 +23,7 @@ paths:
   (`NotionTicket.portal`; el checkbox se elige en `/admin/notion` y, si no, se toma
   el que diga "portal"). **Diseño en vidrio** (clases `.pt-*` en `app/globals.css`),
   elegido por el usuario entre propuestas. De arriba hacia abajo: el banner grande con
-  un vidrio apoyado en su borde (logo, nombre del cliente y título); la bienvenida debajo, fuera del vidrio y con una franja en degradado (`.pt-intro`), separando el banner de las cards; en `/mi-empresa` la solapa del portal va primera (`lib/client-zone.ts`, pedido); la card del % (`portal-progress.tsx`)
+  un vidrio apoyado en su borde (logo, nombre del cliente y título); la bienvenida debajo, fuera del vidrio y con una franja en degradado (`.pt-intro`), separando el banner de las cards; en `/mi-empresa` la solapa del portal va primera (`lib/client-zone.ts`, pedido) y es donde entra el cliente al loguearse (`app/auth/actions.ts` y `CLIENT_HOME` de `proxy.ts`; sin Notion conectado, el layout del portal lo manda a Vista general); la card del % está **oculta por ahora** (`SHOW_STAGES` en `portal-view.tsx`, pedido; se sigue cargando en Editar portal → Etapas); la card del % (`portal-progress.tsx`)
   con las **etapas del proyecto**, que son **fijas e iguales para todos los clientes**
   (`PROJECT_STAGES`): Arquitectura de Marca → Infraestructura Digital → Motor de
   Demanda. El equipo elige la actual y su avance 0–100 (`portal.phase`,
@@ -40,16 +40,17 @@ paths:
   sin card de próximas reuniones, pedido); la línea de **Hitos** (ver abajo); y, lado
   a lado, el responsable validador (nombre, cargo y WhatsApp como texto, **sin
   botón**: el portal lo ve el cliente y el responsable es de su lado) y la
-  confidencialidad. **Editar portal** tiene tres solapas: General (banner y
-  responsable), Etapas (`stages-editor.tsx`: radio con las tres etapas y, salvo en
-  Motor de Demanda, un slider del avance; `savePortalPhase`, sin migración) e Hitos (`milestones-editor.tsx`). Los tickets de Notion solo van al
+  confidencialidad. **Editar portal** tiene dos solapas: General (banner y
+  responsable) y Etapas (`stages-editor.tsx`: radio con las tres etapas y, salvo en
+  Motor de Demanda, un slider del avance; `savePortalPhase`, sin migración). Los tickets de Notion solo van al
   calendario; su estado se traduce a Pendiente / En curso / Completada.
-- Hitos del proyecto: **ya no son una solapa** (se sacó a pedido; viven en el Portal
-  del cliente y se cargan en Editar portal → Hitos, `portal/milestones-editor.tsx`:
-  tipo, fecha, título, descripción; cada cambio se guarda al momento con
-  `portal/milestone-actions.ts`, que revalida el portal). Tipos `inicio | hito |
-  entrega | lanzamiento` en `lib/milestones-shared.ts` (client-safe). La línea
-  (`portal/milestone-timeline.tsx`) es **horizontal** y sigue el estilo del
+- Hitos del proyecto: **solo tickets de Notion** (pedido 2026-10-19). La línea muestra
+  los mismos tickets del calendario del portal (proyecto del cliente, checkbox del
+  portal tildado) que tienen fecha, en su fin si es un rango, con el estado traducido
+  como etiqueta (`timelineEntries` en `portal/milestone-timeline.tsx`). Ya no se
+  cargan hitos a mano: se sacó la solapa Hitos de Editar portal y el código de
+  `intranet_client_milestones` (la tabla sigue en la base, sin uso). La línea es
+  **horizontal** y sigue el estilo del
   [Timeline de Dice UI](https://21st.dev/@diceui/components/timeline) que eligió el
   usuario (punto de 14 px, conector de 2 px, título / fecha / descripción debajo, texto
   alineado a la izquierda), con "magia": cumplidos en degradado con tilde, el activo
@@ -57,7 +58,6 @@ paths:
   llega a él lleno según el tiempo transcurrido, con un brillo y una luz en la punta.
   Se descartaron (no le gustaron): lista vertical, columnas simples con "Hoy", una
   cinta a escala real tipo editor de video y el texto centrado. Si no entra,
-  `portal/timeline-scroller.tsx` desplaza de costado hasta el activo (`data-today`).
-  Cumplido / activo / pendiente sale de la fecha, no se guarda. Tabla
-  `intranet_client_milestones` (`docs/sql/2026-10-08-hitos.sql`; RLS: equipo con
-  `clientes` escribe, la cuenta del cliente lee los suyos), `lib/milestones.ts`.
+  `portal/timeline-scroller.tsx` desplaza de costado hasta el activo (`data-today`),
+  con flechas a los costados (solo del lado donde hay más) y arrastre con el mouse.
+  Cumplido / activo / pendiente sale de la fecha, no del estado de Notion.

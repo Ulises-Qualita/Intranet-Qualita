@@ -38,5 +38,6 @@ export async function signInWithPassword(_prev: PasswordLoginState, form: FormDa
     return { error: account ? "Esta cuenta está desactivada. Escribile a tu contacto en Qualita." : "Esta cuenta no tiene acceso a la intranet." };
   }
 
-  redirect("/mi-empresa");
+  // El cliente entra al Portal (pedido); sin Portal, su layout lo manda a Vista general.
+  redirect("/mi-empresa/portal");
 }

@@ -14,7 +14,6 @@ import {
   type PortalValidator,
   VALIDATOR_MAX,
 } from "@/lib/portal";
-import type { Milestone } from "@/lib/milestones-shared";
 import { createClient } from "@/lib/supabase/client";
 import {
   bannerUploaded,
@@ -24,13 +23,11 @@ import {
   savePortalValidator,
 } from "../../actions";
 import { BannerCrop } from "./banner-crop";
-import { MilestonesEditor } from "./milestones-editor";
 import { StagesEditor } from "./stages-editor";
 
 const TABS = [
   { id: "general", label: "General" },
   { id: "etapas", label: "Etapas" },
-  { id: "hitos", label: "Hitos" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -61,28 +58,22 @@ async function uploadBanner(clientId: string, file: File, position: BannerPositi
 
 const EMPTY: PortalValidator = { name: "", role: "", phone: "" };
 
-// "Editar portal" (solo equipo), en tres solapas: General (banner y responsable
-// validador), Etapas (en cuál está el cliente, para el % del portal) e Hitos (la línea de hitos). El logo es
-// el del cliente y se cambia en Editar cliente; los tickets del calendario salen de
-// Notion. General y Etapas se guardan con "Guardar"; cada hito, al momento.
+// "Editar portal" (solo equipo), en dos solapas: General (banner y responsable
+// validador) y Etapas (en cuál está el cliente, para el % del portal). El logo es
+// el del cliente y se cambia en Editar cliente; los tickets del calendario y de la
+// línea de hitos salen de Notion. Las dos se guardan con "Guardar".
 export function PortalEditor({
   clientId,
-  clientSlug,
   validator,
   banner,
   bannerPosition,
   phase,
-  milestones,
-  milestonesMissing,
 }: {
   clientId: string;
-  clientSlug: string;
   validator: PortalValidator | null;
   banner: string | null;
   bannerPosition: BannerPosition;
   phase: PortalPhase | null;
-  milestones: Milestone[];
-  milestonesMissing: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("general");
   // Cambia en cada apertura: las solapas vuelven a lo guardado (se descartan cambios sin guardar).
@@ -192,23 +183,12 @@ export function PortalEditor({
               >
                 {t.label}
                 {t.id === "etapas" && phase && <span>{PROJECT_STAGES.findIndex((s) => s.id === phase.stage) + 1}/3</span>}
-                {t.id === "hitos" && milestones.length > 0 && <span>{milestones.length}</span>}
               </button>
             ))}
           </div>
 
           {tab === "etapas" && (
             <StagesEditor key={session} clientId={clientId} phase={phase} onCancel={close} onSaved={close} />
-          )}
-
-          {tab === "hitos" && (
-            <MilestonesEditor
-              key={session}
-              clientSlug={clientSlug}
-              milestones={milestones}
-              missing={milestonesMissing}
-              onClose={close}
-            />
           )}
 
           <form onSubmit={submit} noValidate hidden={tab !== "general"}>
