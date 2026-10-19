@@ -96,8 +96,8 @@ export type RawProperty = {
   title?: { plain_text: string }[];
   rich_text?: { plain_text: string }[];
   status?: { name: string } | null;
-  select?: { name: string } | null;
-  multi_select?: { name: string }[];
+  select?: { name: string; color?: string } | null;
+  multi_select?: { name: string; color?: string }[];
   date?: { start: string | null; end?: string | null } | null;
   people?: { id: string; name?: string; person?: { email?: string } }[];
   relation?: { id: string }[];

@@ -43,7 +43,11 @@ paths:
   confidencialidad. **Editar portal** tiene dos solapas: General (banner y
   responsable) y Etapas (`stages-editor.tsx`: radio con las tres etapas y, salvo en
   Motor de Demanda, un slider del avance; `savePortalPhase`, sin migración). Los tickets de Notion solo van al
-  calendario; su estado se traduce a Pendiente / En curso / Completada.
+  calendario; su estado se traduce a Pendiente / En curso / Completada y define el
+  color del ticket (gris / magenta / verde, `STAGE_STATUS`; pedido: nada de rojos).
+  La propiedad "Pilar" del ticket (select o multi-select, se busca por nombre, con
+  el color de Notion) va como pill debajo del título, igual que el Entregable en
+  los calendarios de Notion; sin Pilar en ningún ticket, una sola línea.
 - Hitos del proyecto: **solo tickets de Notion** (pedido 2026-10-19). La línea muestra
   los mismos tickets del calendario del portal (proyecto del cliente, checkbox del
   portal tildado) que tienen fecha, en su fin si es un rango, con el estado traducido

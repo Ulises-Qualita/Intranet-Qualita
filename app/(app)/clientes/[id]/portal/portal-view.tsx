@@ -86,12 +86,15 @@ async function portalRoadmap(client: Client): Promise<Roadmap> {
 }
 
 // El estado de Notion traducido para el cliente: los internos (Bloqueado,
-// Feedback…) no se muestran, salen del mismo mapeo que usan las Tareas.
+// Feedback…) no se muestran, salen del mismo mapeo que usan las Tareas. El color
+// del ticket en el calendario sale de acá (pedido: que hable del estado, nada de
+// rojos): gris lo que no empezó, magenta lo que está en curso y verde lo hecho,
+// como en la línea de hitos.
 const STAGE_STATUS: Record<TaskStatus, { name: string; color: string }> = {
-  todo: { name: "Pendiente", color: "coral" },
+  todo: { name: "Pendiente", color: "slate" },
   doing: { name: "En curso", color: "magenta" },
   blocked: { name: "En curso", color: "magenta" },
-  done: { name: "Completada", color: "lavender" },
+  done: { name: "Completada", color: "green" },
 };
 
 // En Notion los tickets suelen llamarse "<Etapa> - <Cliente>"; acá el cliente ya
@@ -107,16 +110,20 @@ function withoutClient(title: string, clientName: string) {
 // Reuniones si hay. La tabla de etapas no va: arriba ya están los hitos.
 // `tickets` llega en orden de fecha (sortStages).
 function roadmapDb(tickets: NotionTicket[], clientName: string, meetings: ExtraEvent[]): EmbeddedDb {
+  // El Pilar va como pill debajo del título (buildCalendar); si ningún ticket lo
+  // tiene, la columna no va y los tickets quedan de una línea.
+  const pillars = tickets.some((t) => t.pillars?.length);
   const rows: DbRow[] = tickets.map((t) => ({
     id: t.id,
     cells: [
       { kind: "text", text: withoutClient(t.title, clientName) },
       { kind: "date", text: t.dueDate ?? "", ...(t.dueEnd ? { end: t.dueEnd } : {}) },
       { kind: "tags", tags: [STAGE_STATUS[t.status]] },
+      ...(pillars ? [{ kind: "tags" as const, tags: t.pillars ?? [] }] : []),
     ],
   }));
   return {
-    columns: ["Tarea", "Fecha", "Estado"],
+    columns: ["Tarea", "Fecha", "Estado", ...(pillars ? ["Pilar"] : [])],
     rows,
     titleColumn: 0,
     dateColumn: 1,

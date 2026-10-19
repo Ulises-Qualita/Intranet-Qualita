@@ -227,7 +227,8 @@ export async function loadNotionProperties(
 
 // ---------- Cuentas de clientes (/mi-empresa) ----------
 //
-// Una cuenta por empresa, con mail y contraseña que define el admin. Van con
+// Una o varias cuentas por empresa (una por persona, pedido 2026-10-19), con mail
+// y contraseña que define el admin. Van con
 // service_role porque Auth se administra desde el server; cada acción exige admin
 // y las que tocan un usuario existente verifican antes que sea una cuenta de
 // cliente, para que por acá no se pueda borrar ni cambiarle la clave a nadie del
@@ -259,9 +260,6 @@ export async function createClientAccount(_prev: ActionResult | null, form: Form
   const { data: client } = await admin.from("intranet_clients").select("id, name").eq("id", clientId).maybeSingle();
   if (!client) return { ok: false, error: "No se encontró el cliente." };
 
-  const { data: taken } = await admin.from("intranet_client_users").select("user_id").eq("client_id", clientId).maybeSingle();
-  if (taken) return { ok: false, error: `${client.name} ya tiene una cuenta.` };
-
   // Auth es compartido con el otro app: si el mail ya existe no se reutiliza,
   // porque habría que pisarle la contraseña a alguien que ya la tiene.
   const { data: created, error } = await admin.auth.admin.createUser({
@@ -289,7 +287,14 @@ export async function createClientAccount(_prev: ActionResult | null, form: Form
     // riesgo: se borra el usuario recién creado.
     console.error("[admin] createClientAccount", profileError ?? linkError);
     await admin.auth.admin.deleteUser(userId);
-    return { ok: false, error: "No se pudo crear la cuenta. ¿Corriste docs/sql/2026-09-25-cuentas-clientes.sql?" };
+    // 23505: todavía está el unique de una cuenta por empresa.
+    const oneOnly = linkError?.code === "23505";
+    return {
+      ok: false,
+      error: oneOnly
+        ? `Para sumarle otra cuenta a ${client.name} falta correr docs/sql/2026-10-19-varias-cuentas-por-cliente.sql en Supabase.`
+        : "No se pudo crear la cuenta. ¿Corriste docs/sql/2026-09-25-cuentas-clientes.sql?",
+    };
   }
   await storeClientPassword(userId, password);
 

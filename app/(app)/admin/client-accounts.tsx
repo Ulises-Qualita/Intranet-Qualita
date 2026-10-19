@@ -5,7 +5,7 @@ import { ClientAvatar } from "@/components/client-avatar";
 import { Icon } from "@/components/icons";
 import { Card, EmptyState } from "@/components/ui";
 import type { Client, ClientAccount } from "@/lib/data";
-import { relativeTime, shortDate } from "@/lib/format";
+import { relativeTime } from "@/lib/format";
 import {
   type ActionResult,
   createClientAccount,
@@ -278,7 +278,7 @@ function AccountDialog({ state, onClose }: { state: DialogState; onClose: () => 
         ) : mode === "delete" && account ? (
           <>
             <p className="modal-lead">
-              El cliente deja de poder entrar y la cuenta se borra para siempre. Si solo querés cortarle el acceso por un
+              Esta persona deja de poder entrar y su cuenta se borra para siempre (las demás cuentas de la empresa siguen igual). Si solo querés cortarle el acceso por un
               tiempo, <b>desactivala</b>: se puede volver a activar con la misma contraseña.
             </p>
             {error && <p className="form-error modal-error">{error}</p>}
@@ -305,12 +305,12 @@ function AccountDialog({ state, onClose }: { state: DialogState; onClose: () => 
           <form onSubmit={submit} noValidate>
             <p className="modal-lead">
               {mode === "create"
-                ? "El cliente entra con este mail y contraseña y ve solo lo suyo."
+                ? "Esta persona entra con su mail y contraseña y ve solo lo de su empresa. Cada persona puede tener su propia cuenta."
                 : "La contraseña anterior deja de funcionar al guardar."}
             </p>
             {mode === "create" && (
               <label className="acc-field">
-                <span>Mail del cliente</span>
+                <span>Mail de la persona</span>
                 <input
                   type="email"
                   value={email}
@@ -376,46 +376,165 @@ function ActiveToggle({ account }: { account: ClientAccount }) {
   );
 }
 
-type Filter = "all" | "none" | "active" | "inactive";
+type Filter = "all" | "with" | "none";
 
-// Cuentas de clientes: una por empresa. El cliente entra en /login con mail y
-// contraseña y ve solo lo suyo en /mi-empresa.
+const usersLabel = (n: number) => (n === 1 ? "1 usuario" : `${n} usuarios`);
+
+// Los usuarios de un cliente, en un modal: cada uno con su mail, último ingreso,
+// acceso y acciones, más "Agregar usuario". Las acciones abren el modal de cuenta
+// encima de este, y al cerrarlo se vuelve acá. La lista sale de las props, así se
+// actualiza sola cuando una acción revalida la página.
+function UsersDialog({
+  client,
+  accounts,
+  onAction,
+  onClose,
+}: {
+  client: Client;
+  accounts: ClientAccount[];
+  onAction: (next: DialogState) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => ref.current?.showModal(), []);
+  const close = () => ref.current?.close();
+
+  return (
+    <dialog
+      ref={ref}
+      className="modal"
+      aria-labelledby="acc-users-title"
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) close();
+      }}
+    >
+      <div className="modal-card modal-form acc-dialog acc-users">
+        <div className="modal-head">
+          <h2 id="acc-users-title">Usuarios</h2>
+          <button type="button" className="modal-close" onClick={close} aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+
+        <div className="acc-who">
+          <ClientAvatar client={client} />
+          <div>
+            <b>{client.name}</b>
+            <span>
+              {accounts.length ? `${usersLabel(accounts.length)} · cada uno entra con su mail` : "Todavía no tiene usuarios"}
+            </span>
+          </div>
+        </div>
+
+        {accounts.length > 0 && (
+          <ul className="acc-users-list">
+            {accounts.map((a) => (
+              <li key={a.userId}>
+                <div className="acc-mail">
+                  <span>{a.email}</span>
+                  <small>
+                    {a.lastSignInAt ? (
+                      <span suppressHydrationWarning>Último ingreso {relativeTime(a.lastSignInAt)}</span>
+                    ) : (
+                      <span className="pill acc-never">Nunca ingresó</span>
+                    )}
+                  </small>
+                </div>
+                <ActiveToggle account={a} />
+                <div className="account-buttons acc-row-actions">
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn-sm"
+                    aria-label={`Ver el acceso de ${a.email}`}
+                    title="Ver acceso"
+                    onClick={() => onAction({ kind: "view", client, account: a })}
+                  >
+                    <Icon name="eye" size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn-sm"
+                    aria-label={`Cambiar la contraseña de ${a.email}`}
+                    title="Cambiar contraseña"
+                    onClick={() => onAction({ kind: "password", client, account: a })}
+                  >
+                    <Icon name="key" size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn-sm icon-btn-danger"
+                    aria-label={`Borrar la cuenta ${a.email}`}
+                    title="Borrar cuenta"
+                    onClick={() => onAction({ kind: "delete", client, account: a })}
+                  >
+                    <Icon name="trash" size={16} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="modal-actions">
+          <button type="button" className="btn-secondary" onClick={close}>
+            Cerrar
+          </button>
+          <button type="button" className="connect-btn" onClick={() => onAction({ kind: "create", client })}>
+            <Icon name="plus" size={15} strokeWidth={2} />
+            Agregar usuario
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+// Cuentas de clientes: varias por empresa, una por persona. Cada una entra en
+// /login con su mail y contraseña y ve solo lo de su empresa en /mi-empresa. La
+// tabla tiene una fila por cliente; los usuarios se ven en un modal.
 export function ClientAccounts({ clients, accounts }: { clients: Client[]; accounts: ClientAccount[] | null }) {
   const [dialog, setDialog] = useState<(DialogState & { n: number }) | null>(null);
   const openDialog = (next: DialogState) => setDialog((prev) => ({ ...next, n: (prev?.n ?? 0) + 1 }));
+  // Cliente con el modal de usuarios abierto (por id: la lista sale de las props).
+  const [usersOf, setUsersOf] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
-  const rows = useMemo(
-    () => clients.map((c) => ({ client: c, account: accounts?.find((a) => a.clientId === c.id) ?? null })),
+  // Un grupo por cliente, con sus cuentas de la más vieja a la más nueva.
+  const groups = useMemo(
+    () =>
+      clients.map((c) => ({
+        client: c,
+        accounts: (accounts ?? []).filter((a) => a.clientId === c.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+      })),
     [clients, accounts],
   );
 
   const counts = {
-    all: rows.length,
-    none: rows.filter((r) => !r.account).length,
-    active: rows.filter((r) => r.account?.active).length,
-    inactive: rows.filter((r) => r.account && !r.account.active).length,
+    all: groups.length,
+    with: groups.filter((g) => g.accounts.length).length,
+    none: groups.filter((g) => !g.accounts.length).length,
   };
-  const neverIn = rows.filter((r) => r.account && !r.account.lastSignInAt).length;
+  const neverIn = groups.reduce((n, g) => n + g.accounts.filter((a) => !a.lastSignInAt).length, 0);
 
+  // Se busca por cliente o por el mail de cualquiera de sus usuarios.
   const q = query.trim().toLowerCase();
-  const visible = rows.filter(({ client, account }) => {
-    if (filter === "none" && account) return false;
-    if (filter === "active" && !account?.active) return false;
-    if (filter === "inactive" && (!account || account.active)) return false;
-    return !q || client.name.toLowerCase().includes(q) || (account?.email.includes(q) ?? false);
+  const visible = groups.filter(({ client, accounts: list }) => {
+    if (filter === "with" && !list.length) return false;
+    if (filter === "none" && list.length) return false;
+    return !q || client.name.toLowerCase().includes(q) || list.some((a) => a.email.includes(q));
   });
+  const open = usersOf ? groups.find((g) => g.client.id === usersOf) : null;
 
   const filters: { key: Filter; label: string }[] = [
     { key: "all", label: "Todos" },
-    { key: "none", label: "Sin cuenta" },
-    { key: "active", label: "Activas" },
-    { key: "inactive", label: "Desactivadas" },
+    { key: "with", label: "Con usuarios" },
+    { key: "none", label: "Sin usuarios" },
   ];
 
   return (
-    <Card title="Cuentas de clientes" hint="Una por empresa. Ingresan con mail y contraseña y ven solo lo suyo.">
+    <Card title="Cuentas de clientes" hint="Cada persona entra con su mail y contraseña y ve solo lo de su empresa.">
       {accounts === null ? (
         <EmptyState label="Pendiente">Falta correr docs/sql/2026-09-25-cuentas-clientes.sql en Supabase.</EmptyState>
       ) : clients.length === 0 ? (
@@ -423,7 +542,7 @@ export function ClientAccounts({ clients, accounts }: { clients: Client[]; accou
       ) : (
         <>
           <div className="acc-toolbar">
-            <div className="rec-filters acc-filters" role="tablist" aria-label="Filtrar cuentas">
+            <div className="rec-filters acc-filters" role="tablist" aria-label="Filtrar clientes">
               {filters.map((f) => (
                 <button
                   key={f.key}
@@ -452,7 +571,7 @@ export function ClientAccounts({ clients, accounts }: { clients: Client[]; accou
 
           {neverIn > 0 && (
             <p className="acc-hint">
-              {neverIn === 1 ? "1 cuenta todavía no ingresó nunca" : `${neverIn} cuentas todavía no ingresaron nunca`}: puede
+              {neverIn === 1 ? "1 usuario todavía no ingresó nunca" : `${neverIn} usuarios todavía no ingresaron nunca`}: puede
               que no les hayan llegado los datos.
             </p>
           )}
@@ -462,83 +581,80 @@ export function ClientAccounts({ clients, accounts }: { clients: Client[]; accou
               <thead>
                 <tr>
                   <th>Cliente</th>
-                  <th>Cuenta</th>
+                  <th>Usuarios</th>
                   <th>Último ingreso</th>
-                  <th>Acceso</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {visible.map(({ client: c, account }) => (
-                  <tr key={c.id} className={account ? undefined : "acc-empty"}>
-                    <td>
-                      <div className="cl-cell">
-                        <ClientAvatar client={c} />
-                        <b>{c.name}</b>
-                      </div>
-                    </td>
-                    <td>
-                      {account ? (
-                        <div className="acc-mail">
-                          <span>{account.email}</span>
-                          <small>Creada el {shortDate(account.createdAt.slice(0, 10))}</small>
+                {visible.map(({ client: c, accounts: list }) => {
+                  const inactive = list.filter((a) => !a.active).length;
+                  const never = list.filter((a) => !a.lastSignInAt).length;
+                  // El ingreso más reciente de cualquiera de sus usuarios.
+                  const last = list.reduce<string | null>(
+                    (max, a) => (a.lastSignInAt && (!max || a.lastSignInAt > max) ? a.lastSignInAt : max),
+                    null,
+                  );
+                  return (
+                    <tr key={c.id} className={list.length ? undefined : "acc-empty"}>
+                      <td>
+                        <div className="cl-cell">
+                          <ClientAvatar client={c} />
+                          <b>{c.name}</b>
                         </div>
-                      ) : (
-                        <span className="muted">Sin cuenta todavía</span>
-                      )}
-                    </td>
-                    <td>
-                      {account &&
-                        (account.lastSignInAt ? (
-                          <span suppressHydrationWarning>{relativeTime(account.lastSignInAt)}</span>
+                      </td>
+                      <td>
+                        {list.length ? (
+                          <div className="acc-mail">
+                            <span>{usersLabel(list.length)}</span>
+                            {(inactive > 0 || never > 0) && (
+                              <small>
+                                {[
+                                  inactive && `${inactive} ${inactive === 1 ? "desactivado" : "desactivados"}`,
+                                  never && `${never} sin ingresar`,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </small>
+                            )}
+                          </div>
                         ) : (
-                          <span className="pill acc-never">Nunca ingresó</span>
-                        ))}
-                    </td>
-                    <td>{account && <ActiveToggle account={account} />}</td>
-                    <td>
-                      <div className="account-buttons acc-row-actions">
-                        {account ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btn-secondary btn-sm"
-                              onClick={() => openDialog({ kind: "view", client: c, account })}
-                            >
-                              <Icon name="eye" size={15} />
-                              Ver acceso
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-secondary btn-sm"
-                              onClick={() => openDialog({ kind: "password", client: c, account })}
-                            >
-                              <Icon name="key" size={15} />
-                              Cambiar contraseña
-                            </button>
-                            <button
-                              type="button"
-                              className="icon-btn icon-btn-sm icon-btn-danger"
-                              aria-label={`Borrar la cuenta de ${c.name}`}
-                              title="Borrar cuenta"
-                              onClick={() => openDialog({ kind: "delete", client: c, account })}
-                            >
-                              <Icon name="trash" size={16} />
-                            </button>
-                          </>
-                        ) : (
-                          <button type="button" className="btn-secondary btn-sm btn-primary" onClick={() => openDialog({ kind: "create", client: c })}>
-                            <Icon name="plus" size={15} strokeWidth={2} />
-                            Crear acceso
-                          </button>
+                          <span className="muted">Sin usuarios todavía</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td>
+                        {list.length > 0 &&
+                          (last ? (
+                            <span suppressHydrationWarning>{relativeTime(last)}</span>
+                          ) : (
+                            <span className="pill acc-never">Nunca ingresó</span>
+                          ))}
+                      </td>
+                      <td>
+                        <div className="account-buttons acc-row-actions">
+                          {list.length ? (
+                            <button type="button" className="btn-secondary btn-sm" onClick={() => setUsersOf(c.id)}>
+                              <Icon name="users" size={15} />
+                              Ver usuarios
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn-secondary btn-sm btn-primary"
+                              onClick={() => openDialog({ kind: "create", client: c })}
+                            >
+                              <Icon name="plus" size={15} strokeWidth={2} />
+                              Crear acceso
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {visible.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="acc-none">
+                    <td colSpan={4} className="acc-none">
                       Ningún cliente coincide con la búsqueda.
                     </td>
                   </tr>
@@ -549,6 +665,9 @@ export function ClientAccounts({ clients, accounts }: { clients: Client[]; accou
         </>
       )}
 
+      {open && (
+        <UsersDialog client={open.client} accounts={open.accounts} onAction={openDialog} onClose={() => setUsersOf(null)} />
+      )}
       {dialog && <AccountDialog key={dialog.n} state={dialog} onClose={() => setDialog(null)} />}
     </Card>
   );

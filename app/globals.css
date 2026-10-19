@@ -1324,6 +1324,8 @@ body {
   .c-magenta  { background: rgba(181, 12, 197, .13); color: #9a0aa8; }
   .c-lavender { background: rgba(108, 95, 211, .15); color: #5548b8; }
   .dark .c-gray, .dark .c-default { color: #b6b5ce; }
+  .c-slate { background: rgba(110, 116, 140, .16); color: #5b6078; }
+  .dark .c-slate { color: #b9bdd0; }
   .dark .c-brown { color: #c8a08c; }
   .dark .c-orange { color: #e3a566; }
   .dark .c-yellow { color: #dcb86a; }
@@ -1402,6 +1404,9 @@ body {
   .dark .acc-magenta { --acc: #d64be6; --tint: rgba(214, 75, 230, .24); }
   .dark .acc-lavender { --acc: #9d93f0; --tint: rgba(157, 147, 240, .24); }
   /* Paleta de Notion; sin color propio, lavanda de la marca (en gris parecían deshabilitadas). */
+  /* Estado "Pendiente" del portal: neutro, sin tinte de color. */
+  .acc-slate { --acc: #8a8fa6; --tint: rgba(110, 116, 140, .14); }
+  .dark .acc-slate { --acc: #a3a8bf; --tint: rgba(163, 168, 191, .2); }
   .acc-default, .acc-gray { --acc: #7d72c4; --tint: rgba(125, 114, 196, .16); }
   .acc-brown { --acc: #9f6b53; --tint: rgba(159, 107, 83, .16); } .acc-orange { --acc: #d9730d; --tint: rgba(217, 115, 13, .16); }
   .acc-yellow { --acc: #cb912f; --tint: rgba(203, 145, 47, .18); } .acc-green { --acc: #12a36b; --tint: rgba(18, 163, 107, .16); }
@@ -1918,11 +1923,16 @@ body {
   .team-stats dd { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 32px; letter-spacing: -1px; line-height: 1; color: var(--navy); order: 1; }
   .team-late { order: 3; margin-top: 6px; align-self: flex-start; font-size: 11.5px; font-weight: 600; color: var(--down); background: color-mix(in srgb, var(--down) 12%, transparent); padding: 2px 9px; border-radius: 20px; }
 
-  .team-clients { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  .team-clients a { display: flex; align-items: center; gap: 11px; padding: 6px 8px; margin: 0 -8px; border-radius: 11px; font-size: 13.5px; font-weight: 500; color: var(--ink); }
-  .team-clients a:hover { background: var(--surface-2); color: var(--magenta); }
-  .team-clients a:focus-visible { outline: 2px solid var(--magenta); outline-offset: -2px; }
-  .team-clients .av { width: 30px; height: 30px; border-radius: 9px; font-size: 11px; }
+  /* Clientes de cada persona: chips en filas, no uno por renglón (team-clients.tsx). */
+  .team-clients { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .team-clients li { min-width: 0; max-width: 100%; }
+  .team-clients a { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 3px 10px 3px 3px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--ink); background: var(--surface); }
+  .team-clients a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+  .team-clients a:hover { border-color: var(--magenta); color: var(--magenta); }
+  .team-clients a:focus-visible, .team-more:focus-visible { outline: 2px solid var(--magenta); outline-offset: 1px; }
+  .team-clients .av { width: 22px; height: 22px; border-radius: 50%; font-size: 9px; flex-shrink: 0; }
+  .team-more { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 0; border-radius: 999px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--magenta); background: color-mix(in srgb, var(--magenta) 9%, transparent); cursor: pointer; }
+  .team-more:hover { background: color-mix(in srgb, var(--magenta) 15%, transparent); }
   .team-empty { font-size: 13px; color: var(--muted-2); margin: 0; }
 
   /* Puesto: lo que define el admin (Diseñador/a, Project manager…). */
@@ -2009,6 +2019,17 @@ body {
   .accounts-table td { vertical-align: middle; }
   .accounts-table td:last-child { text-align: right; }
   .acc-row-actions { justify-content: flex-end; flex-wrap: nowrap; }
+  /* Modal "Ver usuarios": la lista de cuentas de un cliente. */
+  .modal-card.acc-users { max-width: 600px; }
+  .acc-users-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; max-height: min(52vh, 420px); overflow-y: auto; text-align: left; }
+  .acc-users-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 12px 14px; }
+  .acc-users-list li + li { border-top: 1px solid var(--line); }
+  .acc-users-list .acc-mail span { overflow-wrap: anywhere; }
+  .acc-users-list .acc-mail small .pill { margin-top: 2px; }
+  @media (max-width: 560px) {
+    .acc-users-list li { grid-template-columns: minmax(0, 1fr) auto; }
+    .acc-users-list .acc-mail { grid-column: 1 / -1; }
+  }
   .accounts-table tr.acc-empty td { background: color-mix(in srgb, var(--magenta) 3%, transparent); }
   .acc-mail span { display: block; color: var(--ink); }
   .acc-mail small { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }

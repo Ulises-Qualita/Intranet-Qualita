@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { ClientAvatar } from "@/components/client-avatar";
 import { OnlineCount, OnlineDot, OnlineStatus } from "@/components/presence";
 import { Topbar } from "@/components/topbar";
 import { NoAccess, Pill } from "@/components/ui";
@@ -8,6 +6,7 @@ import { getAreaSession } from "@/lib/auth";
 import { getAllClients, getTasks, getTeam, isLateTask, isOpenTask } from "@/lib/data";
 import { todayISO } from "@/lib/format";
 import { SHOW_TASKS } from "@/lib/tasks";
+import { TeamClients } from "./team-clients";
 
 export default async function EquipoPage() {
   const session = await getAreaSession("equipo");
@@ -77,16 +76,9 @@ export default async function EquipoPage() {
                 </dl>
 
                 {assigned.length > 0 ? (
-                  <ul className="team-clients">
-                    {assigned.map((c) => (
-                      <li key={c.id}>
-                        <Link href={`/clientes/${c.slug}`}>
-                          <ClientAvatar client={c} />
-                          {c.name}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
+                  <TeamClients
+                    clients={assigned.map(({ id, slug, name, initials, logoUrl }) => ({ id, slug, name, initials, logoUrl }))}
+                  />
                 ) : (
                   <p className="team-empty">Sin clientes asignados</p>
                 )}

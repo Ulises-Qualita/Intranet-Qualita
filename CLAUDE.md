@@ -61,7 +61,10 @@ No hay framework de tests configurado todavía.
   del grupo dibuja el `Topbar` y la barra (`admin-tabs.tsx`, con las clases
   `client-tabbar` / `client-tab`), las páginas no dibujan `Topbar` y el `loading.tsx`
   usa `TabSkeleton`. `/admin/notion` queda fuera del grupo. Las acciones de cuentas
-  revalidan `/admin/cuentas`. Cuentas de clientes: "Ver acceso" muestra la contraseña
+  revalidan `/admin/cuentas`. Cuentas de clientes: varias por empresa, una por persona
+  (`docs/sql/2026-10-19-varias-cuentas-por-cliente.sql` saca el unique de
+  `client_id`); la tabla tiene una fila por cliente y "Ver usuarios" abre un modal
+  con sus cuentas y acciones (los modales de cada acción se abren encima). "Ver acceso" muestra la contraseña
   actual a pedido; Auth guarda solo el hash, así que la intranet guarda una copia
   cifrada (AES-256-GCM, `lib/client-passwords.ts`, tabla sin políticas
   `intranet_client_passwords`, `docs/sql/2026-10-19-claves-clientes.sql`) al crear o
