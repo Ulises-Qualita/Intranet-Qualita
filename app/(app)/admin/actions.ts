@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { AREAS, DEFAULT_MEMBER_AREAS, isQualitaEmail, type AreaKey, type Role } from "@/lib/auth-shared";
 import { getSession } from "@/lib/auth";
 import { AI_SETTINGS_KEY } from "@/lib/ai-config";
+import { readClientPassword, storeClientPassword } from "@/lib/client-passwords";
 import { AI_TASKS, type AiConfig, isAiEffort, isAiModel } from "@/lib/ai-models";
 import { NOTION_SETTINGS_KEY } from "@/lib/data";
 import { FEATURES_SETTINGS_KEY, getFeatures, isFeatureKey } from "@/lib/features";
@@ -226,7 +227,8 @@ export async function loadNotionProperties(
 
 // ---------- Cuentas de clientes (/mi-empresa) ----------
 //
-// Una cuenta por empresa, con mail y contraseña que define el admin. Van con
+// Una o varias cuentas por empresa (una por persona, pedido 2026-10-19), con mail
+// y contraseña que define el admin. Van con
 // service_role porque Auth se administra desde el server; cada acción exige admin
 // y las que tocan un usuario existente verifican antes que sea una cuenta de
 // cliente, para que por acá no se pueda borrar ni cambiarle la clave a nadie del
@@ -258,9 +260,6 @@ export async function createClientAccount(_prev: ActionResult | null, form: Form
   const { data: client } = await admin.from("intranet_clients").select("id, name").eq("id", clientId).maybeSingle();
   if (!client) return { ok: false, error: "No se encontró el cliente." };
 
-  const { data: taken } = await admin.from("intranet_client_users").select("user_id").eq("client_id", clientId).maybeSingle();
-  if (taken) return { ok: false, error: `${client.name} ya tiene una cuenta.` };
-
   // Auth es compartido con el otro app: si el mail ya existe no se reutiliza,
   // porque habría que pisarle la contraseña a alguien que ya la tiene.
   const { data: created, error } = await admin.auth.admin.createUser({
@@ -288,8 +287,16 @@ export async function createClientAccount(_prev: ActionResult | null, form: Form
     // riesgo: se borra el usuario recién creado.
     console.error("[admin] createClientAccount", profileError ?? linkError);
     await admin.auth.admin.deleteUser(userId);
-    return { ok: false, error: "No se pudo crear la cuenta. ¿Corriste docs/sql/2026-09-25-cuentas-clientes.sql?" };
+    // 23505: todavía está el unique de una cuenta por empresa.
+    const oneOnly = linkError?.code === "23505";
+    return {
+      ok: false,
+      error: oneOnly
+        ? `Para sumarle otra cuenta a ${client.name} falta correr docs/sql/2026-10-19-varias-cuentas-por-cliente.sql en Supabase.`
+        : "No se pudo crear la cuenta. ¿Corriste docs/sql/2026-09-25-cuentas-clientes.sql?",
+    };
   }
+  await storeClientPassword(userId, password);
 
   revalidatePath("/admin/cuentas");
   return { ok: true, error: null };
@@ -302,7 +309,30 @@ export async function setClientAccountPassword(userId: string, password: string)
 
   const { error } = await createAdminClient().auth.admin.updateUserById(userId, { password });
   if (error) return { ok: false, error: "No se pudo cambiar la contraseña." };
+  await storeClientPassword(userId, password);
   return { ok: true, error: null };
+}
+
+// Contraseña actual de una cuenta de cliente (la copia cifrada que guarda la
+// intranet). Las cuentas anteriores a guardarlas no la tienen: hay que generar una.
+export type RevealResult = { ok: true; password: string } | { ok: false; error: string; canReset: boolean };
+
+export async function revealClientAccountPassword(userId: string): Promise<RevealResult> {
+  if (!(await requireAdmin())) return { ok: false, error: "Solo un administrador puede ver contraseñas.", canReset: false };
+  if (!(await clientAccount(userId))) return { ok: false, error: "No es una cuenta de cliente.", canReset: false };
+
+  const stored = await readClientPassword(userId);
+  if (stored.state === "ok") return { ok: true, password: stored.password };
+  return {
+    ok: false,
+    canReset: stored.state !== "missing-table",
+    error:
+      stored.state === "missing-table"
+        ? "Para poder ver contraseñas falta correr docs/sql/2026-10-19-claves-clientes.sql en Supabase."
+        : stored.state === "unreadable"
+          ? "La contraseña guardada no se puede leer (cambió la clave de cifrado). Generá una nueva."
+          : "Esta cuenta es anterior a que se guardaran las contraseñas, así que no hay una para mostrar. Generá una nueva y desde ahí vas a poder verla cuando quieras.",
+  };
 }
 
 // Desactivar corta el acceso en el acto: intranet_my_client_id() deja de

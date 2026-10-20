@@ -1250,10 +1250,19 @@ export async function getGadsSpendByClient(clientIds: string[], days = 30): Prom
 
 // ---------- Cuentas de clientes (panel de /admin) ----------
 
-export type ClientAccount = { userId: string; clientId: string; email: string; active: boolean; createdAt: string };
+export type ClientAccount = {
+  userId: string;
+  clientId: string;
+  email: string;
+  active: boolean;
+  createdAt: string;
+  // Último ingreso (Auth); null si nunca entró.
+  lastSignInAt: string | null;
+};
 
 // Con la sesión: la RLS de intranet_client_users solo deja ver todas a un admin.
-// null si la tabla todavía no existe (falta correr la migración).
+// null si la tabla todavía no existe (falta correr la migración). El último
+// ingreso sale de Auth con service_role: llamar solo después de validar admin.
 export async function getClientAccounts(): Promise<ClientAccount[] | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -1264,11 +1273,18 @@ export async function getClientAccounts(): Promise<ClientAccount[] | null> {
     if (isMissingTable(error)) return null;
     throw error;
   }
-  return (data ?? []).map((r) => ({
-    userId: r.user_id,
-    clientId: r.client_id,
-    email: r.email,
-    active: r.active,
-    createdAt: r.created_at,
-  }));
+  const auth = createAdminClient().auth.admin;
+  return Promise.all(
+    (data ?? []).map(async (r) => {
+      const { data: user } = await auth.getUserById(r.user_id);
+      return {
+        userId: r.user_id,
+        clientId: r.client_id,
+        email: r.email,
+        active: r.active,
+        createdAt: r.created_at,
+        lastSignInAt: user?.user?.last_sign_in_at ?? null,
+      };
+    }),
+  );
 }

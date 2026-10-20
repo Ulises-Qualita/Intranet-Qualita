@@ -13,9 +13,12 @@ import { isNotionConfigured, normalizeId, type NotionTicket } from "@/lib/notion
 import { bannerUrl } from "@/lib/portal";
 import type { TaskStatus } from "@/lib/tasks";
 import { PortalEditor } from "./portal-editor";
-import { getMilestones } from "@/lib/milestones";
-import { MilestoneTimeline } from "./milestone-timeline";
+import { MilestoneTimeline, timelineEntries } from "./milestone-timeline";
 import { PortalProgress } from "./portal-progress";
+
+// Card de etapas del proyecto (el % de avance): oculta por ahora, a pedido. El
+// equipo la sigue pudiendo cargar en Editar portal → Etapas.
+const SHOW_STAGES = false;
 
 const TZ = "America/Argentina/Buenos_Aires";
 const hour = new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: TZ });
@@ -83,12 +86,15 @@ async function portalRoadmap(client: Client): Promise<Roadmap> {
 }
 
 // El estado de Notion traducido para el cliente: los internos (Bloqueado,
-// Feedback…) no se muestran, salen del mismo mapeo que usan las Tareas.
+// Feedback…) no se muestran, salen del mismo mapeo que usan las Tareas. El color
+// del ticket en el calendario sale de acá (pedido: que hable del estado, nada de
+// rojos): gris lo que no empezó, magenta lo que está en curso y verde lo hecho,
+// como en la línea de hitos.
 const STAGE_STATUS: Record<TaskStatus, { name: string; color: string }> = {
-  todo: { name: "Pendiente", color: "coral" },
+  todo: { name: "Pendiente", color: "slate" },
   doing: { name: "En curso", color: "magenta" },
   blocked: { name: "En curso", color: "magenta" },
-  done: { name: "Completada", color: "lavender" },
+  done: { name: "Completada", color: "green" },
 };
 
 // En Notion los tickets suelen llamarse "<Etapa> - <Cliente>"; acá el cliente ya
@@ -104,16 +110,20 @@ function withoutClient(title: string, clientName: string) {
 // Reuniones si hay. La tabla de etapas no va: arriba ya están los hitos.
 // `tickets` llega en orden de fecha (sortStages).
 function roadmapDb(tickets: NotionTicket[], clientName: string, meetings: ExtraEvent[]): EmbeddedDb {
+  // El Pilar va como pill debajo del título (buildCalendar); si ningún ticket lo
+  // tiene, la columna no va y los tickets quedan de una línea.
+  const pillars = tickets.some((t) => t.pillars?.length);
   const rows: DbRow[] = tickets.map((t) => ({
     id: t.id,
     cells: [
       { kind: "text", text: withoutClient(t.title, clientName) },
       { kind: "date", text: t.dueDate ?? "", ...(t.dueEnd ? { end: t.dueEnd } : {}) },
       { kind: "tags", tags: [STAGE_STATUS[t.status]] },
+      ...(pillars ? [{ kind: "tags" as const, tags: t.pillars ?? [] }] : []),
     ],
   }));
   return {
-    columns: ["Tarea", "Fecha", "Estado"],
+    columns: ["Tarea", "Fecha", "Estado", ...(pillars ? ["Pilar"] : [])],
     rows,
     titleColumn: 0,
     dateColumn: 1,
@@ -152,17 +162,19 @@ const initialsOf = (name: string) =>
 // (/mi-empresa/portal): quien la llama ya validó el acceso. Con `internal` en
 // false, lo que falte configurar no se explica: las instrucciones son para el equipo.
 export async function PortalView({ c, internal }: { c: Client; internal: boolean }) {
-  const [{ settings, missing }, roadmap, meetings, { milestones, missingTable: milestonesMissing }] = await Promise.all([
+  const [{ settings, missing }, roadmap, meetings] = await Promise.all([
     getPortalSettings(c.id),
     portalRoadmap(c),
     portalMeetings(c),
-    getMilestones(c.id),
   ]);
   const today = todayISO();
 
   const tickets = sortStages(roadmap.state === "ok" ? roadmap.tickets : []);
   const hasCalendar = tickets.length > 0 || meetings.length > 0;
   const db = roadmapDb(tickets, c.name, meetings);
+  // Línea de hitos: los mismos tickets del calendario (proyecto del cliente,
+  // checkbox del portal tildado), los que tienen fecha.
+  const timeline = timelineEntries(tickets, (t) => withoutClient(t, c.name));
   const v = settings.validator;
 
   // Lo que el equipo tiene que hacer para que los tickets aparezcan en el calendario.
@@ -202,13 +214,10 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
           <div className="portal-toolbar">
             <PortalEditor
               clientId={c.id}
-              clientSlug={c.slug}
               validator={settings.validator}
               banner={cover}
               bannerPosition={settings.bannerPosition}
               phase={settings.phase}
-              milestones={milestones}
-              milestonesMissing={milestonesMissing}
             />
           </div>
         )}
@@ -252,7 +261,7 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
           </p>
 
           {/* El % sale de la etapa que elige el equipo en Editar portal → Etapas. */}
-          {settings.phase ? (
+          {!SHOW_STAGES ? null : settings.phase ? (
             <PortalProgress phase={settings.phase} />
           ) : (
             internal && (
@@ -271,19 +280,21 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
               </section>
             )}
 
-            {/* Los hitos se cargan en Editar portal → Hitos. */}
-            {milestones.length > 0 ? (
+            {/* Tickets de Notion marcados para el portal, en una línea de tiempo. */}
+            {timeline.length > 0 ? (
               <section className="pt-glass pt-pad" id="hitos">
                 <div className="pt-sec">
                   <h3>Hitos</h3>
+                  <span>{timeline.length}</span>
                 </div>
-                <MilestoneTimeline milestones={milestones} today={today} />
+                <MilestoneTimeline milestones={timeline} today={today} />
               </section>
             ) : (
               internal &&
-              !milestonesMissing && (
+              roadmap.state === "ok" &&
+              tickets.length > 0 && (
                 <EmptyState label="Sin hitos">
-                  Este cliente todavía no tiene hitos. Cargalos en <b>Editar portal → Hitos</b>.
+                  Ningún ticket del portal tiene fecha en Notion. Ponéle fecha a los que querés mostrar en la línea de hitos.
                 </EmptyState>
               )
             )}

@@ -656,8 +656,9 @@ export function buildCalendar(
   today: string,
   source: "all" | "extra" = "all",
 ): { months: CalMonth[]; initial: number; twoLines: boolean } {
-  // La propiedad "Entregable(s)" va como segunda línea de cada evento, si existe.
-  const deliverable = db.columns.findIndex((c) => /^entregables?$/.test(normalizeLabel(c)));
+  // La propiedad "Entregable(s)" (o "Pilar(es)", en el portal) va como segunda
+  // línea de cada evento, si existe.
+  const deliverable = db.columns.findIndex((c) => /^(entregables?|pilar(es)?)$/.test(normalizeLabel(c)));
   const badgeColor = badgePalette(
     new Set(
       db.rows.flatMap((r) => {

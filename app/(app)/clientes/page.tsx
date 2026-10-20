@@ -42,7 +42,7 @@ export default async function ClientesPage() {
                 <thead>
                   <tr>
                     <th>Cliente</th>
-                    <th>Responsables</th>
+                    <th>Acceso al cliente</th>
                     <th>Integraciones</th>
                     <th>Estado</th>
                     <th />

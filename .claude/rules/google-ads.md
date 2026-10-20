@@ -8,7 +8,7 @@ paths:
 # Google Ads
 
 (Movido desde CLAUDE.md: se carga solo al trabajar con estos archivos.)
-- Google Ads (solapa GADS, `/clientes/[slug]/gads`, solo equipo, área `meta`). La conexión
+- Google Ads (solapa GADS, `/clientes/[slug]/gads`, área `meta`; la cuenta del cliente la ve en `/mi-empresa/gads`, misma `GadsView` con `internal={false}`, y lee sus campañas con `docs/sql/2026-10-19-google-ads-cliente-campanas.sql`). La conexión
   es con la misma cuenta de servicio de Calendar y Drive (`lib/google.ts`, scope
   `https://www.googleapis.com/auth/adwords` en la delegación de dominio), sin OAuth por
   usuario. Env: `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (MCC; se aceptan guiones, el header
@@ -40,5 +40,5 @@ paths:
   y todos los costos usan la inversión total; la card "Leads generados" también
   suma las dos), la columna de Inicio
   (`getGadsSpendByClient`) y el reporte. La cuenta del cliente lee sus totales
-  diarios para la Vista general (`docs/sql/2026-10-07-google-ads-cliente.sql`); las
-  campañas, no. Falta llevarlo al agente.
+  diarios para la Vista general (`docs/sql/2026-10-07-google-ads-cliente.sql`) y,
+  desde 2026-10-19, también las campañas. Falta llevarlo al agente.

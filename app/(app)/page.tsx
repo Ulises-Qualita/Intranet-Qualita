@@ -117,7 +117,7 @@ export default async function InicioPage() {
           <Kpi label="Clientes" icon="briefcase" value={countBy("cliente")} sub={`de ${clients.length} en total`} hero />
           <Kpi label="En onboarding" icon="target" value={countBy("onboarding")} sub={`${countBy("lead")} lead${countBy("lead") === 1 ? "" : "s"} en seguimiento`} />
           {/* Sin acceso a META (o sin cuentas conectadas) no hay leads que mostrar:
-              en su lugar va cuántos clientes siguen sin responsable. */}
+              en su lugar va cuántos clientes siguen sin nadie con acceso al cliente. */}
           {metaClients.length > 0 ? (
             <Kpi
               label={`Leads generados, ${META_DAYS} días`}
@@ -127,7 +127,7 @@ export default async function InicioPage() {
             />
           ) : (
             <Kpi
-              label="Sin responsable"
+              label="Sin acceso al cliente"
               icon="team"
               value={unassigned}
               sub={`de ${clients.length} cliente${clients.length === 1 ? "" : "s"}`}
@@ -216,7 +216,7 @@ export default async function InicioPage() {
             ))}
             {unassigned > 0 && (
               <p className="hint-text">
-                {unassigned} cliente{unassigned === 1 ? "" : "s"} sin responsable.
+                {unassigned} cliente{unassigned === 1 ? "" : "s"} sin nadie con acceso al cliente.
               </p>
             )}
           </Card>

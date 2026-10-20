@@ -56,7 +56,7 @@ export function DeleteClientButton({ clientId, name }: { clientId: string; name:
           <h2 id={`delete-title-${clientId}`}>¿Borrar {name}?</h2>
           <p>
             Se van a eliminar el cliente y todos sus datos: tareas, métricas de Meta, CRM, leads, integraciones,
-            responsables y logo. <b>Esta acción no se puede deshacer.</b>
+            acceso al cliente y logo. <b>Esta acción no se puede deshacer.</b>
           </p>
           <form
             className="modal-confirm"

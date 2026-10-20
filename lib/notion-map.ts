@@ -170,7 +170,18 @@ export type NotionTicket = {
   peopleNames: string[];
   // Estado marcado como "No mostrar": getTickets() lo descarta.
   hidden: boolean;
+  // Propiedad "Pilar" (select o multi-select), con el color de Notion. Se busca
+  // por nombre, sin configurar; sin la propiedad, vacío.
+  pillars: { name: string; color: string }[];
 };
+
+// Las opciones de la propiedad "Pilar(es)" del ticket.
+function pillarsOf(props: Record<string, RawProperty>) {
+  const key = Object.keys(props).find((k) => /^pilar(es)?$/i.test(k.trim()));
+  const prop = key ? props[key] : undefined;
+  const options = prop?.type === "select" ? (prop.select ? [prop.select] : []) : prop?.type === "multi_select" ? (prop.multi_select ?? []) : [];
+  return options.map((o) => ({ name: o.name, color: o.color ?? "default" }));
+}
 
 export function toTicket(page: NotionPage, config: NotionConfig): NotionTicket {
   const props = page.properties;
@@ -207,5 +218,6 @@ export function toTicket(page: NotionPage, config: NotionConfig): NotionTicket {
     peopleEmails: people.map((p) => p.person?.email).filter((e): e is string => !!e),
     peopleNames: people.map((p) => p.name).filter((n): n is string => !!n),
     hidden: !!statusName && (config.hiddenStatuses ?? []).includes(statusName),
+    pillars: pillarsOf(props),
   };
 }

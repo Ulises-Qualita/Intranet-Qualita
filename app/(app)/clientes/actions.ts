@@ -144,7 +144,7 @@ export async function setClientAssignee(clientId: string, userId: string, assign
         .upsert({ client_id: clientId, user_id: userId }, { onConflict: "client_id,user_id", ignoreDuplicates: true })
     : await supabase.from("intranet_client_assignments").delete().eq("client_id", clientId).eq("user_id", userId);
 
-  if (error) return { ok: false, error: dbError(error.code, "No se pudo actualizar el responsable.") };
+  if (error) return { ok: false, error: dbError(error.code, "No se pudo actualizar el acceso al cliente.") };
 
   revalidatePath("/", "layout");
   return { ok: true, error: null };
