@@ -37,3 +37,12 @@ paths:
   separado por `kind` (`agente` | `reporte` | `analisis`, lista en `USAGE_KINDS`;
   `docs/sql/2026-09-28-uso-por-tipo.sql`): `recordUsage(kind, …)` y `getAiUsage()`,
   y `/admin/gastos` muestra un bloque por tipo.
+- Período y criterio del agente = los de las solapas. Las tools de Meta y CRM
+  reciben `mes` (YYYY-MM), `desde`/`hasta` o `dias` (`periodFrom` en
+  `lib/agent/tools.ts`, con `monthPeriod`/`customPeriod`/`lastDays` de
+  `lib/period.ts`); sin nada, el mes actual. Antes solo había `dias` y "octubre"
+  salía como los últimos 20 días (incluía el 30/9) y no coincidía con la solapa.
+  `crm_leads` con estado `ganada` filtra por `saleDay` (fecha en que pasó a ganada,
+  igual que `crmPeriod`) y cada ganada trae `ganada_el`; los demás estados, por
+  creación. El prompt (`lib/agent/prompt.ts`, "Períodos y criterio del CRM") explica
+  las dos fechas.

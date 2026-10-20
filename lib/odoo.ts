@@ -26,6 +26,8 @@ const LEAD_FIELDS = [
   "partner_name",
   "stage_id",
   "source_id",
+  // "Medio": se usa como origen cuando la oportunidad no tiene uno cargado.
+  "medium_id",
   "user_id",
   "expected_revenue",
   "probability",
@@ -45,6 +47,7 @@ type OdooLeadRow = {
   partner_name?: string | false;
   stage_id?: [number, string] | false;
   source_id?: [number, string] | false;
+  medium_id?: [number, string] | false;
   user_id?: [number, string] | false;
   expected_revenue?: number | false;
   probability?: number | false;
@@ -184,7 +187,7 @@ export async function getOdooOpportunities(session: OdooSession): Promise<CrmLea
     externalId: String(r.id),
     name: r.partner_name || r.name,
     stage: r.stage_id ? r.stage_id[1] : null,
-    source: r.source_id ? r.source_id[1] : null,
+    source: r.source_id ? r.source_id[1] : r.medium_id ? r.medium_id[1] : null,
     owner: r.user_id ? r.user_id[1] : null,
     // El importe real de la venta es el ticket; el ingreso esperado queda de respaldo.
     amount: parseAmount(propertyOf(r.lead_properties, TICKET_PROPERTY)) ?? parseAmount(r.expected_revenue),

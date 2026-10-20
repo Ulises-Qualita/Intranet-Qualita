@@ -23,6 +23,7 @@ import { dollars, integer, localDate, money, percent, relativeTime, todayISO } f
 import { CRM_HISTORY_DAYS, type Period, periodPhrase, periodQuery, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
 import { AdsTable } from "./ads-table";
 import { ChatMonitor } from "./chat-monitor";
+import { SourceList } from "./source-list";
 import { TopVideos } from "./top-videos";
 
 // Color del chip de etapa según cómo terminó la oportunidad: ganada, perdida o
@@ -235,89 +236,23 @@ export async function CrmView({
           </div>
         )}
 
-        {/* items-stretch: acá las dos tarjetas comparten alto (el resto de las
-            filas usa el alto de su propio contenido). */}
+        {/* La columna izquierda (embudo, vendedores, anuncios) manda el alto de
+            la fila. La derecha no lo agranda (crm-side): las tarjetas de origen
+            van con su alto y "Últimas oportunidades" ocupa lo que sobra, con
+            scroll adentro. */}
         <div className="grid g-2-1 items-stretch">
-          <Card
-            title="Etapas del embudo"
-            className="funnel-card"
-            hint={`${leads.length} oportunidades · ${periodo}`}
-          >
-            {leads.length ? (
-              <StageBars stages={leadFunnel(leads, secrets?.stage_order)} />
-            ) : (
-              <EmptyState label="Sin datos">Ninguna oportunidad creada {periodPhrase(range)}.</EmptyState>
-            )}
-          </Card>
           <div className="stack-cards">
-            <Card title="Oportunidades por origen" hint={periodo} className="source-card">
-              {sources.length === 0 ? (
-                <EmptyState label="Sin datos">Sin oportunidades en el período.</EmptyState>
+            <Card
+              title="Etapas del embudo"
+              className="funnel-card"
+              hint={`${leads.length} oportunidades · ${periodo}`}
+            >
+              {leads.length ? (
+                <StageBars stages={leadFunnel(leads, secrets?.stage_order)} />
               ) : (
-                <div className="source-list">
-                  {sources.map((s) => (
-                    <div key={s.name} className="lead-row">
-                      <div className="info">
-                        <b>{s.name}</b>
-                        <span>{percent(s.share, 0)} del total</span>
-                      </div>
-                      <span className="amount">{integer(s.leads)}</span>
-                    </div>
-                  ))}
-                </div>
+                <EmptyState label="Sin datos">Ninguna oportunidad creada {periodPhrase(range)}.</EmptyState>
               )}
             </Card>
-            <Card title="Ventas por origen" hint={sheet ? `por fecha de confirmación · ${periodo}` : periodo} className="source-card">
-              {sheet ? (
-                sheet.sources.length === 0 ? (
-                  <EmptyState label="Sin datos">Ninguna venta confirmada en el período.</EmptyState>
-                ) : (
-                  <div className="source-list">
-                    {sheet.sources.map((s) => (
-                      <div key={s.name} className="lead-row">
-                        <div className="info">
-                          <b>{s.name}</b>
-                          <span>
-                            {[`${percent(s.share, 0)} de las ventas`, s.ars ? money(s.ars) : null, s.usd ? dollars(s.usd) : null]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
-                        </div>
-                        <span className="amount">{integer(s.sales)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              ) : wonSources === null ? (
-                <EmptyState label="Pendiente">{internal ? "Falta correr la migración de estados." : "Todavía no hay datos de ventas."}</EmptyState>
-              ) : wonSources.length === 0 ? (
-                <EmptyState label="Sin datos">Ninguna venta ganada en el período.</EmptyState>
-              ) : (
-                <div className="source-list">
-                  {wonSources.map((s) => (
-                    <div key={s.name} className="lead-row">
-                      <div className="info">
-                        <b>{s.name}</b>
-                        <span>
-                          {[`${percent(s.share, 0)} de las ventas`, s.ticketTotal ? `${money(s.ticketTotal)} facturado` : null]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </div>
-                      <span className="amount">{integer(s.leads)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </div>
-        </div>
-
-        {/* La lista de oportunidades toma el alto de las dos tarjetas apiladas de
-            la izquierda y hace scroll adentro (feed-card), en vez de estirar la
-            fila y dejar un hueco debajo de "Por anuncio". */}
-        <div className="grid g-2-1 items-stretch mt-4">
-          <div className="stack-cards">
             <Card title="Por vendedor" hint={sheet ? `ventas de la planilla · ${periodo}` : periodo}>
               {sheet ? (
                 sheet.sellers.length === 0 ? (
@@ -395,33 +330,81 @@ export async function CrmView({
               )}
             </Card>
           </div>
-          <Card title="Últimas oportunidades" className="feed-card">
-            {leads.length === 0 ? (
-              <EmptyState label="Sin datos">Ninguna oportunidad creada {periodPhrase(range)}.</EmptyState>
-            ) : (
-              <div className="feed-list">
-                {leads.slice(0, 8).map((l) => (
-                  <div key={l.id} className="lead-row">
-                    <div className="info">
-                      <b>{l.name}</b>
-                      <span>{[l.source, relativeTime(l.created_at)].filter(Boolean).join(" · ")}</span>
+          <div className="stack-cards crm-side">
+            <Card title="Oportunidades por origen" hint={periodo} className="source-card">
+              {sources.length === 0 ? (
+                <EmptyState label="Sin datos">Sin oportunidades en el período.</EmptyState>
+              ) : (
+                <SourceList
+                  title="Oportunidades por origen"
+                  hint={periodo}
+                  rows={sources.map((s) => ({ name: s.name, detail: `${percent(s.share, 0)} del total`, value: integer(s.leads) }))}
+                />
+              )}
+            </Card>
+            <Card title="Ventas por origen" hint={sheet ? `por fecha de confirmación · ${periodo}` : periodo} className="source-card">
+              {sheet ? (
+                sheet.sources.length === 0 ? (
+                  <EmptyState label="Sin datos">Ninguna venta confirmada en el período.</EmptyState>
+                ) : (
+                  <SourceList
+                    title="Ventas por origen"
+                    hint={`por fecha de confirmación · ${periodo}`}
+                    rows={sheet.sources.map((s) => ({
+                      name: s.name,
+                      detail: [`${percent(s.share, 0)} de las ventas`, s.ars ? money(s.ars) : null, s.usd ? dollars(s.usd) : null]
+                        .filter(Boolean)
+                        .join(" · "),
+                      value: integer(s.sales),
+                    }))}
+                  />
+                )
+              ) : wonSources === null ? (
+                <EmptyState label="Pendiente">{internal ? "Falta correr la migración de estados." : "Todavía no hay datos de ventas."}</EmptyState>
+              ) : wonSources.length === 0 ? (
+                <EmptyState label="Sin datos">Ninguna venta ganada en el período.</EmptyState>
+              ) : (
+                <SourceList
+                  title="Ventas por origen"
+                  hint={periodo}
+                  rows={wonSources.map((s) => ({
+                    name: s.name,
+                    detail: [`${percent(s.share, 0)} de las ventas`, s.ticketTotal ? `${money(s.ticketTotal)} facturado` : null]
+                      .filter(Boolean)
+                      .join(" · "),
+                    value: integer(s.leads),
+                  }))}
+                />
+              )}
+            </Card>
+            <Card title="Últimas oportunidades" className="feed-card">
+              {leads.length === 0 ? (
+                <EmptyState label="Sin datos">Ninguna oportunidad creada {periodPhrase(range)}.</EmptyState>
+              ) : (
+                <div className="feed-list">
+                  {leads.slice(0, 20).map((l) => (
+                    <div key={l.id} className="lead-row">
+                      <div className="info">
+                        <b>{l.name}</b>
+                        <span>{[l.source, relativeTime(l.created_at)].filter(Boolean).join(" · ")}</span>
+                      </div>
+                      {(l.amount !== null || l.amount_usd !== null) && (
+                        <span className="amount">
+                          {[l.amount !== null ? money(l.amount) : null, l.amount_usd !== null ? dollars(l.amount_usd) : null]
+                            .filter(Boolean)
+                            .join(" + ")}
+                        </span>
+                      )}
+                      {/* La etapa del CRM y no una temperatura calculada: en Odoo la
+                          probabilidad la fija la etapa, así que "en negociación" salía
+                          hasta en oportunidades que no contestan. */}
+                      {l.stage && <Pill variant={stagePill(l.status)}>{l.stage}</Pill>}
                     </div>
-                    {(l.amount !== null || l.amount_usd !== null) && (
-                      <span className="amount">
-                        {[l.amount !== null ? money(l.amount) : null, l.amount_usd !== null ? dollars(l.amount_usd) : null]
-                          .filter(Boolean)
-                          .join(" + ")}
-                      </span>
-                    )}
-                    {/* La etapa del CRM y no una temperatura calculada: en Odoo la
-                        probabilidad la fija la etapa, así que "en negociación" salía
-                        hasta en oportunidades que no contestan. */}
-                    {l.stage && <Pill variant={stagePill(l.status)}>{l.stage}</Pill>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
 
         {kommoUrl && chatEvents !== undefined && (

@@ -22,12 +22,14 @@ import {
   isLateTask,
   isOpenTask,
   leadFunnel,
+  saleDay,
   salesPeriod,
   withMetaAdNames,
   type Client,
 } from "../data";
 import { getCrmSecrets } from "../crm-sync";
-import { todayISO } from "../format";
+import { localDate, todayISO } from "../format";
+import { customPeriod, lastDays, monthPeriod, type Period } from "../period";
 import { SHOW_TASKS } from "../tasks";
 
 // Una tool = su definición para la API + el área que la habilita + qué corre.
@@ -78,9 +80,32 @@ const CLIENTE_PROP = {
   cliente: { type: "string", description: "Nombre o slug del cliente." },
 } as const;
 
-const DIAS_PROP = {
-  dias: { type: "number", description: "Días hacia atrás a considerar. Por defecto 30." },
+// El período se pide igual que en las vistas de la intranet: un mes calendario
+// (lo que la gente dice: "octubre"), un rango de fechas o los últimos N días.
+// Sin nada, el mes actual, que es lo que muestran las solapas al entrar.
+const PERIODO_PROP = {
+  mes: { type: "string", description: "Mes calendario YYYY-MM (p. ej. 2026-10 para octubre). Si es el mes actual, va del 1 a hoy. Usalo cuando nombren un mes." },
+  desde: { type: "string", description: "Inicio de un rango YYYY-MM-DD, incluido. Va con `hasta`." },
+  hasta: { type: "string", description: "Fin de un rango YYYY-MM-DD, incluido. Va con `desde`." },
+  dias: { type: "number", description: "Últimos N días hasta hoy. Solo si lo piden así." },
 } as const;
+
+const ISO_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function periodFrom(input: Record<string, unknown>): Period {
+  const desde = str(input.desde);
+  const hasta = str(input.hasta);
+  if (desde && hasta && ISO_DATE.test(desde) && ISO_DATE.test(hasta)) return customPeriod(desde, hasta);
+  const mes = str(input.mes);
+  if (mes && ISO_MONTH.test(mes) && mes <= todayISO().slice(0, 7)) return monthPeriod(mes);
+  const dias = int(input.dias, 0);
+  if (dias > 0 && dias <= 366) return lastDays(dias);
+  return monthPeriod(todayISO().slice(0, 7));
+}
+
+// Cómo se informa el período en cada respuesta, para que el modelo diga cuál es.
+const periodOut = (p: Period) => ({ desde: p.since, hasta: p.until, nombre: p.label });
 
 // ---------- Clientes ----------
 
@@ -220,7 +245,7 @@ const metaMetricas: AgentTool = {
       "Métricas diarias de Meta Ads de un cliente: alcance, impresiones, clics, gasto, leads, conversiones e ingresos. Devuelve los totales del período y la serie día por día.",
     input_schema: {
       type: "object",
-      properties: { ...CLIENTE_PROP, ...DIAS_PROP },
+      properties: { ...CLIENTE_PROP, ...PERIODO_PROP },
       required: ["cliente"],
     },
   },
@@ -228,9 +253,9 @@ const metaMetricas: AgentTool = {
     const client = await findClient(input.cliente);
     requireIntegration(client, "meta");
 
-    const dias = int(input.dias, 30);
-    const daily = await getMetaDaily(client.id, dias);
-    if (!daily.length) return { cliente: client.name, dias, aviso: "No hay métricas sincronizadas para ese período." };
+    const period = periodFrom(input);
+    const daily = await getMetaDaily(client.id, period);
+    if (!daily.length) return { cliente: client.name, periodo: periodOut(period), aviso: "No hay métricas sincronizadas para ese período." };
 
     const sum = (pick: (d: (typeof daily)[number]) => number) => daily.reduce((total, d) => total + pick(d), 0);
     const spend = sum((d) => d.spend);
@@ -242,7 +267,7 @@ const metaMetricas: AgentTool = {
 
     return {
       cliente: client.name,
-      periodo: { desde: daily[0].date, hasta: last.date, dias: daily.length },
+      periodo: { ...periodOut(period), primer_dia_con_datos: daily[0].date, ultimo_dia_con_datos: last.date },
       totales: {
         gasto: round(spend),
         leads,
@@ -279,7 +304,7 @@ const metaCampanas: AgentTool = {
       "Campañas y anuncios de Meta Ads de un cliente en el período, con gasto, leads, CPL, CTR e ingresos de cada uno. Usala para saber qué anuncio rinde mejor o peor.",
     input_schema: {
       type: "object",
-      properties: { ...CLIENTE_PROP, ...DIAS_PROP },
+      properties: { ...CLIENTE_PROP, ...PERIODO_PROP },
       required: ["cliente"],
     },
   },
@@ -287,9 +312,9 @@ const metaCampanas: AgentTool = {
     const client = await findClient(input.cliente);
     requireIntegration(client, "meta");
 
-    const dias = int(input.dias, 30);
-    const campaigns = await getMetaCampaigns(client.id, dias);
-    if (!campaigns.length) return { cliente: client.name, dias, aviso: "No hay anuncios sincronizados para ese período." };
+    const period = periodFrom(input);
+    const campaigns = await getMetaCampaigns(client.id, period);
+    if (!campaigns.length) return { cliente: client.name, periodo: periodOut(period), aviso: "No hay anuncios sincronizados para ese período." };
 
     const metrics = (a: { spend: number; leads: number; clicks: number; impressions: number; revenue: number }) => ({
       gasto: round(a.spend),
@@ -304,7 +329,7 @@ const metaCampanas: AgentTool = {
 
     return {
       cliente: client.name,
-      dias,
+      periodo: periodOut(period),
       campanas: campaigns.map((c) => ({
         nombre: c.name,
         estado: c.status,
@@ -325,7 +350,7 @@ const crmResumen: AgentTool = {
       "Estado del CRM de un cliente en el período: leads, conversión, ticket promedio, embudo por etapa, rendimiento por vendedor, por anuncio, por origen y por etiqueta. Si el cliente registra las ventas en una planilla, trae además `ventas_planilla`: la facturación oficial, por fecha de confirmación, en pesos y en dólares por separado (no se convierten).",
     input_schema: {
       type: "object",
-      properties: { ...CLIENTE_PROP, ...DIAS_PROP },
+      properties: { ...CLIENTE_PROP, ...PERIODO_PROP },
       required: ["cliente"],
     },
   },
@@ -333,23 +358,24 @@ const crmResumen: AgentTool = {
     const client = await findClient(input.cliente);
     requireIntegration(client, "crm");
 
-    const dias = int(input.dias, 30);
+    const range = periodFrom(input);
     const [leads, snapshot, secrets] = await Promise.all([getLeads(client.id), getCrmSnapshot(client.id), getCrmSecrets(client.id)]);
-    if (!leads.length) return { cliente: client.name, dias, aviso: "No hay leads sincronizados." };
+    if (!leads.length) return { cliente: client.name, periodo: periodOut(range), aviso: "No hay leads sincronizados." };
 
-    const period = crmPeriod(leads, dias);
+    const period = crmPeriod(leads, range);
     // Con planilla, la venta y la facturación oficiales salen de ahí.
     const allSales = secrets?.sales_sheet ? await getSales(client.id) : null;
-    const sheet = allSales && salesPeriod(allSales, leads, dias);
+    const sheet = allSales && salesPeriod(allSales, leads, range);
     // El CRM puede guardar el anuncio con un nombre corto: se pasa al de Meta (solo
     // los nombres; si no se pueden leer, quedan los del CRM).
-    const campaigns = client.conn.meta ? await getMetaCampaigns(client.id, dias).catch(() => null) : null;
+    const campaigns = client.conn.meta ? await getMetaCampaigns(client.id, range).catch(() => null) : null;
     const ads = campaigns ? withMetaAdNames(period.ads, campaigns.flatMap((c) => c.ads)) : period.ads;
     return {
       cliente: client.name,
-      dias,
-      periodo: {
-        leads: period.leads.length,
+      periodo: periodOut(range),
+      criterio: CRM_CRITERIO,
+      totales: {
+        oportunidades_creadas: period.leads.length,
         ganadas: period.won,
         conversion_pct: period.conversion === null ? null : round(period.conversion, 1),
         ventas_con_ticket: period.tickets,
@@ -403,6 +429,11 @@ const crmResumen: AgentTool = {
   },
 };
 
+// Mismo criterio que la solapa CRM (crmPeriod): se repite en cada resultado para
+// que el modelo no mezcle las dos fechas.
+const CRM_CRITERIO =
+  "Oportunidades (oportunidades_creadas, embudo, orígenes, conversión) = creadas en el período. Ganadas, ventas con ticket, facturación y ventas por vendedor, anuncio, origen o etiqueta = pasaron a ganada en el período, sin importar cuándo se creó la oportunidad. Es el mismo criterio de la solapa CRM.";
+
 // Sin la columna, "sin etiquetas" sería un dato falso: se avisa que no se sabe.
 const TAGS_UNAVAILABLE =
   "Las etiquetas del CRM todavía no se están sincronizando (falta correr una migración en la base). No se sabe cuáles tiene cada oportunidad: no digas que no hay.";
@@ -416,12 +447,12 @@ const crmLeads: AgentTool = {
   definition: {
     name: "crm_leads",
     description:
-      "Oportunidades concretas del CRM de un cliente, con etapa, estado, vendedor, anuncio de origen, etiquetas y monto. Usala cuando pregunten por leads puntuales. Devuelve como máximo 50: para totales, conversión o cortes por vendedor, etapa, anuncio, origen o etiqueta usá crm_resumen, que ya los trae calculados sobre todo el período.",
+      "Oportunidades concretas del CRM de un cliente, con etapa, estado, vendedor, anuncio de origen, etiquetas, monto, fecha de creación y, si se ganó, fecha en que pasó a ganada. Con estado \"ganada\" trae las que pasaron a ganada en el período (las ventas del período, aunque se hayan creado antes): son las mismas que cuenta crm_resumen y la solapa CRM. Sin estado o con otro estado, filtra por fecha de creación. Devuelve como máximo 50: para totales, conversión o cortes por vendedor, etapa, anuncio, origen o etiqueta usá crm_resumen.",
     input_schema: {
       type: "object",
       properties: {
         ...CLIENTE_PROP,
-        ...DIAS_PROP,
+        ...PERIODO_PROP,
         estado: { type: "string", enum: ["abierta", "ganada", "perdida"], description: "Filtrar por estado de la oportunidad." },
         vendedor: { type: "string", description: "Nombre del vendedor a cargo." },
         etiqueta: { type: "string", description: "Etiqueta del CRM (coincidencia parcial, sin distinguir mayúsculas)." },
@@ -434,13 +465,19 @@ const crmLeads: AgentTool = {
     const client = await findClient(input.cliente);
     requireIntegration(client, "crm");
 
-    const dias = int(input.dias, 30);
-    const since = Date.now() - dias * 86_400_000;
-    let list = (await getLeads(client.id)).filter((l) => Date.parse(l.created_at) >= since);
+    const range = periodFrom(input);
+    const inRange = (day: string) => day >= range.since && day <= range.until;
+    const leads = await getLeads(client.id);
 
+    // Las ganadas van por fecha de venta, como en crmPeriod: una oportunidad de
+    // agosto ganada en octubre es venta de octubre. Lo demás, por creación.
     const estado = str(input.estado);
-    if (estado) {
-      const key = { abierta: "open", ganada: "won", perdida: "lost" }[estado];
+    let list =
+      estado === "ganada"
+        ? leads.filter((l) => l.status === "won" && inRange(saleDay(l))).sort((a, b) => saleDay(b).localeCompare(saleDay(a)))
+        : leads.filter((l) => inRange(localDate(l.created_at)));
+    if (estado && estado !== "ganada") {
+      const key = { abierta: "open", perdida: "lost" }[estado];
       list = list.filter((l) => l.status === key);
     }
 
@@ -454,7 +491,8 @@ const crmLeads: AgentTool = {
     const limite = Math.min(Math.max(int(input.limite, 30), 1), MAX_LEADS);
     return {
       cliente: client.name,
-      dias,
+      periodo: periodOut(range),
+      filtro_fecha: estado === "ganada" ? "fecha en que pasó a ganada" : "fecha de creación",
       total: list.length,
       mostrando: Math.min(list.length, limite),
       leads: list.slice(0, limite).map((l) => ({
@@ -466,7 +504,8 @@ const crmLeads: AgentTool = {
         etiquetas: l.tags,
         origen: l.source,
         monto: l.amount,
-        creada: l.created_at.slice(0, 10),
+        creada: localDate(l.created_at),
+        ...(l.status === "won" ? { ganada_el: saleDay(l) } : {}),
       })),
     };
   },

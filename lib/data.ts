@@ -810,6 +810,10 @@ export type AdStats = { name: string; leads: number; won: number; tickets: numbe
 // período por fecha de venta, como los vendedores. Solo entran las que traen el
 // anuncio cargado: el resto no se puede atribuir y contarlas como "sin anuncio"
 // mezclaría las que vinieron por otro canal con las que nadie completó.
+// Anuncios ordenados por ventas (pedido del usuario): primero los que más
+// ganadas trajeron; a igual cantidad, más facturación y después más leads.
+const byWon = (a: AdStats, b: AdStats) => b.won - a.won || b.ticketTotal - a.ticketTotal || b.leads - a.leads;
+
 function groupAds(leads: Lead[], sold: Lead[]): AdStats[] {
   const byAd = new Map<string, AdStats>();
   const adOf = (lead: Lead) => {
@@ -835,7 +839,7 @@ function groupAds(leads: Lead[], sold: Lead[]): AdStats[] {
     if (lead.amount_usd && lead.amount_usd > 0) ad.usdTotal += lead.amount_usd;
   }
 
-  return [...byAd.values()].sort((a, b) => b.leads - a.leads || b.ticketTotal - a.ticketTotal);
+  return [...byAd.values()].sort(byWon);
 }
 
 const adTokens = (name: string) => name.trim().toUpperCase().split(/[\s_-]+/).filter(Boolean);
@@ -887,7 +891,7 @@ export function withMetaAdNames(crmAds: AdStats[], metaAds: Pick<MetaAd, "name" 
         : { ...stats, name },
     );
   }
-  return [...merged.values()].sort((a, b) => b.leads - a.leads || b.ticketTotal - a.ticketTotal);
+  return [...merged.values()].sort(byWon);
 }
 
 export type SourceStats = { name: string; leads: number; share: number; ticketTotal: number };
