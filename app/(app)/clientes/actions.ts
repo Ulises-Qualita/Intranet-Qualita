@@ -34,6 +34,17 @@ export type FormState = { ok: boolean; error: string | null };
 
 const NO_ACCESS: FormState = { ok: false, error: "No tenés acceso para gestionar clientes." };
 
+// Área Clientes y, además, que el cliente sea visible para el usuario: un miembro
+// solo ve los que tiene asignados (la RLS de intranet_clients decide). Hace falta
+// en las acciones que después escriben con service_role (secrets, Storage), que
+// no pasan por esa RLS.
+async function canManageClient(clientId: string): Promise<boolean> {
+  if (!(await getAreaSession("clientes"))) return false;
+  const supabase = await createClient();
+  const { data } = await supabase.from("intranet_clients").select("id").eq("id", clientId).maybeSingle();
+  return !!data;
+}
+
 const slugify = (value: string) =>
   value
     .normalize("NFD")
@@ -71,7 +82,8 @@ const dbError = (code: string | undefined, fallback: string) => {
 export type CreateClientResult = { ok: true; clientId: string; slug: string } | { ok: false; error: string };
 
 export async function addClient(formData: FormData): Promise<CreateClientResult> {
-  if (!(await getAreaSession("clientes"))) return { ok: false, error: NO_ACCESS.error! };
+  const session = await getAreaSession("clientes");
+  if (!session) return { ok: false, error: NO_ACCESS.error! };
 
   const fields = readClientFields(formData);
   if (typeof fields === "string") return { ok: false, error: fields };
@@ -79,27 +91,37 @@ export async function addClient(formData: FormData): Promise<CreateClientResult>
   const status = formData.get("status");
   if (!isClientStatus(status)) return { ok: false, error: "Elegí un estado válido." };
 
-  // Sesión del usuario: la RLS de intranet_clients tiene la última palabra.
-  const supabase = await createClient();
+  // Cada miembro ve solo sus clientes asignados (docs/sql/2026-10-20-clientes-asignados.sql),
+  // así que los slugs ocupados se buscan con service_role: si no, chocaría con
+  // el de un cliente que no ve.
+  const admin = createAdminClient();
   const base = slugify(fields.name) || "cliente";
-  const { data: taken } = await supabase.from("intranet_clients").select("slug").like("slug", `${base}%`);
+  const { data: taken } = await admin.from("intranet_clients").select("slug").like("slug", `${base}%`);
   const used = new Set((taken ?? []).map((r) => r.slug));
   let slug = base;
   for (let n = 2; used.has(slug); n++) slug = `${base}-${n}`;
 
-  const { data, error } = await supabase
-    .from("intranet_clients")
-    .insert({ ...fields, slug, status })
-    .select("id, slug")
-    .single();
-  if (error || !data) return { ok: false, error: dbError(error?.code, "No se pudo crear el cliente.") };
+  // Sesión del usuario: la RLS de intranet_clients tiene la última palabra. Sin
+  // .select(): el cliente recién creado todavía no tiene asignados, así que la
+  // RLS no lo deja leer hasta asignar a quien lo crea.
+  const supabase = await createClient();
+  const id = crypto.randomUUID();
+  const { error } = await supabase.from("intranet_clients").insert({ id, ...fields, slug, status });
+  if (error) return { ok: false, error: dbError(error.code, "No se pudo crear el cliente.") };
+
+  // Un admin ve todos; a un miembro se lo asigna para que pueda ver lo que creó.
+  // Service_role: la RLS de asignaciones solo deja asignar en clientes que uno ya ve.
+  if (session.profile?.role !== "admin") {
+    const { error: assignError } = await admin.from("intranet_client_assignments").insert({ client_id: id, user_id: session.user.id });
+    if (assignError) return { ok: false, error: "Se creó el cliente, pero no se pudo asignártelo. Pedile a un admin que lo haga." };
+  }
 
   revalidatePath("/", "layout");
-  return { ok: true, clientId: data.id, slug: data.slug };
+  return { ok: true, clientId: id, slug };
 }
 
 export async function updateClient(clientId: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
 
   const fields = readClientFields(formData);
   if (typeof fields === "string") return { ok: false, error: fields };
@@ -118,7 +140,7 @@ export async function updateClient(clientId: string, _prev: FormState, formData:
 }
 
 export async function setClientStatus(clientId: string, status: string): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
   if (!isClientStatus(status)) return { ok: false, error: "Estado inválido." };
 
   const supabase = await createClient();
@@ -154,7 +176,7 @@ export async function setClientAssignee(clientId: string, userId: string, assign
 // cliente. Se lee y se reescribe la lista de esa fila: dos clics seguidos sobre
 // solapas distintas no se pisan porque cada uno parte de lo que hay guardado.
 export async function setClientTab(clientId: string, zone: TabZone, tab: string, visible: boolean): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
   if ((zone !== "team" && zone !== "client") || !isTabKey(tab) || !tabInZone(tab, zone)) {
     return { ok: false, error: "Solapa inválida." };
   }
@@ -212,7 +234,7 @@ export async function logoUploaded(): Promise<void> {
 }
 
 export async function removeLogo(clientId: string): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
 
   const { error } = await createAdminClient().storage.from(LOGOS_BUCKET).remove([clientId]);
   if (error) return { ok: false, error: "No se pudo quitar el logo." };
@@ -273,7 +295,7 @@ export async function setIntegration(
   provider: string,
   change: { connected: boolean; accountRef?: string },
 ): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
   if (!isIntegration(provider)) return { ok: false, error: "Integración inválida." };
   // Estos tienen pantalla propia: no se conectan escribiendo la referencia a mano.
   if (change.connected && provider in CONNECT_PAGES) {
@@ -306,7 +328,7 @@ export async function setIntegration(
 // Paso final del login con Facebook: vincula la cuenta publicitaria elegida,
 // verificando que el token guardado tenga acceso a ella.
 export async function connectMetaAccount(clientId: string, accountId: string): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
   if (!/^act_\d+$/.test(accountId)) return { ok: false, error: "Elegí una cuenta publicitaria." };
 
   const secrets = await getMetaSecrets(clientId);
@@ -353,7 +375,7 @@ async function writeIntegration(clientId: string, provider: string, values: Reco
 // Vincula el cliente con una página de la database de Proyectos de Notion.
 // Se valida contra Notion que la página exista antes de guardarla.
 export async function connectNotionProject(clientId: string, pageId: string): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
   if (!pageId) return { ok: false, error: "Elegí un proyecto de Notion." };
 
   let project;
@@ -379,7 +401,7 @@ export async function connectNotionProject(clientId: string, pageId: string): Pr
 // Vincula el cliente con su carpeta de Google Drive. Se valida contra Drive que
 // la carpeta exista y que la cuenta de Drive la vea antes de guardarla.
 export async function connectDriveFolder(clientId: string, folderId: string): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
   if (!isDriveId(folderId)) return { ok: false, error: "Elegí una carpeta de Drive." };
 
   try {
@@ -401,7 +423,7 @@ export async function connectDriveFolder(clientId: string, folderId: string): Pr
 // Vincula la cuenta de Google Ads del cliente. Se valida contra la API que la
 // cuenta cuelgue de la MCC del estudio y no sea una MCC.
 export async function connectGoogleAdsAccount(clientId: string, customerId: string): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
   const id = normalizeCustomerId(customerId);
   if (!id) return { ok: false, error: "Elegí una cuenta de Google Ads." };
 
@@ -435,7 +457,7 @@ export async function refreshNotion(): Promise<FormState> {
 // y sus credenciales se guardan del lado server, nunca vuelven al navegador.
 // Antes de guardar se prueba la conexión contra el CRM.
 export async function connectCrm(clientId: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
 
   const provider = String(formData.get("provider") ?? "");
   if (!isCrmProvider(provider)) return { ok: false, error: "Elegí un CRM de la lista." };
@@ -518,7 +540,7 @@ async function connectKommo(clientId: string, formData: FormData): Promise<FormS
 // después del cierre (producción, entrega), así que no alcanza con lo que el CRM
 // marca como ganado: lo define el equipo por cliente.
 export async function setCrmWonStages(clientId: string, stages: string[]): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
 
   const secrets = await getCrmSecrets(clientId);
   if (!secrets) return { ok: false, error: "El cliente no tiene un CRM conectado." };
@@ -539,7 +561,7 @@ export async function setCrmWonStages(clientId: string, stages: string[]): Promi
 // completo y qué etapas quedan afuera (pruebas internas). Los contactos que ya
 // estaban y los duplicados se detectan solos (crmExclusions en lib/crm-shared.ts).
 export async function setCrmLeadBase(clientId: string, since: string, stages: string[]): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
 
   const secrets = await getCrmSecrets(clientId);
   if (!secrets) return { ok: false, error: "El cliente no tiene un CRM conectado." };
@@ -566,7 +588,7 @@ export async function setCrmLeadBase(clientId: string, since: string, stages: st
 // ella, las ventas y la facturación del CRM salen de la planilla. Se lee antes de
 // guardarla, así un link mal copiado o sin compartir se avisa acá.
 export async function setCrmSalesSheet(clientId: string, link: string): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
   if (!salesSheetConfigured()) return { ok: false, error: "Falta configurar la cuenta de servicio de Google en el servidor." };
 
   const secrets = await getCrmSecrets(clientId);
@@ -599,7 +621,7 @@ export async function setCrmSalesSheet(clientId: string, link: string): Promise<
 
 // Deja de usar la planilla: las ventas vuelven a salir del CRM.
 export async function removeCrmSalesSheet(clientId: string): Promise<FormState> {
-  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
 
   const secrets = await getCrmSecrets(clientId);
   if (!secrets) return { ok: false, error: "El cliente no tiene un CRM conectado." };

@@ -73,6 +73,15 @@ No hay framework de tests configurado todavía.
   texto libre que define el admin en `/admin` (Diseñador/a, Project manager…), **solo
   para mostrar**; los permisos siguen siendo `role` + `areas`. `getTeam()` lo expone
   como `jobTitle` y selecciona `*` para no romper si la columna todavía no existe.
+- Visibilidad de clientes: un miembro ve **solo los clientes que tiene asignados**
+  (`intranet_client_assignments`); un admin ve todos y la cuenta de un cliente, su
+  empresa. Lo aplica la RLS con políticas `restrictive` (se suman con AND a las que
+  ya hay) sobre `intranet_clients` y cada tabla con `client_id`, vía
+  `intranet_can_see_client()` (`docs/sql/2026-10-20-clientes-asignados.sql`). Una
+  tabla nueva con `client_id` tiene que sumarse a esa lista. Las Server Actions que
+  escriben con service_role validan con `canManageClient(clientId)`
+  (`app/(app)/clientes/actions.ts`), no solo con el área. `addClient` asigna a quien
+  crea el cliente (si no es admin), porque si no, no lo vería.
 - Pestaña Equipo de cada cliente (`/clientes/[slug]/equipo` y `/mi-empresa/equipo`,
   misma `EquipoView`): los miembros activos de `intranet_client_assignments`, vía
   `getClientTeam()` con service_role (la cuenta del cliente no ve asignaciones ni
