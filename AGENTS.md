@@ -100,7 +100,9 @@ Claves de `areas` (todas boolean):
 - Helper `intranet_is_admin()` (SECURITY DEFINER) evita recursión de RLS.
 **Alta de perfiles:**
 - Trigger `on_auth_user_created_intranet` → `handle_new_user_intranet()` crea el
-  perfil al registrarse un usuario nuevo (rol `member`, sin áreas).
+  perfil al registrarse un usuario nuevo (rol `member`, todas las áreas menos
+  `admin`: `DEFAULT_MEMBER_AREAS` en `lib/auth-shared.ts`). Si ya estaba en Auth
+  por el otro app, el perfil lo crea `app/auth/callback/route.ts` en su primer ingreso.
 - Se corrió un **backfill** para cargar a los usuarios que ya existían en el
   proyecto compartido.
 **Restricción de dominio:** el candado `@qualita.studio` se deja al mecanismo que

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { AREAS, isQualitaEmail, type AreaKey, type Role } from "@/lib/auth-shared";
+import { AREAS, DEFAULT_MEMBER_AREAS, isQualitaEmail, type AreaKey, type Role } from "@/lib/auth-shared";
 import { getSession } from "@/lib/auth";
 import { AI_SETTINGS_KEY } from "@/lib/ai-config";
 import { AI_TASKS, type AiConfig, isAiEffort, isAiModel } from "@/lib/ai-models";
@@ -101,7 +101,7 @@ export async function addMember(_prev: ActionResult | null, formData: FormData):
   // que ya existían en Auth sin perfil de intranet.
   const { error: profileError } = await admin
     .from("intranet_profiles")
-    .upsert({ id: userId, email, role: "member", areas: {}, active: true },{ onConflict: "id", ignoreDuplicates: true });
+    .upsert({ id: userId, email, role: "member", areas: DEFAULT_MEMBER_AREAS, active: true }, { onConflict: "id", ignoreDuplicates: true });
   if (profileError) return { ok: false, error: "Se creó el usuario pero no su perfil de intranet." };
 
   revalidatePath("/", "layout");

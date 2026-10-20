@@ -17,6 +17,12 @@ export const AREAS = [
 ] as const;
 
 export type AreaKey = (typeof AREAS)[number][0];
+
+// Áreas con las que arranca un miembro nuevo del equipo: todas menos admin.
+// Mantener igual que handle_new_user_intranet (docs/sql/2026-10-16-areas-por-defecto.sql).
+export const DEFAULT_MEMBER_AREAS = Object.fromEntries(
+  AREAS.filter(([k]) => k !== "admin").map(([k]) => [k, true]),
+) as Partial<Record<AreaKey, boolean>>;
 export type Role = "admin" | "member";
 
 export type Profile = {
