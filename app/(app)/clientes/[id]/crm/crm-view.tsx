@@ -446,7 +446,15 @@ export async function CrmView({
             className="mt-4"
           >
             {top.videos.length ? (
-              <TopVideos videos={top.videos} by={top.by} showWon={won !== null} clientSlug={c.slug} base={base} query={periodQuery(range)} />
+              <TopVideos
+                videos={top.videos}
+                by={top.by}
+                showWon={won !== null}
+                clientSlug={c.slug}
+                base={base}
+                query={periodQuery(range)}
+                hideMedia={!!secrets?.demo}
+              />
             ) : (
               <EmptyState label="Sin datos">
                 {top.total

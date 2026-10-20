@@ -39,6 +39,7 @@ export function TopVideos({
   clientSlug,
   base,
   query,
+  hideMedia = false,
 }: {
   videos: VideoPerformance[];
   by: "crm" | "meta";
@@ -48,22 +49,33 @@ export function TopVideos({
   base: string;
   // Período actual (periodQuery), para abrir el anuncio en META con el mismo corte.
   query: string;
+  // Sin el creativo, solo los números: el cliente demo (Cliente X) usa datos de
+  // otro cliente y sus videos no se muestran.
+  hideMedia?: boolean;
 }) {
   return (
     <div className="grid g3 top-videos">
       {videos.map((v, i) => (
         <article key={v.ad.id} className="video-tile">
-          <div className="video-media">
-            <AdThumb ad={v.ad} clientSlug={clientSlug} size="lg" />
-            <span className="video-rank">#{i + 1}</span>
-          </div>
-          <Link
-            className="video-name"
-            href={`${base}/meta?${query}&anuncio=${encodeURIComponent(v.ad.name)}`}
-            title={`${v.ad.name} · ver en META`}
-          >
-            {v.ad.name}
-          </Link>
+          {hideMedia ? (
+            <span className="video-name" title={v.ad.name}>
+              {v.ad.name}
+            </span>
+          ) : (
+            <>
+              <div className="video-media">
+                <AdThumb ad={v.ad} clientSlug={clientSlug} size="lg" />
+                <span className="video-rank">#{i + 1}</span>
+              </div>
+              <Link
+                className="video-name"
+                href={`${base}/meta?${query}&anuncio=${encodeURIComponent(v.ad.name)}`}
+                title={`${v.ad.name} · ver en META`}
+              >
+                {v.ad.name}
+              </Link>
+            </>
+          )}
           <dl className="video-stats">
             {metrics(v, by, showWon).map(([label, value]) => (
               <div key={label}>
