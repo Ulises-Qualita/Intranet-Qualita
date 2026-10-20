@@ -77,8 +77,10 @@ No hay framework de tests configurado todavía.
   (`intranet_client_assignments`); un admin ve todos y la cuenta de un cliente, su
   empresa. Lo aplica la RLS con políticas `restrictive` (se suman con AND a las que
   ya hay) sobre `intranet_clients` y cada tabla con `client_id`, vía
-  `intranet_can_see_client()` (`docs/sql/2026-10-20-clientes-asignados.sql`). Una
-  tabla nueva con `client_id` tiene que sumarse a esa lista. Las Server Actions que
+  `client_id = any((select intranet_visible_client_ids())::uuid[])`
+  (`docs/sql/2026-10-20-clientes-asignados.sql`). Una tabla nueva con `client_id`
+  tiene que sumarse a esa lista. No usar `intranet_can_see_client(client_id)` en
+  una política: corre por fila y en tablas grandes (chats del CRM) da timeout 57014. Las Server Actions que
   escriben con service_role validan con `canManageClient(clientId)`
   (`app/(app)/clientes/actions.ts`), no solo con el área. `addClient` asigna a quien
   crea el cliente (si no es admin), porque si no, no lo vería.

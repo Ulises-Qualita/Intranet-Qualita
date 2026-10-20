@@ -46,6 +46,9 @@ export type CrmSecrets = {
   // usando las ventas que ya estaban guardadas.
   sales_error?: string | null;
   sales_stats?: SalesStats;
+  // Cliente de demostración (Cliente X): los datos se cargaron a mano (copia
+  // anonimizada de otro cliente) y no hay CRM detrás, así que nunca se sincroniza.
+  demo?: boolean;
 };
 
 // Resumen de la última lectura de la planilla, para la pantalla de conexión.
@@ -222,6 +225,7 @@ export type CrmSyncResult = { clientId: string; ok: boolean; leads: number; erro
 export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
   const secrets = await getCrmSecrets(clientId);
   if (!secrets) return { clientId, ok: false, leads: 0, error: "El cliente no tiene un CRM conectado." };
+  if (secrets.demo) return { clientId, ok: true, leads: 0 };
 
   try {
     const { leads, stages } = await readCrm(secrets);
@@ -400,7 +404,7 @@ export async function syncAllCrmClients(): Promise<CrmSyncResult[]> {
 // Igual que en Meta: la primera vez se espera, después se refresca en segundo plano.
 export async function prepareCrmView(clientId: string) {
   const secrets = await getCrmSecrets(clientId);
-  if (!secrets) return null;
+  if (!secrets || secrets.demo) return secrets;
 
   if (!secrets.synced_at) {
     await syncCrmClient(clientId);
