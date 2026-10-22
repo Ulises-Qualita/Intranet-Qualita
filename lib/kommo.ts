@@ -348,6 +348,58 @@ export async function readKommoChatEvents(
   return { events: [...events.values()], truncated };
 }
 
+// ---------- Cambios de etapa ----------
+
+// Un lead que pasó de una etapa a otra. Las etapas van con el mismo nombre que
+// readKommo les da a los leads (intranet_leads.stage); null si ya no existe.
+export type KommoStageEvent = { id: string; leadId: string; from: string | null; to: string | null; at: string };
+
+type RawLeadStatus = { lead_status?: { id: number; pipeline_id: number } }[];
+type RawStageEvent = { id: string; entity_id: number; created_at: number; value_before?: RawLeadStatus; value_after?: RawLeadStatus };
+
+// Cambios de etapa entre `from` y `to` (segundos Unix), del más nuevo al más
+// viejo. Corta en `maxPages`, como readKommoChatEvents.
+export async function readKommoStageEvents(
+  creds: KommoCredentials,
+  { from, to, maxPages }: { from: number; to?: number; maxPages: number },
+): Promise<{ events: KommoStageEvent[]; truncated: boolean }> {
+  const pipelines = await getPipelines(creds);
+  const nameOf = (raw?: RawLeadStatus) => {
+    const status = raw?.[0]?.lead_status;
+    if (!status) return null;
+    if (status.id === WON_STATUS) return pipelines.won;
+    if (status.id === LOST_STATUS) return pipelines.lost;
+    return pipelines.stageName.get(`${status.pipeline_id}:${status.id}`) ?? null;
+  };
+
+  const events = new Map<string, KommoStageEvent>();
+  let truncated = false;
+  for (let page = 1; ; page++) {
+    const body = await api<{ _embedded: { events: RawStageEvent[] }; _links?: { next?: unknown } }>(creds, "events", {
+      page,
+      limit: EVENT_PAGE,
+      "filter[type]": "lead_status_changed",
+      "filter[created_at][from]": from,
+      ...(to ? { "filter[created_at][to]": to } : {}),
+    });
+    for (const e of body?._embedded.events ?? []) {
+      events.set(e.id, {
+        id: e.id,
+        leadId: String(e.entity_id),
+        from: nameOf(e.value_before),
+        to: nameOf(e.value_after),
+        at: new Date(e.created_at * 1000).toISOString(),
+      });
+    }
+    if (!body?._links?.next) break;
+    if (page >= maxPages) {
+      truncated = true;
+      break;
+    }
+  }
+  return { events: [...events.values()], truncated };
+}
+
 // Nombres de los usuarios de la cuenta, por id.
 export const kommoUsers = getUsers;
 

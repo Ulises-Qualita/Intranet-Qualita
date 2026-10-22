@@ -27,6 +27,7 @@ import {
   withMetaAdNames,
   type Client,
 } from "../data";
+import { chatStats, duration, getChatEvents, getChatStart, getStageEvents, replyTurns, stageEntries, turnStats, WORK_HOURS, type ReplyTurn } from "../crm-chats";
 import { getCrmSecrets } from "../crm-sync";
 import { localDate, todayISO } from "../format";
 import { customPeriod, lastDays, monthPeriod, type Period } from "../period";
@@ -511,6 +512,127 @@ const crmLeads: AgentTool = {
   },
 };
 
+// Atención por chat (solo Kommo): primera respuesta a los leads nuevos, como la
+// solapa CRM, y tiempo de respuesta en cada vuelta de la conversación, por etapa,
+// por responsable o antes y después de una etapa.
+const sinTildes = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+const time = (seconds: number | null) => (seconds === null ? null : duration(seconds));
+const pct = (share: number | null) => (share === null ? null : round(share * 100, 0));
+
+const turnsOut = (turns: ReplyTurn[]) => {
+  const s = turnStats(turns);
+  return {
+    leads: s.leads,
+    vueltas: s.turns,
+    mediana: time(s.median),
+    mediana_en_horario: time(s.medianInHours),
+    mediana_fuera_de_horario: time(s.medianOffHours),
+    p75: time(s.p75),
+    p90: time(s.p90),
+    respondidas_en_15_min_pct: pct(s.within15),
+    respondidas_en_1_hora_pct: pct(s.within60),
+    sin_respuesta: s.unanswered,
+  };
+};
+
+const crmAtencion: AgentTool = {
+  area: "crm",
+  definition: {
+    name: "crm_atencion",
+    description:
+      "Tiempos de respuesta del chat del CRM (WhatsApp/Instagram vía Kommo) de un cliente en el período: la primera respuesta a los leads nuevos (lo mismo que la solapa CRM) y el tiempo de respuesta en cada vuelta de la conversación (el cliente escribe → la empresa contesta), con medianas dentro y fuera del horario de atención, percentiles y mensajes sin respuesta. Con `agrupar` lo corta por la etapa en que estaba el lead al escribir o por responsable; con `etapa_corte` compara antes y después de que el lead entrara a esa etapa (p. ej. \"segunda reunión\"). Solo para clientes con Kommo; hay mensajes de los últimos 90 días.",
+    input_schema: {
+      type: "object",
+      properties: {
+        ...CLIENTE_PROP,
+        ...PERIODO_PROP,
+        agrupar: { type: "string", enum: ["etapa", "responsable"], description: "Cortar las vueltas por la etapa del lead al momento del mensaje o por responsable del lead." },
+        etapa_corte: { type: "string", description: "Etapa del CRM para comparar antes y después de que el lead entrara a ella (nombre aproximado, sin importar tildes ni mayúsculas)." },
+      },
+      required: ["cliente"],
+    },
+  },
+  run: async (input) => {
+    const client = await findClient(input.cliente);
+    requireIntegration(client, "crm");
+    const secrets = await getCrmSecrets(client.id);
+    if (secrets?.provider !== "kommo") {
+      return { cliente: client.name, aviso: "Los tiempos de respuesta del chat solo se miden con Kommo, y este cliente usa otro CRM." };
+    }
+
+    const range = periodFrom(input);
+    const [events, storedSince, leads, history] = await Promise.all([
+      getChatEvents(client.id, range),
+      getChatStart(client.id),
+      getLeads(client.id),
+      getStageEvents(client.id),
+    ]);
+    if (events === null) return { cliente: client.name, aviso: "Los chats del CRM todavía no se guardan (falta una migración en la base)." };
+    if (!events.length) return { cliente: client.name, periodo: periodOut(range), aviso: "No hay mensajes guardados en ese período (se conservan 90 días)." };
+
+    const stages = history ?? [];
+    const turns = replyTurns(events, { leads, period: range, stages });
+    const first = chatStats(events, { leads, period: range, storedSince }).total;
+    const stageNote =
+      history === null
+        ? "El historial de etapas todavía no se guarda (falta una migración en la base): la etapa de cada mensaje es la actual del lead, no la que tenía al escribir. No compares antes y después de una etapa con este dato."
+        : !stages.length
+          ? "Todavía no hay historial de etapas sincronizado: la etapa de cada mensaje es la actual del lead."
+          : null;
+
+    const out: Record<string, unknown> = {
+      cliente: client.name,
+      periodo: periodOut(range),
+      criterio: `Vuelta = el cliente escribe (el primer mensaje después de una respuesta) y la empresa contesta; las medianas son con reloj corrido. Horario de atención supuesto: ${WORK_HOURS.label} (sin confirmar con el cliente). Sin respuesta = nadie contestó hasta el último sync. Solo leads que cuentan (sin excluidos). Las vueltas de charlas ya empezadas suelen ser de pocos minutos: para medir cuánto espera una consulta nueva, usá primera_respuesta.`,
+      mensajes_guardados_desde: storedSince ? localDate(storedSince) : null,
+      ...(stageNote ? { aviso_etapas: stageNote } : {}),
+      primera_respuesta: {
+        leads_nuevos_que_escribieron: first.leads,
+        mediana: time(first.medianResponse),
+        mediana_en_horario: time(first.medianInHours),
+        mediana_fuera_de_horario: time(first.medianOffHours),
+        respondidos_en_15_min_pct: pct(first.fastShare),
+        sin_respuesta: first.unanswered,
+      },
+      vueltas: turnsOut(turns),
+    };
+
+    const agrupar = str(input.agrupar);
+    if (agrupar === "etapa") {
+      const order = secrets.stage_order ?? [];
+      const rank = (name: string) => (order.includes(name) ? order.indexOf(name) : order.length);
+      const names = [...new Set(turns.map((t) => t.stage ?? "Sin etapa"))].sort((a, b) => rank(a) - rank(b));
+      out.por_etapa = names.map((name) => ({ etapa: name, ...turnsOut(turns.filter((t) => (t.stage ?? "Sin etapa") === name)) }));
+    } else if (agrupar === "responsable") {
+      const owners = new Map(leads.map((l) => [l.external_id, l.owner ?? "Sin responsable"]));
+      const names = [...new Set(turns.map((t) => owners.get(t.leadId) ?? "Sin responsable"))];
+      out.por_responsable = names.map((name) => ({ responsable: name, ...turnsOut(turns.filter((t) => (owners.get(t.leadId) ?? "Sin responsable") === name)) }));
+    }
+
+    const corte = str(input.etapa_corte);
+    if (corte) {
+      const known = [...new Set([...(secrets.stage_order ?? []), ...stages.flatMap((s) => (s.to_stage ? [s.to_stage] : []))])];
+      const needle = sinTildes(corte);
+      const stage = known.find((n) => sinTildes(n) === needle) ?? known.find((n) => sinTildes(n).includes(needle));
+      if (!stage) throw new ToolError(`No hay ninguna etapa que se llame "${corte}". Las etapas son: ${known.join(", ")}.`);
+      const entries = stageEntries(stages, stage);
+      const after = (t: ReplyTurn) => {
+        const at = entries.get(t.leadId);
+        return !!at && t.at >= at;
+      };
+      out.corte = {
+        etapa: stage,
+        leads_que_entraron: entries.size,
+        nota: "Antes y después según cuándo entró cada lead a la etapa (historial de Kommo). Con pocos leads en \"despues\", es una tendencia y no un dato firme.",
+        antes: turnsOut(turns.filter((t) => !after(t))),
+        antes_solo_los_que_llegaron: turnsOut(turns.filter((t) => entries.has(t.leadId) && !after(t))),
+        despues: turnsOut(turns.filter(after)),
+      };
+    }
+    return out;
+  },
+};
+
 // ---------- Equipo ----------
 
 const equipo: AgentTool = {
@@ -549,7 +671,7 @@ const equipo: AgentTool = {
 };
 
 // Con las tareas ocultas (SHOW_TASKS) la tool no existe para el modelo.
-const ALL_TOOLS = [listarClientes, ...(SHOW_TASKS ? [tareas] : []), metaMetricas, metaCampanas, crmResumen, crmLeads, equipo];
+const ALL_TOOLS = [listarClientes, ...(SHOW_TASKS ? [tareas] : []), metaMetricas, metaCampanas, crmResumen, crmLeads, crmAtencion, equipo];
 
 // Las tools que este usuario puede usar. Es el control de acceso del agente: lo
 // que no está acá no existe para el modelo.

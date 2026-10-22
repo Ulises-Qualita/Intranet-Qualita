@@ -97,6 +97,7 @@ begin
     'intranet_leads',
     'intranet_crm_sales',
     'intranet_crm_chat_events',
+    'intranet_crm_stage_events',
     'intranet_clarity_daily',
     'intranet_clarity_pages',
     'intranet_gads_daily',

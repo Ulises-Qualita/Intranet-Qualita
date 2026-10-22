@@ -80,3 +80,10 @@ paths:
   todos los salientes llegan sin usuario (`created_by` 0, responden desde la app de
   WhatsApp). El texto de los mensajes existe en `GET /api/v4/talks/{id}/messages`,
   pero pide el alcance "External chat history" (Chats API add-on) y hoy da 403.
+- Historial de etapas (solo Kommo): `intranet_crm_stage_events`
+  (`docs/sql/2026-10-22-crm-etapas.sql`), un registro por cambio de etapa
+  (`lead_status_changed` de la API de eventos, nombres de etapa como en
+  `intranet_leads.stage`). `lib/crm-stage-sync.ts` corre en `syncCrmClient` después de
+  los chats: completa 95 días hacia atrás, 8 páginas por corrida, borra lo de más de
+  180; un fallo va a `secrets.stage_error`. Los chats se conservan 90 días
+  (`KEEP_DAYS` de `lib/crm-chat-sync.ts`). Lo usa `crm_atencion` del agente.

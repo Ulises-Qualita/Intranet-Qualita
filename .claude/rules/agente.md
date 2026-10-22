@@ -46,3 +46,10 @@ paths:
   igual que `crmPeriod`) y cada ganada trae `ganada_el`; los demás estados, por
   creación. El prompt (`lib/agent/prompt.ts`, "Períodos y criterio del CRM") explica
   las dos fechas.
+- `crm_atencion` (solo Kommo): primera respuesta a leads nuevos (`chatStats`, igual
+  que la solapa) y tiempo de respuesta por **vuelta** (`replyTurns`/`turnStats` de
+  `lib/crm-chats.ts`: primer entrante después de una respuesta → siguiente
+  saliente), con `agrupar` = etapa | responsable y `etapa_corte` (antes / después de
+  que el lead entró a esa etapa). La etapa de cada mensaje sale del historial
+  `intranet_crm_stage_events` (ver `.claude/rules/crm.md`); sin él, avisa que usa
+  la etapa actual.

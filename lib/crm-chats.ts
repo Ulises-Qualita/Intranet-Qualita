@@ -308,6 +308,156 @@ export function chatStats(
   };
 }
 
+// ---------- Tiempo de respuesta por etapa ----------
+
+export type StageEvent = { lead_id: string; from_stage: string | null; to_stage: string | null; at: string };
+
+// Todos los cambios de etapa guardados del cliente, del más viejo al más nuevo
+// (lib/crm-stage-sync.ts; Arteplac tiene unos 550 por mes y se guardan 180 días).
+// null = la tabla todavía no existe (falta docs/sql/2026-10-22-crm-etapas.sql).
+export async function getStageEvents(clientId: string): Promise<StageEvent[] | null> {
+  const supabase = await createClient();
+  const rows: StageEvent[] = [];
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("intranet_crm_stage_events")
+      .select("lead_id, from_stage, to_stage, at")
+      .eq("client_id", clientId)
+      .order("at")
+      .order("event_id")
+      .range(start, start + PAGE_SIZE - 1)
+      .returns<StageEvent[]>();
+    if (error) {
+      if (isMissingTable(error)) return null;
+      throw error;
+    }
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < PAGE_SIZE) return rows;
+  }
+}
+
+// Una vuelta de la conversación: el cliente escribe (el primer entrante después
+// de una respuesta) y la empresa contesta. A diferencia de chatStats, que mide
+// solo la primera respuesta a cada lead nuevo, acá cuenta cada vuelta: sirve para
+// ver la atención en cada etapa, también con leads que ya venían hablando.
+export type ReplyTurn = {
+  leadId: string;
+  at: string;
+  // null = no tuvo respuesta (hasta lo último guardado).
+  seconds: number | null;
+  inHours: boolean;
+  // Etapa del lead cuando escribió.
+  stage: string | null;
+};
+
+// Las vueltas que empezaron en el período, de los leads que cuentan. `events` como
+// los da getChatEvents (con el tramo posterior, para ver respuestas tardías);
+// `stages` como los da getStageEvents. Si un lead no tiene cambios guardados
+// anteriores al mensaje, la etapa es la de origen del primero que tenga o, sin
+// ninguno, la actual.
+export function replyTurns(
+  events: ChatEvent[],
+  { leads, period, stages }: { leads: Lead[]; period: Period; stages: StageEvent[] },
+): ReplyTurn[] {
+  const from = Date.parse(dayStart(period.since));
+  const to = Date.parse(dayEnd(period.until));
+  const current = new Map(leads.filter((l) => l.external_id).map((l) => [l.external_id!, l.stage]));
+
+  const history = new Map<string, StageEvent[]>();
+  for (const s of stages) {
+    const list = history.get(s.lead_id);
+    if (list) list.push(s);
+    else history.set(s.lead_id, [s]);
+  }
+  const stageAt = (leadId: string, at: string) => {
+    const list = history.get(leadId);
+    if (!list) return current.get(leadId) ?? null;
+    const last = list.findLast((s) => s.at <= at);
+    return last ? last.to_stage : list[0].from_stage;
+  };
+
+  const byTalk = new Map<number, ChatEvent[]>();
+  for (const e of events) {
+    if (!e.lead_id || !current.has(e.lead_id)) continue;
+    const talk = byTalk.get(e.talk_id);
+    if (talk) talk.push(e);
+    else byTalk.set(e.talk_id, [e]);
+  }
+
+  const turns: ReplyTurn[] = [];
+  const push = (open: ChatEvent, reply: ChatEvent | null) => {
+    const at = Date.parse(open.at);
+    if (at < from || at > to) return;
+    turns.push({
+      leadId: open.lead_id!,
+      at: open.at,
+      seconds: reply ? (Date.parse(reply.at) - at) / 1000 : null,
+      inHours: inWorkHours(open.at),
+      stage: stageAt(open.lead_id!, open.at),
+    });
+  };
+  for (const list of byTalk.values()) {
+    let open: ChatEvent | null = null;
+    for (const e of list) {
+      if (e.incoming) open ??= e;
+      else if (open) {
+        push(open, e);
+        open = null;
+      }
+    }
+    if (open) push(open, null);
+  }
+  return turns;
+}
+
+export type TurnStats = {
+  leads: number;
+  turns: number;
+  unanswered: number;
+  // Segundos: mediana general y según si el cliente escribió dentro o fuera del
+  // horario de atención, y percentiles 75 y 90 (las demoras largas).
+  median: number | null;
+  medianInHours: number | null;
+  medianOffHours: number | null;
+  p75: number | null;
+  p90: number | null;
+  // De las vueltas, cuántas tuvieron respuesta en 15 minutos y en una hora (0 a 1).
+  within15: number | null;
+  within60: number | null;
+};
+
+const percentile = (values: number[], p: number) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const i = (sorted.length - 1) * p;
+  const lo = Math.floor(i);
+  return sorted[lo] + (sorted[Math.ceil(i)] - sorted[lo]) * (i - lo);
+};
+
+export function turnStats(turns: ReplyTurn[]): TurnStats {
+  const answered = turns.flatMap((t) => (t.seconds === null ? [] : [t.seconds]));
+  const share = (limit: number) => (turns.length ? answered.filter((s) => s <= limit).length / turns.length : null);
+  return {
+    leads: new Set(turns.map((t) => t.leadId)).size,
+    turns: turns.length,
+    unanswered: turns.length - answered.length,
+    median: median(answered),
+    medianInHours: median(turns.flatMap((t) => (t.inHours && t.seconds !== null ? [t.seconds] : []))),
+    medianOffHours: median(turns.flatMap((t) => (!t.inHours && t.seconds !== null ? [t.seconds] : []))),
+    p75: percentile(answered, 0.75),
+    p90: percentile(answered, 0.9),
+    within15: share(FAST_S),
+    within60: share(3600),
+  };
+}
+
+// Cuándo entró cada lead por primera vez a una etapa.
+export function stageEntries(stages: StageEvent[], stage: string) {
+  const entries = new Map<string, string>();
+  for (const s of stages) if (s.to_stage === stage && !entries.has(s.lead_id)) entries.set(s.lead_id, s.at);
+  return entries;
+}
+
 // "45 s", "12 min", "3 h 20 min", "2 d 4 h".
 export function duration(seconds: number) {
   if (seconds < 60) return `${Math.round(seconds)} s`;

@@ -8,6 +8,7 @@ import { after } from "next/server";
 import { crmExclusions, crmStatusOf, type CrmLead, type CrmProvider } from "./crm-shared";
 import { todayISO } from "./format";
 import { syncKommoChats } from "./crm-chat-sync";
+import { syncKommoStages } from "./crm-stage-sync";
 import { readKommo, type KommoCredentials } from "./kommo";
 import { getOdooOpportunities, getOdooStages, getOdooWonDates, odooConnect, type OdooCredentials } from "./odoo";
 import { matchSales, readSalesSheet } from "./sales-sheet";
@@ -39,6 +40,8 @@ export type CrmSecrets = {
   // Actividad de los chats (solo Kommo): el motivo si la última lectura falló.
   // Va aparte de sync_error: que fallen los chats no invalida las oportunidades.
   chat_error?: string | null;
+  // Historial de etapas (solo Kommo, lib/crm-stage-sync.ts): igual que chat_error.
+  stage_error?: string | null;
   // Planilla de ventas confirmadas (lib/sales-sheet.ts). Con ella, la venta y su
   // monto salen de la planilla y no del CRM.
   sales_sheet?: { id: string; url: string; title?: string };
@@ -368,6 +371,8 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
 
     // Actividad de los chats: nunca tira, así un problema ahí no pierde el sync.
     const chats = secrets.provider === "kommo" && secrets.kommo ? await syncKommoChats(clientId, secrets.kommo, leads) : null;
+    // Historial de etapas: tampoco tira.
+    const stageHistory = secrets.provider === "kommo" && secrets.kommo ? await syncKommoStages(clientId, secrets.kommo) : null;
 
     await saveCrmSecrets(clientId, {
       ...secrets,
@@ -375,6 +380,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
       synced_at: new Date().toISOString(),
       sync_error: null,
       chat_error: chats?.error ?? null,
+      stage_error: stageHistory?.error ?? null,
       ...(sales ? { sales_error: sales.error, sales_stats: sales.stats ?? secrets.sales_stats } : {}),
     });
     return { clientId, ok: true, leads: counted.length };
