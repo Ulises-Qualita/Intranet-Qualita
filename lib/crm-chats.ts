@@ -146,12 +146,19 @@ export type ChatStats = {
 export const NO_OWNER = "Sin responsable";
 const FAST_S = 15 * 60;
 
-// Horario de atención para separar las demoras: lunes a viernes de 9 a 18 h de
-// Argentina. Es el que se asumió para Arteplac (docs/contexto-kommo.md, pendiente
-// de confirmar con el cliente); si otro cliente atiende distinto, pasa a ser
-// configuración.
-export const WORK_HOURS = { from: 9, to: 18, label: "lunes a viernes de 9 a 18 h" };
-const WORK_DAYS = new Set(["Mon", "Tue", "Wed", "Thu", "Fri"]);
+// Horario de atención para separar las demoras, en hora de Argentina: el de
+// Arteplac, confirmado por el cliente (lunes a viernes de 9 a 18 h y sábados de
+// 10 a 13 h). Si otro cliente atiende distinto, pasa a ser configuración.
+// Desde y hasta en horas enteras; "hasta" no se incluye.
+const SCHEDULE: Record<string, { from: number; to: number }> = {
+  Mon: { from: 9, to: 18 },
+  Tue: { from: 9, to: 18 },
+  Wed: { from: 9, to: 18 },
+  Thu: { from: 9, to: 18 },
+  Fri: { from: 9, to: 18 },
+  Sat: { from: 10, to: 13 },
+};
+export const WORK_HOURS = { label: "lunes a viernes de 9 a 18 h y sábados de 10 a 13 h" };
 const clock = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Argentina/Buenos_Aires",
   weekday: "short",
@@ -163,7 +170,8 @@ function inWorkHours(iso: string) {
   const parts = clock.formatToParts(new Date(iso));
   const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
   const hour = Number(parts.find((p) => p.type === "hour")?.value);
-  return WORK_DAYS.has(weekday) && hour >= WORK_HOURS.from && hour < WORK_HOURS.to;
+  const day = SCHEDULE[weekday];
+  return !!day && hour >= day.from && hour < day.to;
 }
 
 const median = (values: number[]) => {

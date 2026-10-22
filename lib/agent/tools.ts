@@ -583,7 +583,7 @@ const crmAtencion: AgentTool = {
     const out: Record<string, unknown> = {
       cliente: client.name,
       periodo: periodOut(range),
-      criterio: `Vuelta = el cliente escribe (el primer mensaje después de una respuesta) y la empresa contesta; las medianas son con reloj corrido. Horario de atención supuesto: ${WORK_HOURS.label} (sin confirmar con el cliente). Sin respuesta = nadie contestó hasta el último sync. Solo leads que cuentan (sin excluidos). Las vueltas de charlas ya empezadas suelen ser de pocos minutos: para medir cuánto espera una consulta nueva, usá primera_respuesta.`,
+      criterio: `Vuelta = el cliente escribe (el primer mensaje después de una respuesta) y la empresa contesta; las medianas son con reloj corrido. Horario de atención: ${WORK_HOURS.label}. Sin respuesta = nadie contestó hasta el último sync. Solo leads que cuentan (sin excluidos). Las vueltas de charlas ya empezadas suelen ser de pocos minutos: para medir cuánto espera una consulta nueva, usá primera_respuesta.`,
       mensajes_guardados_desde: storedSince ? localDate(storedSince) : null,
       ...(stageNote ? { aviso_etapas: stageNote } : {}),
       primera_respuesta: {

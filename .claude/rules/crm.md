@@ -73,7 +73,8 @@ paths:
   **primera respuesta por lead nuevo** del período (del primer entrante al primer
   saliente posterior, solo leads que cuentan; mediana con reloj corrido, separada
   según el lead haya escrito dentro o fuera del horario de atención, `WORK_HOURS`:
-  lunes a viernes de 9 a 18, sin confirmar con Arteplac), respondidos en 15 min, sin
+  lunes a viernes de 9 a 18 y sábados de 10 a 13, confirmado por Arteplac; antes se
+  asumía sin sábados y los sábados a la mañana bajaban la mediana "fuera de horario"), respondidos en 15 min, sin
   respuesta y conversaciones esperando. No se mide cada ida y vuelta: daba 4 minutos
   por el ping-pong de charlas ya empezadas. Se
   agrupa por el **responsable del lead** y no por quién escribió: en Arteplac casi

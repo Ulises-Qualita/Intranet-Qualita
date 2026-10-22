@@ -139,7 +139,7 @@ Valores de referencia de la planilla:
   - Definición: primer mensaje saliente después del primer mensaje entrante, cualquiera sea su `created_by`.
   - Período: solo leads desde el 08/09/2026.
   - Por sucursal: según `responsible_user_id`.
-  - Horario laboral: se asumió lunes a viernes de 9 a 18 h; está pendiente de confirmar con Arteplac.
+  - Horario laboral (confirmado por Arteplac): lunes a viernes de 9 a 18 h y sábados de 10 a 13 h.
   - Referencia septiembre 2026: mediana de 67 minutos en general; unos 10 minutos en horario laboral y unas 13 horas fuera de horario.
 - **Leads de períodos anteriores al 08/09:** no se pueden contar con Kommo. Si hace falta un número, estimarlo con las cotizaciones de la planilla. Referencia: 3,1 leads por cotización, medido del 08/09 al 30/09/2026 sin contar Filtrados. Presentarlo siempre como estimación.
 - **Conversión por sucursal:** usar la planilla (cotizaciones confirmadas sobre cotizaciones emitidas, según vía de contacto). En Kommo no es confiable.
