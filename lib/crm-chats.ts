@@ -466,9 +466,13 @@ export function stageEntries(stages: StageEvent[], stage: string) {
   return entries;
 }
 
-// "45 s", "12 min", "3 h 20 min", "2 d 4 h".
+// "45 s", "2 min 46 s", "12 min", "3 h 20 min", "2 d 4 h". Hasta 10 minutos van
+// los segundos: las medianas en horario suelen caer en 2 o 3 minutos, y
+// redondeadas al minuto se veían iguales siendo distintas.
 export function duration(seconds: number) {
-  if (seconds < 60) return `${Math.round(seconds)} s`;
+  const total = Math.round(seconds);
+  if (total < 60) return `${total} s`;
+  if (total < 600) return total % 60 ? `${Math.floor(total / 60)} min ${total % 60} s` : `${total / 60} min`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);

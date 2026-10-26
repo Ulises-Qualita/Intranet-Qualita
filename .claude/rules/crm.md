@@ -47,9 +47,15 @@ paths:
   (teléfono, Total valor pesos / USD) y **Cotizaciones** (Fecha confirmación de
   proyecto, Vendedor); columnas por encabezado. Corre dentro de `syncCrmClient`: guarda
   `intranet_crm_sales` (`docs/sql/2026-10-06-ventas-planilla.sql`) y cruza cada venta
-  por teléfono (`matchSales`, solo leads creados hasta la confirmación) con su lead,
+  por teléfono y, si no hay, por nombre (`matchSales`, solo leads creados hasta la
+  confirmación; el nombre del cliente contra el del contacto de Kommo o el del lead:
+  todas las palabras del más corto, al menos dos, sin títulos, "Sole" = "Soledad"; si
+  coinciden personas con distinto teléfono no cruza; `sales_stats.byName`) con su lead,
   que pasa a `won` con `amount` = pesos y `amount_usd` = dólares; con planilla, las
-  etapas ganadas y los presupuestos del CRM no cuentan. Un fallo va a
+  etapas ganadas y los presupuestos del CRM no cuentan. **Una venta siempre cuenta como oportunidad**
+  (pedido del usuario): `syncCrmClient` saca de `excluded` todo lead ganado, aunque sea
+  `returning`, `duplicate` o `before_start`; si no, la venta quedaba en "Sin
+  oportunidad en el CRM" sin origen ni anuncio. Un fallo va a
   `secrets.sales_error` y se siguen usando las ventas guardadas. **Pesos y dólares no
   se suman ni se convierten.** En la solapa CRM (`salesPeriod` de `lib/data.ts`) las
   ventas, la facturación y el ticket van por **fecha de confirmación** (por eso sí se

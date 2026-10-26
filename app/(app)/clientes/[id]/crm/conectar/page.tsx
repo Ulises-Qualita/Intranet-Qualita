@@ -75,7 +75,9 @@ export default async function ConectarCrmPage({ params }: { params: Promise<{ id
                 {secrets.sales_stats &&
                   `. Última lectura: ${integer(secrets.sales_stats.projects)} proyectos con fecha de confirmación, ${integer(
                     secrets.sales_stats.matched,
-                  )} cruzados con un lead del CRM, ${integer(secrets.sales_stats.noPhone)} sin teléfono${
+                  )} cruzados con un lead del CRM${
+                    secrets.sales_stats.byName ? ` (${integer(secrets.sales_stats.byName)} por nombre)` : ""
+                  },${integer(secrets.sales_stats.noPhone)} sin teléfono${
                     secrets.sales_stats.undated ? ` y ${integer(secrets.sales_stats.undated)} sin fecha de confirmación (no se cuentan)` : ""
                   }.`}
               </p>

@@ -55,7 +55,8 @@ export type CrmSecrets = {
 };
 
 // Resumen de la última lectura de la planilla, para la pantalla de conexión.
-export type SalesStats = { projects: number; matched: number; noPhone: number; undated: number };
+// byName: de las cruzadas, cuántas por nombre (sin teléfono que coincida).
+export type SalesStats = { projects: number; matched: number; byName?: number; noPhone: number; undated: number };
 
 export async function getCrmSecrets(clientId: string): Promise<CrmSecrets | null> {
   const { data } = await createAdminClient()
@@ -188,7 +189,7 @@ async function syncSales(
 ): Promise<{ rows: SaleRow[]; error: string | null; stats?: SalesStats }> {
   try {
     const { sales, undated } = await readSalesSheet(sheetId);
-    const matches = matchSales(sales, leads, excluded);
+    const { matches, byName } = matchSales(sales, leads, excluded);
     const rows: SaleRow[] = sales.map((s) => ({
       client_id: clientId,
       project: s.project,
@@ -203,6 +204,7 @@ async function syncSales(
     const stats: SalesStats = {
       projects: sales.length,
       matched: matches.size,
+      byName,
       noPhone: sales.filter((s) => !s.phoneKey).length,
       undated,
     };
@@ -238,7 +240,6 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     const statuses = new Map(leads.map((l) => [l.externalId, crmStatusOf(l, secrets.won_stages)]));
     // Los que no son una oportunidad nueva: se guardan marcados y no entran en las métricas.
     const excluded = crmExclusions(leads, { since: secrets.since, excludedStages: secrets.excluded_stages });
-    const counted = leads.filter((l) => !excluded.has(l.externalId));
 
     // Con planilla de ventas, ganada = tiene una venta en la planilla, y el monto
     // es el de esa venta (pesos y dólares por separado). Las etapas ganadas y los
@@ -264,6 +265,11 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     if (sales) {
       for (const l of leads) statuses.set(l.externalId, sold.has(l.externalId) ? "won" : l.lost ? "lost" : "open");
     }
+    // Una venta cuenta siempre como oportunidad del CRM (pedido del usuario): el
+    // lead ganado no se excluye aunque sea de un contacto que ya estaba, repetido
+    // o anterior al registro completo. Si no, la venta queda sin origen ni anuncio.
+    for (const [id, status] of statuses) if (status === "won") excluded.delete(id);
+    const counted = leads.filter((l) => !excluded.has(l.externalId));
 
     // Se conserva el id de los leads que ya estaban (el CRM manda external_id).
     // PostgREST corta en 1000 filas sin avisar: se lee de a páginas, porque un lead

@@ -200,6 +200,7 @@ export async function getOdooOpportunities(session: OdooSession): Promise<CrmLea
     // No se lee el contacto de Odoo: ahí las oportunidades no nacen de una agenda importada.
     contactCreatedAt: null,
     phoneKey: null,
+    contactName: null,
     // En Odoo las perdidas se archivan (active = false) y las ganadas quedan con
     // probabilidad 100. Ojo: si después se las mueve a una etapa posterior (en
     // fábrica, entregado…), Odoo les recalcula la probabilidad y dejan de figurar

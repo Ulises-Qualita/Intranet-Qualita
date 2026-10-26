@@ -200,28 +200,66 @@ export async function readSalesSheet(sheetId: string): Promise<SheetRead> {
   return { title: meta.properties.title, sales, undated };
 }
 
+// Palabras de un nombre para cruzarlo: sin tildes, signos ni títulos ("Dra.
+// María Florencia Di Grazia" → maria, florencia, di, grazia).
+const TITLES = new Set(["dr", "dra", "arq", "ing", "lic", "sr", "sra"]);
+const nameWords = (value: string | null) =>
+  norm(value)
+    .split(" ")
+    .filter((w) => w.length >= 2 && !/\d/.test(w) && !TITLES.has(w));
+
+// Misma persona: todas las palabras del nombre más corto están en el otro, igual
+// o como comienzo ("Sole" y "Soledad"), y son al menos dos. Un nombre de pila
+// solo ("Majo", "Cristina") no alcanza, y otro nombre con el mismo apellido
+// ("Andrea Varotto" para "Mario Varotto") no cruza.
+function sameName(a: string[], b: string[]) {
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length < 2) return false;
+  return short.every((w) => long.some((x) => x === w || (w.length >= 3 && x.length >= 3 && (x.startsWith(w) || w.startsWith(x)))));
+}
+
 // Lead del CRM que originó cada venta, por número de proyecto. Se cruza por
-// teléfono y solo con leads creados hasta el día de la confirmación (uno
+// teléfono y, si no hay, por el nombre del cliente contra el del contacto (o el
+// del lead), y solo con leads creados hasta el día de la confirmación (uno
 // posterior es el cliente que volvió a escribir, no el origen). Entre varios, el
-// que cuenta como oportunidad nueva y, si no, el más viejo.
+// que cuenta como oportunidad nueva y, si no, el más viejo. Por nombre, si
+// coinciden personas distintas (otro teléfono), no se cruza.
 export function matchSales(sales: SheetSale[], leads: CrmLead[], excluded: Map<string, unknown>) {
   const byPhone = new Map<string, CrmLead[]>();
   for (const lead of leads) {
     if (!lead.phoneKey) continue;
     byPhone.set(lead.phoneKey, [...(byPhone.get(lead.phoneKey) ?? []), lead]);
   }
+  const names = leads.map((lead) => ({ lead, words: [nameWords(lead.contactName), nameWords(lead.name)] }));
 
-  const matches = new Map<string, string>();
-  for (const sale of sales) {
-    if (!sale.phoneKey) continue;
-    const end = Date.parse(`${sale.confirmedOn}T23:59:59-03:00`);
-    const candidates = (byPhone.get(sale.phoneKey) ?? [])
+  const pick = (candidates: CrmLead[], end: number) =>
+    candidates
       .filter((l) => Date.parse(l.createdAt) <= end)
       .sort(
         (a, b) =>
           Number(excluded.has(a.externalId)) - Number(excluded.has(b.externalId)) || a.createdAt.localeCompare(b.createdAt),
       );
-    if (candidates.length) matches.set(sale.project, candidates[0].externalId);
+
+  const matches = new Map<string, string>();
+  let byName = 0;
+  for (const sale of sales) {
+    const end = Date.parse(`${sale.confirmedOn}T23:59:59-03:00`);
+    const phone = sale.phoneKey ? pick(byPhone.get(sale.phoneKey) ?? [], end) : [];
+    if (phone.length) {
+      matches.set(sale.project, phone[0].externalId);
+      continue;
+    }
+
+    const customer = nameWords(sale.customer);
+    const candidates = pick(
+      names.filter((n) => n.words.some((w) => sameName(customer, w))).map((n) => n.lead),
+      end,
+    );
+    const people = new Set(candidates.map((l) => l.phoneKey ?? (nameWords(l.contactName).join(" ") || l.externalId)));
+    if (candidates.length && people.size === 1) {
+      matches.set(sale.project, candidates[0].externalId);
+      byName++;
+    }
   }
-  return matches;
+  return { matches, byName };
 }

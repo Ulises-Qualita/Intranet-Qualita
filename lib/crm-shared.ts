@@ -48,6 +48,9 @@ export type CrmLead = {
   // Teléfono del contacto reducido a sus últimos 10 dígitos: solo para detectar
   // duplicados durante el sync, no se guarda.
   phoneKey: string | null;
+  // Nombre del contacto (Kommo; en el lead suele decir "Lead #ID"): para cruzar
+  // por nombre las ventas de la planilla que no cruzan por teléfono. No se guarda.
+  contactName: string | null;
   // Cerrada como perdida (en Odoo, archivada).
   lost: boolean;
   // Lo que el propio CRM considera ganado, cuando no hay etapas elegidas a mano.

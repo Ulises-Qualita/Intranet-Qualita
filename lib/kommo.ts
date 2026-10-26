@@ -164,7 +164,7 @@ type KommoLead = {
   };
 };
 
-type KommoContact = { id: number; created_at: number; custom_fields_values: KommoField[] | null };
+type KommoContact = { id: number; name?: string; created_at: number; custom_fields_values: KommoField[] | null };
 
 // Ids por pedido (viajan en la URL) y pedidos a la vez: Kommo admite 7 por segundo.
 const ID_BATCH = 50;
@@ -173,7 +173,7 @@ const ID_PARALLEL = 4;
 // Alta y teléfono de los contactos de los leads, por id. Con eso se distingue un
 // lead nuevo de un contacto que ya estaba en la cuenta (lib/crm-shared.ts).
 async function getContacts(creds: KommoCredentials, ids: number[]) {
-  const found = new Map<number, { createdAt: string; phoneKey: string | null }>();
+  const found = new Map<number, { createdAt: string; phoneKey: string | null; name: string | null }>();
   const batches: number[][] = [];
   for (let i = 0; i < ids.length; i += ID_BATCH) batches.push(ids.slice(i, i + ID_BATCH));
 
@@ -194,6 +194,7 @@ async function getContacts(creds: KommoCredentials, ids: number[]) {
         found.set(c.id, {
           createdAt: new Date(c.created_at * 1000).toISOString(),
           phoneKey: digits.length >= 8 ? digits.slice(-10) : null,
+          name: textOf(c.name),
         });
       }
     }
@@ -259,6 +260,7 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
         // Se completan abajo, con los contactos.
         contactCreatedAt: null,
         phoneKey: null,
+        contactName: null,
         lost,
         wonByCrm: won,
         wonAt: won && r.closed_at ? new Date(r.closed_at * 1000).toISOString() : null,
@@ -273,6 +275,7 @@ export async function readKommo(creds: KommoCredentials): Promise<{ leads: CrmLe
     if (!contact) continue;
     lead.contactCreatedAt = contact.createdAt;
     lead.phoneKey = contact.phoneKey;
+    lead.contactName = contact.name;
   }
 
   return { leads, stages: pipelines.order };
