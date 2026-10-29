@@ -818,7 +818,8 @@ function groupAds(leads: Lead[], sold: Lead[]): AdStats[] {
   const byAd = new Map<string, AdStats>();
   const adOf = (lead: Lead) => {
     const name = lead.ad?.trim();
-    if (!name) return null;
+    // Kommo de Arteplac carga "Sin anuncio" para lo orgánico: tampoco es un anuncio.
+    if (!name || name.toLowerCase() === "sin anuncio") return null;
     const ad = byAd.get(name) ?? { name, leads: 0, won: 0, tickets: 0, ticketTotal: 0, usdTotal: 0 };
     byAd.set(name, ad);
     return ad;
