@@ -36,6 +36,8 @@ export type Client = {
   integrations: Record<Integration, IntegrationState>;
   // Solapas desactivadas en "Editar cliente", por zona (lib/client-tabs.ts).
   hiddenTabs: HiddenTabs;
+  // Carpeta de la solapa Guías, dentro de la de Drive (intranet_clients.guides_folder).
+  guidesFolder: string | null;
 };
 
 type ClientRow = {
@@ -49,6 +51,7 @@ type ClientRow = {
   intranet_client_integrations: { provider: string; connected: boolean; account_ref: string | null; connected_at: string | null }[];
   intranet_client_assignments: { user_id: string }[];
   hidden_tabs?: unknown;
+  guides_folder?: string | null;
 };
 
 const CLIENT_COLUMNS =
@@ -87,12 +90,17 @@ export const getAllClients = cache(async (): Promise<Client[]> => {
   const supabase = await createClient();
   const read = (columns: string) =>
     supabase.from("intranet_clients").select(columns).order("name", { ascending: true }).returns<ClientRow[]>();
-  const [first, logos] = await Promise.all([read(`${CLIENT_COLUMNS}, hidden_tabs`), getLogoUrls()]);
-  // hidden_tabs llega con docs/sql/2026-09-28-solapas-cliente.sql: sin ella, todas visibles.
-  const { data, error } = first.error?.code === "42703" ? await read(CLIENT_COLUMNS) : first;
+  const [first, logos] = await Promise.all([read(`${CLIENT_COLUMNS}, hidden_tabs, guides_folder`), getLogoUrls()]);
+  // Columnas que llegan con una migración; si falta alguna (42703), se lee sin ella:
+  // hidden_tabs (docs/sql/2026-09-28-solapas-cliente.sql; sin ella, todas visibles) y
+  // guides_folder (docs/sql/2026-10-30-carpeta-guias.sql; sin ella, Guías sin carpeta).
+  let result = first;
+  if (result.error?.code === "42703") result = await read(`${CLIENT_COLUMNS}, hidden_tabs`);
+  if (result.error?.code === "42703") result = await read(CLIENT_COLUMNS);
+  const { data, error } = result;
   if (error) throw error;
 
-  return (data ?? []).map(({ intranet_client_integrations: integrations, intranet_client_assignments: assignments, hidden_tabs, ...row }) => {
+  return (data ?? []).map(({ intranet_client_integrations: integrations, intranet_client_assignments: assignments, hidden_tabs, guides_folder, ...row }) => {
     const state = Object.fromEntries(
       INTEGRATIONS.map(({ value }) => {
         const row = integrations.find((i) => i.provider === value);
@@ -108,6 +116,7 @@ export const getAllClients = cache(async (): Promise<Client[]> => {
       integrations: state,
       conn: Object.fromEntries(INTEGRATIONS.map(({ value }) => [value, state[value].connected])) as Record<Integration, boolean>,
       hiddenTabs: parseHiddenTabs(hidden_tabs),
+      guidesFolder: guides_folder ?? null,
     };
   });
 });

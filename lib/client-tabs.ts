@@ -13,6 +13,7 @@ export const CLIENT_TABS = [
   { key: "web", team: "WEB", client: "WEB" },
   { key: "reuniones", team: "Reuniones", client: "Reuniones" },
   { key: "drive", team: "Drive", client: "Drive" },
+  { key: "guias", team: "Guías", client: "Guías" },
   { key: "tareas", team: "Tareas", client: null },
   { key: "portal", team: "Portal del cliente", client: "Portal del cliente" },
   { key: "equipo", team: "Equipo", client: "Equipo" },

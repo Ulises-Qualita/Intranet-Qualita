@@ -217,7 +217,10 @@ export default async function InicioPage() {
                 <thead>
                   <tr>
                     <th>Cliente</th>
-                    <th>Etapas del proyecto</th>
+                    <th>
+                      {/* Mismo ancho y centrado que la línea de etapas, así el título arranca donde ella. */}
+                      <span className="ptl-th">Etapas del proyecto</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

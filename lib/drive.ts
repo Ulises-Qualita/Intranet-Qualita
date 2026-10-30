@@ -46,6 +46,8 @@ export type DriveItem = {
   // Drive tiene una vista previa (imágenes, PDFs, Docs…). Se sirve por
   // lib/drive-thumb.ts, nunca con el link de Google directo.
   hasThumbnail: boolean;
+  // Solo videos: duración, cuando Drive ya la procesó.
+  durationMs: number | null;
 };
 
 export type DriveCrumb = { id: string; name: string };
@@ -58,13 +60,14 @@ type RawFile = {
   modifiedTime?: string;
   webViewLink?: string;
   hasThumbnail?: boolean;
+  videoMediaMetadata?: { durationMillis?: string };
   thumbnailLink?: string;
   parents?: string[];
   driveId?: string;
   trashed?: boolean;
 };
 
-const ITEM_FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,hasThumbnail";
+const ITEM_FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,hasThumbnail,videoMediaMetadata(durationMillis)";
 
 const toItem = (f: RawFile): DriveItem => ({
   id: f.id,
@@ -75,6 +78,7 @@ const toItem = (f: RawFile): DriveItem => ({
   modifiedTime: f.modifiedTime ?? null,
   webViewLink: f.webViewLink ?? null,
   hasThumbnail: Boolean(f.hasThumbnail),
+  durationMs: f.videoMediaMetadata?.durationMillis ? Number(f.videoMediaMetadata.durationMillis) : null,
 });
 
 // Los ids de Drive son alfanuméricos con - y _: cualquier otra cosa se rechaza
@@ -251,6 +255,26 @@ export async function downloadFile(item: DriveItem) {
     : await driveFetch(`${API}/files/${item.id}?${q({ alt: "media" })}`);
   const name = exp && !item.name.toLowerCase().endsWith(`.${exp.ext}`) ? `${item.name}.${exp.ext}` : item.name;
   return { res, name, mimeType: exp?.mime ?? item.mimeType };
+}
+
+// ---------- Video (Guías) ----------
+
+// Tramo máximo por pedido. El <video> pide "bytes=N-" (hasta el final); se le
+// devuelve un pedazo y pide el siguiente solo: así ninguna respuesta pasa un
+// video entero por la función del server.
+const VIDEO_CHUNK = 4 * 1024 * 1024;
+
+// Un tramo de un archivo para reproducirlo en el navegador. `range` es el header
+// Range que mandó el <video> (o null). Devuelve la respuesta 206 de Google.
+export async function fetchMediaRange(id: string, range: string | null) {
+  const m = /^bytes=(\d+)-(\d*)$/.exec(range?.trim() ?? "");
+  const start = m ? Number(m[1]) : 0;
+  const askedEnd = m?.[2] ? Number(m[2]) : Infinity;
+  const end = Math.min(askedEnd, start + VIDEO_CHUNK - 1);
+  return fetch(`${API}/files/${id}?${q({ alt: "media" })}`, {
+    headers: { Authorization: `Bearer ${await token()}`, Range: `bytes=${start}-${end}` },
+    cache: "no-store",
+  });
 }
 
 // ---------- Subida ----------

@@ -6,7 +6,7 @@ import { isClientStatus } from "@/lib/client-status";
 import { isTabKey, parseHiddenTabs, tabInZone, type TabZone } from "@/lib/client-tabs";
 import { crmProviderLabel, isCrmProvider } from "@/lib/crm-shared";
 import { deleteCrmSecrets, getCrmSecrets, saveCrmSecrets, syncCrmClient } from "@/lib/crm-sync";
-import { driveErrorMessage, getItem, isDriveId } from "@/lib/drive";
+import { driveErrorMessage, getItem, isDriveId, isInside } from "@/lib/drive";
 import { getAdsAccount, googleAdsErrorMessage, normalizeCustomerId } from "@/lib/google-ads";
 import { clearGadsData } from "@/lib/google-ads-sync";
 import { CONNECT_PAGES, isIntegration } from "@/lib/integrations";
@@ -320,6 +320,8 @@ export async function setIntegration(
   if (result.ok && provider === "crm" && !change.connected) await deleteCrmSecrets(clientId);
   // Ídem con las métricas guardadas de Google Ads.
   if (result.ok && provider === "google_ads" && !change.connected) await clearGadsData(clientId);
+  // La carpeta de Guías estaba dentro de la de Drive: sin Drive, se descarta.
+  if (result.ok && provider === "drive" && !change.connected) await clearGuidesFolder(clientId);
   // Al desconectar Notion cambian los tickets visibles: se descarta el cache.
   if (result.ok && provider === "notion") revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });
   return result;
@@ -412,12 +414,62 @@ export async function connectDriveFolder(clientId: string, folderId: string): Pr
   }
 
   const now = new Date().toISOString();
-  return writeIntegration(clientId, "drive", {
+  const result = await writeIntegration(clientId, "drive", {
     connected: true,
     account_ref: folderId,
     connected_at: now,
     updated_at: now,
   });
+  // La carpeta de Guías se eligió dentro de la anterior: con otra carpeta de Drive
+  // ya no estaría adentro, así que se vuelve a elegir.
+  if (result.ok) await clearGuidesFolder(clientId);
+  return result;
+}
+
+// Elige (o quita, con null) la carpeta de la solapa Guías. Tiene que estar dentro
+// de la carpeta de Drive del cliente: es la misma regla de acceso de Drive.
+export async function setGuidesFolder(clientId: string, folderId: string | null): Promise<FormState> {
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
+  if (folderId !== null && !isDriveId(folderId)) return { ok: false, error: "Elegí una carpeta de Drive." };
+
+  const supabase = await createClient();
+  if (folderId) {
+    const { data: drive } = await supabase
+      .from("intranet_client_integrations")
+      .select("connected, account_ref")
+      .eq("client_id", clientId)
+      .eq("provider", "drive")
+      .maybeSingle<{ connected: boolean; account_ref: string | null }>();
+    if (!drive?.connected || !isDriveId(drive.account_ref)) {
+      return { ok: false, error: "Primero vinculá la carpeta de Drive del cliente." };
+    }
+    try {
+      if (!(await isInside(drive.account_ref, folderId))) {
+        return { ok: false, error: "La carpeta tiene que estar dentro de la carpeta de Drive del cliente." };
+      }
+      if (!(await getItem(folderId)).isFolder) return { ok: false, error: "Eso no es una carpeta." };
+    } catch (e) {
+      return { ok: false, error: driveErrorMessage(e) };
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("intranet_clients")
+    .update({ guides_folder: folderId, updated_at: new Date().toISOString() })
+    .eq("id", clientId)
+    .select("id");
+  if (error?.code === "42703") return { ok: false, error: "Falta correr docs/sql/2026-10-30-carpeta-guias.sql en Supabase." };
+  if (error || !data?.length) return { ok: false, error: dbError(error?.code, "No se pudo guardar la carpeta.") };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
+// Sin la columna todavía (migración sin correr) no hay nada que borrar.
+async function clearGuidesFolder(clientId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("intranet_clients").update({ guides_folder: null }).eq("id", clientId);
+  if (error && error.code !== "42703") console.error("[guias] limpiar carpeta", clientId, error);
 }
 
 // Vincula la cuenta de Google Ads del cliente. Se valida contra la API que la

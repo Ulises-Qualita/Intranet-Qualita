@@ -121,7 +121,7 @@ export async function DriveView({
 }
 
 // "hoy 10:32", o "12 sept" (con el año si no es el actual), en hora de Argentina.
-function modifiedLabel(iso: string) {
+export function modifiedLabel(iso: string) {
   const day = localDate(iso);
   if (day === todayISO()) {
     return `hoy ${new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "America/Argentina/Buenos_Aires" }).format(new Date(iso))}`;
@@ -130,7 +130,7 @@ function modifiedLabel(iso: string) {
 }
 
 // Tipo de archivo para el ícono, por MIME (y la extensión cuando el MIME es genérico).
-function fileKind(f: DriveItem): FileKind {
+export function fileKind(f: DriveItem): FileKind {
   const m = f.mimeType;
   const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
   if (f.isFolder) return "folder";

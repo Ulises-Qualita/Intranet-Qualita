@@ -25,6 +25,8 @@ const CLIENT_NAV = (
     { suffix: "/reuniones", label: "Reuniones", area: "clientes", tab: "reuniones" },
     // Sin área propia, como WEB: los archivos del cliente.
     { suffix: "/drive", label: "Drive", area: "clientes", tab: "drive" },
+    // Videos tutoriales de las plataformas del cliente: una carpeta dentro de su Drive.
+    { suffix: "/guias", label: "Guías", area: "clientes", tab: "guias" },
     // Solo en el panel del equipo: la cuenta del cliente no la tiene.
     { suffix: "/reportes", label: "Reportes", area: "clientes", tab: "reportes" },
     { suffix: "/tareas", label: "Tareas", area: "tareas", tab: "tareas" },
@@ -78,7 +80,9 @@ export default async function ClienteLayout({
       ? { href: `${base}/crm/conectar`, label: "Configurar CRM" }
       : suffix === "/drive" && client.conn.drive
         ? { href: `${base}/drive/conectar`, label: "Cambiar carpeta de Drive" }
-        : undefined;
+        : suffix === "/guias" && client.conn.drive && client.guidesFolder
+          ? { href: `${base}/guias/conectar`, label: "Cambiar carpeta de guías" }
+          : undefined;
   const tabs: ClientTab[] = CLIENT_NAV.filter(
     (item) => canAccess(profile, item.area) && !(item.tab && isTabHidden(client.hiddenTabs, "team", item.tab)),
   ).map(({ suffix, label }) => ({
