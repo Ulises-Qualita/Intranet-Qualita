@@ -158,6 +158,9 @@ export type NotionTicket = {
   title: string;
   url: string;
   status: TaskStatus;
+  // Nombre del estado tal cual está en Notion ("In progress", "Feedback"…); la
+  // línea de Hitos del portal lo muestra en la etiqueta de cada ticket.
+  statusName: string | null;
   priority: TaskPriority;
   dueDate: string | null;
   // Fin del rango de la fecha (inicio → fin), para el calendario del portal.
@@ -181,6 +184,83 @@ function pillarsOf(props: Record<string, RawProperty>) {
   const prop = key ? props[key] : undefined;
   const options = prop?.type === "select" ? (prop.select ? [prop.select] : []) : prop?.type === "multi_select" ? (prop.multi_select ?? []) : [];
   return options.map((o) => ({ name: o.name, color: o.color ?? "default" }));
+}
+
+// ---------- Proyecto de Notion → pilar ----------
+
+// Pilares del Método Qualita, en orden. En la DB de Proyectos cada uno es una
+// propiedad de fecha (inicio → fin) con este mismo nombre.
+export const PILLARS = ["Arquitectura de Marca", "Infraestructura Digital", "Motor de Demanda", "Consultoría"] as const;
+
+export type ProjectPillar = { name: string; start: string; end: string | null };
+
+export type NotionProject = {
+  id: string;
+  pillars: ProjectPillar[];
+  // Fórmula "Pilar actual" del proyecto; hoy viene vacía, pero si la completan, manda.
+  pillarNow: string | null;
+};
+
+export function toProject(page: NotionPage): NotionProject {
+  const props = page.properties;
+  const pillars: ProjectPillar[] = [];
+  for (const name of PILLARS) {
+    const date = props[name]?.date;
+    if (date?.start) pillars.push({ name, start: date.start.slice(0, 10), end: date.end?.slice(0, 10) ?? null });
+  }
+  const formula = props["Pilar actual"]?.formula;
+  return { id: normalizeId(page.id), pillars, pillarNow: formula?.type === "string" ? formula.string?.trim() || null : null };
+}
+
+// En qué pilar está el proyecto hoy (YYYY-MM-DD): el último que arrancó y no
+// terminó. Si todos terminaron, el último; si ninguno arrancó, el próximo.
+export type PillarState =
+  | { kind: "current"; pillar: ProjectPillar }
+  | { kind: "done"; pillar: ProjectPillar }
+  | { kind: "upcoming"; pillar: ProjectPillar }
+  | { kind: "named"; name: string }
+  | { kind: "none" };
+
+export function currentPillar(project: NotionProject, today: string): PillarState {
+  if (project.pillarNow) {
+    const pillar = project.pillars.find((p) => p.name.toLowerCase() === project.pillarNow!.toLowerCase());
+    return pillar ? { kind: "current", pillar } : { kind: "named", name: project.pillarNow };
+  }
+  const byStart = [...project.pillars].sort((a, b) => a.start.localeCompare(b.start));
+  const started = byStart.filter((p) => p.start <= today);
+  const running = started.filter((p) => !p.end || p.end >= today);
+  if (running.length) return { kind: "current", pillar: running[running.length - 1] };
+  if (started.length) return { kind: "done", pillar: started[started.length - 1] };
+  if (byStart.length) return { kind: "upcoming", pillar: byStart[0] };
+  return { kind: "none" };
+}
+
+// Línea de tiempo del proyecto: un paso por pilar de PILARS, en orden, con su
+// estado a `today` ("missing" si el proyecto no tiene fechas para ese pilar).
+export type TimelineStep = {
+  name: string;
+  start: string | null;
+  end: string | null;
+  state: "done" | "current" | "upcoming" | "missing";
+  // Avance del pilar actual (0–100); null si no tiene fin (Motor de Demanda).
+  progress: number | null;
+};
+
+export function pillarTimeline(project: NotionProject, today: string): TimelineStep[] {
+  const now = currentPillar(project, today);
+  const currentName = now.kind === "current" ? now.pillar.name : now.kind === "named" ? now.name : null;
+  const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
+  return PILLARS.map((name): TimelineStep => {
+    const p = project.pillars.find((x) => x.name === name);
+    if (!p) return { name, start: null, end: null, state: "missing", progress: null };
+    const { start, end } = p;
+    if (name === currentName) {
+      const progress = end ? Math.min(100, Math.max(0, ((day(today) - day(start) + 1) / (day(end) - day(start) + 1)) * 100)) : null;
+      return { name, start, end, state: "current", progress };
+    }
+    // Arrancado y no actual: terminado (aunque le falte la fecha de fin, otro pilar ya lo siguió).
+    return { name, start, end, state: start > today ? "upcoming" : "done", progress: null };
+  });
 }
 
 export function toTicket(page: NotionPage, config: NotionConfig): NotionTicket {
@@ -210,6 +290,7 @@ export function toTicket(page: NotionPage, config: NotionConfig): NotionTicket {
     // Una opción que todavía no se mapeó cae en "Pendientes": si mañana agregan un
     // estado nuevo en Notion, el ticket se ve igual en vez de desaparecer callado.
     status: (statusName && config.statusMap[statusName]) || "todo",
+    statusName,
     priority: (priorityName && config.priorityMap[priorityName]) || "media",
     dueDate: due,
     dueEnd: due && end && end > due ? end : null,

@@ -50,8 +50,11 @@ paths:
   los calendarios de Notion; sin Pilar en ningún ticket, una sola línea.
 - Hitos del proyecto: **solo tickets de Notion** (pedido 2026-10-19). La línea muestra
   los mismos tickets del calendario del portal (proyecto del cliente, checkbox del
-  portal tildado) que tienen fecha, en su fin si es un rango, con el estado traducido
-  como etiqueta (`timelineEntries` en `portal/milestone-timeline.tsx`). Ya no se
+  portal tildado) que tienen fecha, en su inicio si es un rango, con el estado traducido
+  como etiqueta (`timelineEntries` en `portal/milestone-timeline.tsx`). La etiqueta
+  es el **nombre del estado en Notion** (`NotionTicket.statusName`, pedido
+  2026-10-30; "In progress" se muestra "En curso" y "Ejecutar", "Pendiente": `STATUS_LABEL`) y el color, el grupo del mapeo
+  (terminado verde, en curso magenta, bloqueado violeta, pendiente gris). Ya no se
   cargan hitos a mano: se sacó la solapa Hitos de Editar portal y el código de
   `intranet_client_milestones` (la tabla sigue en la base, sin uso). La línea es
   **horizontal** y sigue el estilo del
@@ -64,4 +67,8 @@ paths:
   cinta a escala real tipo editor de video y el texto centrado. Si no entra,
   `portal/timeline-scroller.tsx` desplaza de costado hasta el activo (`data-today`),
   con flechas a los costados (solo del lado donde hay más) y arrastre con el mouse.
-  Cumplido / activo / pendiente sale de la fecha, no del estado de Notion.
+  Desde 2026-10-30 (pedido, para que muestre en qué se trabaja): cada punto va en
+  el **inicio** del ticket (o su única fecha) y la línea llega cuando arranca; el
+  tramo al siguiente se llena por tiempo. El **tilde sale del estado en Notion**
+  (grupo terminado), no de la fecha; arrancado y no terminado = activo (puede haber
+  más de uno); si la fecha de fin pasó sin terminar, no se muestra "Termina en…".

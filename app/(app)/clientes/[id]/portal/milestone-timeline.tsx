@@ -13,31 +13,54 @@ export type TimelineEntry = {
   date: string;
   // Inicio, solo si el ticket tiene rango (inicio → fin).
   start: string | null;
+  // Dónde va el punto en la línea: el inicio (o la única fecha). La línea llega a un
+  // ticket cuando arranca, no cuando se entrega (pedido 2026-10-30).
+  at: string;
+  // Terminado según el estado en Notion: solo así lleva tilde (no por la fecha).
+  done: boolean;
   label: string;
   // Clase del color de la etiqueta (kind-*).
   tone: string;
 };
 
-// Estado de Notion traducido para el cliente (los internos no se muestran).
+// Etiqueta de cada ticket: el estado tal cual está en Notion (pedido), no la fecha.
+// El color sale del grupo del estado (el mapeo de /admin/notion): terminado verde,
+// en curso magenta, bloqueado violeta y pendiente gris. Si el ticket no trae el
+// nombre (cache viejo), se usa el del grupo.
 const TICKET_STATUS: Record<TaskStatus, { label: string; tone: string }> = {
-  // Pedido: lo pendiente también se muestra como "En curso".
-  todo: { label: "En curso", tone: "kind-curso" },
+  todo: { label: "Pendiente", tone: "kind-pendiente" },
   doing: { label: "En curso", tone: "kind-curso" },
-  blocked: { label: "En curso", tone: "kind-curso" },
+  blocked: { label: "Bloqueado", tone: "kind-hito" },
   done: { label: "Completado", tone: "kind-completada" },
 };
 
-// Los tickets por fecha límite: todos se ubican igual, con o sin rango (uno con
-// rango va en su fin, la entrega, y muestra también el inicio). Sin fecha no
-// tiene dónde ir en la línea y queda afuera.
+// Estados de Notion que se muestran con otro texto al cliente (por nombre, en
+// minúsculas): los que Notion tiene en inglés y "Ejecutar" → "Pendiente" (pedido).
+const STATUS_LABEL: Record<string, string> = {
+  "in progress": "En curso",
+  done: "Completado",
+  "not started": "Pendiente",
+  ejecutar: "Pendiente",
+};
+
+function ticketLabel(t: NotionTicket) {
+  const group = TICKET_STATUS[t.status];
+  const name = t.statusName?.trim();
+  if (!name) return group;
+  return { label: STATUS_LABEL[name.toLowerCase()] ?? name, tone: group.tone };
+}
+
+// Los tickets por fecha de inicio (o la única fecha, si no tiene rango): la línea
+// muestra en qué se está trabajando. Sin fecha no tiene dónde ir y queda afuera.
 export function timelineEntries(tickets: NotionTicket[], cleanTitle: (t: string) => string) {
   const entries: TimelineEntry[] = tickets.flatMap((t) => {
     const date = t.dueEnd ?? t.dueDate;
     if (!date) return [];
     const start = t.dueEnd && t.dueDate && t.dueDate < t.dueEnd ? t.dueDate : null;
-    return [{ id: t.id, title: cleanTitle(t.title), description: null, date, start, ...TICKET_STATUS[t.status] }];
+    const at = start ?? date;
+    return [{ id: t.id, title: cleanTitle(t.title), description: null, date, start, at, done: t.status === "done", ...ticketLabel(t) }];
   });
-  return entries.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title, "es"));
+  return entries.sort((a, b) => a.at.localeCompare(b.at) || a.date.localeCompare(b.date) || a.title.localeCompare(b.title, "es"));
 }
 
 const DAY = 86_400_000;
@@ -71,32 +94,33 @@ function span(days: number) {
 
 export const until = (days: number) => (days === 0 ? "hoy" : days === 1 ? "mañana" : `en ${span(days)}`);
 
-// El hito activo: el primero de hoy en adelante. Si ya pasaron todos, no hay
-// (devuelve milestones.length). Los anteriores cuentan como cumplidos.
-export const activeIndex = (milestones: { date: string }[], today: string) => {
-  const found = milestones.findIndex((m) => m.date >= today);
-  return found === -1 ? milestones.length : found;
-};
-
 type Status = "completed" | "active" | "pending";
 
 // La línea de hitos: el estilo del Timeline horizontal de Dice UI (punto de 14 px,
-// conector de 2 px, título / fecha / descripción debajo) con un poco más: los
-// cumplidos van con el degradado y un tilde, el activo es el próximo hito (o el de
-// hoy), y el tramo que llega a él se llena según el tiempo que pasó desde el
-// anterior, con una luz en la punta. Va en el Portal del cliente, con los tickets
-// de Notion marcados para el portal.
+// conector de 2 px, título / fecha / descripción debajo) con un poco más. Cada punto
+// es el inicio de un ticket y la línea llega a él cuando arranca; el tramo hacia el
+// próximo se llena según el tiempo que pasó, con una luz en la punta. El tilde sale
+// del estado en Notion (terminado), no de la fecha; un ticket que ya arrancó y no
+// terminó es "activo" (puede haber más de uno). Va en el Portal del cliente, con
+// los tickets de Notion marcados para el portal.
 export function MilestoneTimeline({ milestones, today }: { milestones: TimelineEntry[]; today: string }) {
-  const active = activeIndex(milestones, today);
-  const status = (i: number): Status => (i < active ? "completed" : i === active ? "active" : "pending");
-  // Cuánto se llenó el tramo que va del hito i al siguiente (0 a 1).
+  const reached = (i: number) => milestones[i].at <= today;
+  const status = (i: number): Status => (milestones[i].done ? "completed" : reached(i) ? "active" : "pending");
+  // Cuánto se llenó el tramo que va del punto i al siguiente (0 a 1).
   const fill = (i: number) => {
-    if (i + 1 < active) return 1;
-    if (i + 1 > active || i + 1 >= milestones.length) return 0;
-    const from = time(milestones[i].date);
-    const to = time(milestones[i + 1].date);
+    if (reached(i + 1)) return 1;
+    if (!reached(i)) return 0;
+    const from = time(milestones[i].at);
+    const to = time(milestones[i + 1].at);
     return to > from ? Math.min(1, Math.max(0, (time(today) - from) / (to - from))) : 1;
   };
+  // Hasta dónde se desplaza la línea al abrir: el último ticket que arrancó.
+  let current = -1;
+  milestones.forEach((m, i) => {
+    if (m.at <= today) current = i;
+  });
+  // De dónde sale el confeti: el último ticket terminado.
+  const lastDone = milestones.map((m) => m.done).lastIndexOf(true);
 
   return (
     <TimelineScroller>
@@ -109,7 +133,8 @@ export function MilestoneTimeline({ milestones, today }: { milestones: TimelineE
             status={status(i)}
             fill={i < milestones.length - 1 ? fill(i) : null}
             today={today}
-            lastDone={i === active - 1}
+            current={i === Math.max(current, 0)}
+            lastDone={i === lastDone}
           />
         ))}
       </ol>
@@ -123,10 +148,13 @@ function TimelineItem({
   status,
   fill,
   today,
+  current,
   lastDone,
 }: {
   m: TimelineEntry;
-  // El último cumplido: de ahí sale el confeti.
+  // El último que arrancó: al abrir, la línea se desplaza hasta acá.
+  current: boolean;
+  // El último terminado: de ahí sale el confeti.
   lastDone: boolean;
   // Orden en la línea: escalona la entrada.
   i: number;
@@ -137,16 +165,21 @@ function TimelineItem({
 }) {
   const days = daysBetween(today, m.date);
   // Con rango: antes de empezar se cuenta hasta el inicio; empezado, hasta el fin.
+  // Si la fecha ya pasó y el ticket no está terminado, no se muestra nada (no hay
+  // una cuenta que dar).
   const started = !m.start || m.start <= today;
-  const when = !m.start
-    ? days === 0
-      ? "Es hoy"
-      : until(days)
-    : started
-      ? days === 0
-        ? "Termina hoy"
-        : `Termina ${until(days)}`
-      : `Empieza ${until(daysBetween(today, m.start))}`;
+  const when =
+    days < 0
+      ? null
+      : !m.start
+        ? days === 0
+          ? "Es hoy"
+          : until(days)
+        : started
+          ? days === 0
+            ? "Termina hoy"
+            : `Termina ${until(days)}`
+          : `Empieza ${until(daysBetween(today, m.start))}`;
   // El tramo que se está recorriendo (ni vacío ni lleno) lleva la luz en la punta.
   const travelling = fill !== null && fill > 0 && fill < 1;
 
@@ -154,9 +187,9 @@ function TimelineItem({
     <li
       className={`tl-item ${status} ${m.tone}`}
       style={{ "--i": i } as React.CSSProperties}
-      aria-current={status === "active" ? "step" : undefined}
-      // Al abrir, si la línea no entra, se desplaza hasta el activo.
-      data-today={status === "active" ? "" : undefined}
+      aria-current={current ? "step" : undefined}
+      // Al abrir, si la línea no entra, se desplaza hasta el último que arrancó.
+      data-today={current ? "" : undefined}
       // De acá sale el confeti al aparecer la línea (timeline-scroller.tsx).
       data-last-done={lastDone ? "" : undefined}
     >
@@ -180,7 +213,7 @@ function TimelineItem({
         </time>
         {m.description && <p className="tl-desc">{m.description}</p>}
         {/* Cuánto falta, en todos los que vienen (no en los cumplidos). */}
-        {status !== "completed" && <span className="tl-when">{when}</span>}
+        {status !== "completed" && when && <span className="tl-when">{when}</span>}
       </div>
     </li>
   );

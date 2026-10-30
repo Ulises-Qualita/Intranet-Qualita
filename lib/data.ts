@@ -8,10 +8,10 @@ import { INTEGRATIONS, type Integration, type IntegrationState } from "./integra
 import { localDate } from "./format";
 import { googlePhoto } from "./google-photo";
 import { LOGOS_BUCKET, LOGOS_TAG } from "./logos";
-import { getTickets, notionConfigured, notionErrorMessage } from "./notion";
+import { getProjects, getTickets, notionConfigured, notionErrorMessage } from "./notion";
 import { type Period, toPeriod } from "./period";
 import { EMPTY_PORTAL, parsePortal, type PortalSettings } from "./portal";
-import { EMPTY_NOTION_CONFIG, isNotionConfigured, normalizeId, type NotionConfig } from "./notion-map";
+import { EMPTY_NOTION_CONFIG, isNotionConfigured, normalizeId, type NotionConfig, type NotionProject } from "./notion-map";
 import { createAdminClient, createClient, isMissingTable } from "./supabase/server";
 import type { Task } from "./tasks";
 
@@ -227,6 +227,26 @@ export const getTasksResult = cache(async (): Promise<TasksResult> => {
 });
 
 export const getTasks = async (): Promise<Task[]> => (await getTasksResult()).tasks;
+
+// Proyecto de Notion de cada cliente (para el pilar en Inicio), por client id.
+// Nunca tira: si Notion falla, la tabla muestra el pilar como sin dato.
+export async function getClientProjects(clients: Client[]): Promise<Map<string, NotionProject>> {
+  const config = await getNotionConfig();
+  const linked = clients.filter((c) => c.integrations.notion.connected && c.integrations.notion.accountRef);
+  if (!notionConfigured() || !config?.projectsDataSourceId || linked.length === 0) return new Map();
+  try {
+    const byId = new Map((await getProjects(config.projectsDataSourceId)).map((p) => [p.id, p]));
+    const result = new Map<string, NotionProject>();
+    for (const c of linked) {
+      const project = byId.get(normalizeId(c.integrations.notion.accountRef!));
+      if (project) result.set(c.id, project);
+    }
+    return result;
+  } catch (e) {
+    console.error("[notion] getProjects", e);
+    return new Map();
+  }
+}
 
 // ---------- Configuración de Notion (intranet_settings) ----------
 

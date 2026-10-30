@@ -4,7 +4,7 @@
 // sources*, y las consultas van contra el data source, no contra la database.
 // Por eso acá todo se identifica con data_source_id.
 import { unstable_cache } from "next/cache";
-import { toTicket, type NotionConfig, type NotionTicket } from "./notion-map";
+import { toProject, toTicket, type NotionConfig, type NotionProject, type NotionTicket } from "./notion-map";
 
 const NOTION_API = "https://api.notion.com/v1";
 const NOTION_VERSION = process.env.NOTION_VERSION || "2026-03-11";
@@ -225,4 +225,12 @@ export const getTickets = unstable_cache(
       .filter((t) => !t.hidden),
   ["notion-tickets"],
   { revalidate: TICKETS_TTL, tags: [NOTION_TICKETS_TAG] },
+);
+
+// Proyectos del estudio con las fechas de cada pilar (Inicio). Igual que los
+// tickets: una sola consulta, traducida adentro del cache.
+export const getProjects = unstable_cache(
+  async (dataSourceId: string): Promise<NotionProject[]> => (await queryAll(dataSourceId)).map(toProject),
+  ["notion-projects"],
+  { revalidate: 300, tags: [NOTION_TICKETS_TAG] },
 );
