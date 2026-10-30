@@ -115,6 +115,15 @@ export default async function InicioPage() {
   const pillarColumns = PILLARS.filter(
     (name) => name !== "Consultoría" || [...projects.values()].some((p) => p.pillars.some((x) => x.name === name)),
   );
+  // Orden de la tabla de etapas: 0 = con proyecto y todavía sin llegar a Motor de
+  // Demanda, 1 = ya en Motor de Demanda (en curso o terminado), 2 = sin proyecto.
+  // El sort es estable: dentro de cada grupo queda el orden por nombre.
+  const stageRank = (clientId: string) => {
+    const project = projects.get(clientId);
+    if (!project) return 2;
+    const motor = pillarTimeline(project, today).find((s) => s.name === "Motor de Demanda");
+    return motor?.state === "current" || motor?.state === "done" ? 1 : 0;
+  };
 
   const countBy = (status: string) => clients.filter((c) => c.status === status).length;
   const activeMembers = team.filter((m) => m.active);
@@ -224,8 +233,9 @@ export default async function InicioPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Primero los que tienen proyecto en Notion; los demás, abajo. */}
-                  {clients.filter((c) => !HIDDEN_IN_STAGES.has(c.slug)).sort((a, b) => Number(projects.has(b.id)) - Number(projects.has(a.id))).map((c) => {
+                  {/* Primero los que todavía no llegaron a Motor de Demanda, después los que ya
+                      están ahí y al final los que no tienen proyecto en Notion. */}
+                  {clients.filter((c) => !HIDDEN_IN_STAGES.has(c.slug)).sort((a, b) => stageRank(a.id) - stageRank(b.id)).map((c) => {
                     const project = projects.get(c.id);
                     const steps = project ? pillarTimeline(project, today) : [];
                     return (
