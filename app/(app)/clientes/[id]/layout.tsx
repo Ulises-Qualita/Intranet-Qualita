@@ -1,5 +1,5 @@
 import { ClientHeader } from "@/components/client-header";
-import { type ClientTab, ClientTabsBar } from "@/components/client-tabs-bar";
+import { type ClientTab, ClientPeriodBar, ClientTabsBar } from "@/components/client-tabs-bar";
 import { Topbar } from "@/components/topbar";
 import { type AreaKey, canAccess } from "@/lib/auth-shared";
 import { getSession } from "@/lib/auth";
@@ -22,15 +22,17 @@ const CLIENT_NAV = (
     { suffix: "/crm", label: "CRM", area: "crm", tab: "crm" },
     // Sin área propia: analítica del sitio, para quien ya ve el panel del cliente.
     { suffix: "/web", label: "WEB", area: "clientes", tab: "web" },
+    // Posiciones en buscadores (SE Ranking). Solo en el panel del equipo.
+    { suffix: "/seo", label: "SEO", area: "clientes", tab: "seo" },
     { suffix: "/reuniones", label: "Reuniones", area: "clientes", tab: "reuniones" },
     // Sin área propia, como WEB: los archivos del cliente.
-    { suffix: "/drive", label: "Drive", area: "clientes", tab: "drive" },
+    { suffix: "/drive", label: "Repositorio", area: "clientes", tab: "drive" },
     // Videos tutoriales de las plataformas del cliente: una carpeta dentro de su Drive.
     { suffix: "/guias", label: "Guías", area: "clientes", tab: "guias" },
     // Solo en el panel del equipo: la cuenta del cliente no la tiene.
     { suffix: "/reportes", label: "Reportes", area: "clientes", tab: "reportes" },
     { suffix: "/tareas", label: "Tareas", area: "tareas", tab: "tareas" },
-    { suffix: "/portal", label: "Portal del cliente", area: "clientes", tab: "portal" },
+    { suffix: "/portal", label: "Calendario", area: "clientes", tab: "portal" },
     { suffix: "/equipo", label: "Equipo", area: "clientes", tab: "equipo" },
   ] satisfies ClientNavItem[]
 ).filter((item) => SHOW_TASKS || item.suffix !== "/tareas");
@@ -80,7 +82,9 @@ export default async function ClienteLayout({
       ? { href: `${base}/crm/conectar`, label: "Configurar CRM" }
       : suffix === "/drive" && client.conn.drive
         ? { href: `${base}/drive/conectar`, label: "Cambiar carpeta de Drive" }
-        : suffix === "/guias" && client.conn.drive && client.guidesFolder
+        : suffix === "/seo" && client.conn.seranking
+          ? { href: `${base}/seo/conectar`, label: "Cambiar proyecto de SE Ranking" }
+          : suffix === "/guias" && client.conn.drive && client.guidesFolder
           ? { href: `${base}/guias/conectar`, label: "Cambiar carpeta de guías" }
           : undefined;
   const tabs: ClientTab[] = CLIENT_NAV.filter(
@@ -98,8 +102,9 @@ export default async function ClienteLayout({
         <ClientHeader client={client}>
           {/* Relee los tickets de Notion y las reuniones del portal. */}
           {tabs.some((t) => t.suffix === "/portal") && <RefreshPortalButton href={`${base}/portal`} />}
+          <ClientPeriodBar base={base} tabs={tabs} periodTabs={PERIOD_TABS} />
         </ClientHeader>
-        <ClientTabsBar base={base} tabs={tabs} periodTabs={PERIOD_TABS} />
+        <ClientTabsBar base={base} tabs={tabs} />
       </div>
       <div className="client-content">{children}</div>
     </div>

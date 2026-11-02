@@ -27,14 +27,14 @@ export const CLIENT_BASE = "/mi-empresa";
 export function clientTabs(client: Client) {
   const tabs: { href: string; label: string; show: boolean; tab?: TabKey }[] = [
     // El portal, primero de todo (pedido).
-    { href: `${CLIENT_BASE}/portal`, label: "Portal del cliente", show: client.conn.notion, tab: "portal" },
+    { href: `${CLIENT_BASE}/portal`, label: "Calendario", show: client.conn.notion, tab: "portal" },
     { href: CLIENT_BASE, label: "Vista general", show: true },
     { href: `${CLIENT_BASE}/meta`, label: "META", show: client.conn.meta, tab: "meta" },
     { href: `${CLIENT_BASE}/gads`, label: "GADS", show: client.conn.google_ads, tab: "gads" },
     { href: `${CLIENT_BASE}/crm`, label: "CRM", show: client.conn.crm, tab: "crm" },
     { href: `${CLIENT_BASE}/web`, label: "WEB", show: client.conn.clarity, tab: "web" },
     { href: `${CLIENT_BASE}/reuniones`, label: "Reuniones", show: calendarConfigured(), tab: "reuniones" },
-    { href: `${CLIENT_BASE}/drive`, label: "Drive", show: client.conn.drive && driveConfigured(), tab: "drive" },
+    { href: `${CLIENT_BASE}/drive`, label: "Repositorio", show: client.conn.drive && driveConfigured(), tab: "drive" },
     { href: `${CLIENT_BASE}/guias`, label: "Guías", show: client.conn.drive && !!client.guidesFolder && driveConfigured(), tab: "guias" },
     // Siempre visible: si no hay nadie asignado, la vista lo dice.
     { href: `${CLIENT_BASE}/equipo`, label: "Equipo", show: true, tab: "equipo" },

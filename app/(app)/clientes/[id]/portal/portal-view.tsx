@@ -199,7 +199,7 @@ export async function PortalView({ c, internal }: { c: Client; internal: boolean
 
   return (
     <>
-      {!internal && <Topbar crumb={c.name} title="Portal del cliente" />}
+      {!internal && <Topbar crumb={c.name} title="Calendario" />}
       <section className="view">
         {roadmap.state === "error" && <SyncStatus source="Notion" live error={roadmap.error} internal={internal} />}
 

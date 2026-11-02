@@ -75,8 +75,10 @@ paths:
   `lib/crm-chat-sync.ts` corre dentro de `syncCrmClient`: trae lo nuevo y completa
   hacia atrás hasta 30 días, 16 páginas por corrida (el cron tiene 60 s); un fallo ahí
   va a `secrets.chat_error`, no rompe el sync de oportunidades. `lib/crm-chats.ts`
-  (`getChatEvents`, `chatStats`) y `crm/chat-monitor.tsx` arman el tiempo de la
-  **primera respuesta por lead nuevo** del período (del primer entrante al primer
+  (`getChatEvents`, `chatStats`) arman el tiempo de la **primera respuesta por lead
+  nuevo** del período (la card "Atención por chat" que lo mostraba se sacó de la
+  solapa a pedido el 2026-11-02; sigue en el agente, `crm_atencion`; en la solapa
+  queda solo "Tiempo de respuesta por etapa"; "Esperando respuesta" también se sacó) (del primer entrante al primer
   saliente posterior, solo leads que cuentan; mediana con reloj corrido, separada
   según el lead haya escrito dentro o fuera del horario de atención, `WORK_HOURS`:
   lunes a viernes de 9 a 18 y sábados de 10 a 13, confirmado por Arteplac; antes se
@@ -93,4 +95,9 @@ paths:
   `intranet_leads.stage`). `lib/crm-stage-sync.ts` corre en `syncCrmClient` después de
   los chats: completa 95 días hacia atrás, 8 páginas por corrida, borra lo de más de
   180; un fallo va a `secrets.stage_error`. Los chats se conservan 90 días
-  (`KEEP_DAYS` de `lib/crm-chat-sync.ts`). Lo usa `crm_atencion` del agente.
+  (`KEEP_DAYS` de `lib/crm-chat-sync.ts`). Lo usa `crm_atencion` del agente y la card
+  "Tiempo de respuesta por etapa" de la solapa CRM (debajo de "Atención por chat",
+  `crm/chat-monitor.tsx`): `replyTurns` + `turnStats` agrupados por la etapa del lead
+  **al momento de escribir**, en el orden del embudo (`stage_order`). Ahí cuenta cada
+  vuelta (el cliente escribe, una o varias veces seguidas, hasta que le contestan),
+  no solo la primera respuesta a leads nuevos.

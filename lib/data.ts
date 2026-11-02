@@ -11,6 +11,7 @@ import { LOGOS_BUCKET, LOGOS_TAG } from "./logos";
 import { getProjects, getTickets, notionConfigured, notionErrorMessage } from "./notion";
 import { type Period, toPeriod } from "./period";
 import { EMPTY_PORTAL, parsePortal, type PortalSettings } from "./portal";
+import { type BillingGoals, parseBillingGoals } from "./billing-goals";
 import { EMPTY_NOTION_CONFIG, isNotionConfigured, normalizeId, type NotionConfig, type NotionProject } from "./notion-map";
 import { createAdminClient, createClient, isMissingTable } from "./supabase/server";
 import type { Task } from "./tasks";
@@ -286,6 +287,22 @@ export async function getPortalSettings(clientId: string): Promise<{ settings: P
   if (error?.code === "42703") return { settings: EMPTY_PORTAL, missing: true };
   if (error) throw error;
   return { settings: parsePortal(data?.portal), missing: false };
+}
+
+// ---------- Objetivo de facturación (intranet_clients.billing_goals) ----------
+
+// Solo para el equipo (Vista general). `missing`: falta correr
+// docs/sql/2026-11-02-objetivo-facturacion.sql.
+export async function getBillingGoals(clientId: string): Promise<{ goals: BillingGoals; missing: boolean }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("intranet_clients")
+    .select("billing_goals")
+    .eq("id", clientId)
+    .maybeSingle<{ billing_goals: unknown }>();
+  if (error?.code === "42703") return { goals: {}, missing: true };
+  if (error) throw error;
+  return { goals: parseBillingGoals(data?.billing_goals), missing: false };
 }
 
 // ---------- Meta (intranet_meta_daily / intranet_meta_ads) ----------

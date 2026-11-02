@@ -25,6 +25,8 @@ import {
   parsePortal,
 } from "@/lib/portal";
 import { MEETINGS_TAG } from "@/lib/calendar";
+import { listSites, SERANKING_TAG, seRankingErrorMessage } from "@/lib/seranking";
+import { BILLING_GOAL_MAX, parseBillingGoals } from "@/lib/billing-goals";
 import { KommoError, kommoAccount, normalizeKommoUrl } from "@/lib/kommo";
 import { normalizeOdooUrl, odooLogin } from "@/lib/odoo";
 import { readSalesSheet, salesSheetConfigured, sheetIdFrom } from "@/lib/sales-sheet";
@@ -426,6 +428,29 @@ export async function connectDriveFolder(clientId: string, folderId: string): Pr
   return result;
 }
 
+// Vincula el cliente con su proyecto de SE Ranking (solapa SEO). Se valida que el
+// proyecto esté en la cuenta del estudio antes de guardarlo.
+export async function connectSeRankingSite(clientId: string, siteId: string): Promise<FormState> {
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
+  if (!/^\d+$/.test(siteId)) return { ok: false, error: "Elegí un proyecto de SE Ranking." };
+
+  try {
+    revalidateTag(SERANKING_TAG, { expire: 0 });
+    if (!(await listSites()).some((s) => s.id === siteId))
+      return { ok: false, error: "Ese proyecto no está en la cuenta de SE Ranking del estudio." };
+  } catch (e) {
+    return { ok: false, error: seRankingErrorMessage(e) };
+  }
+
+  const now = new Date().toISOString();
+  return writeIntegration(clientId, "seranking", {
+    connected: true,
+    account_ref: siteId,
+    connected_at: now,
+    updated_at: now,
+  });
+}
+
 // Elige (o quita, con null) la carpeta de la solapa Guías. Tiene que estar dentro
 // de la carpeta de Drive del cliente: es la misma regla de acceso de Drive.
 export async function setGuidesFolder(clientId: string, folderId: string | null): Promise<FormState> {
@@ -692,6 +717,40 @@ export async function removeCrmSalesSheet(clientId: string): Promise<FormState> 
   return { ok: true, error: null };
 }
 
+// ---------- Objetivo de facturación (intranet_clients.billing_goals) ----------
+
+// Objetivo en pesos de un mes (YYYY-MM). null lo borra y el mes vuelve a heredar
+// el del último mes cargado antes. Con la sesión: la RLS vuelve a validar.
+export async function saveBillingGoal(clientId: string, month: string, amount: number | null): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return { ok: false, error: "Mes inválido." };
+  if (amount !== null && !(Number.isFinite(amount) && amount > 0 && amount < BILLING_GOAL_MAX))
+    return { ok: false, error: "Ingresá un monto válido." };
+
+  const supabase = await createClient();
+  const { data: row, error: readError } = await supabase
+    .from("intranet_clients")
+    .select("billing_goals")
+    .eq("id", clientId)
+    .maybeSingle<{ billing_goals: unknown }>();
+  if (readError?.code === "42703")
+    return { ok: false, error: "Falta correr docs/sql/2026-11-02-objetivo-facturacion.sql en Supabase." };
+  if (readError || !row) return { ok: false, error: dbError(readError?.code, "No se encontró el cliente.") };
+
+  const goals = parseBillingGoals(row.billing_goals);
+  if (amount === null) delete goals[month];
+  else goals[month] = Math.round(amount);
+  const { data, error } = await supabase
+    .from("intranet_clients")
+    .update({ billing_goals: goals, updated_at: new Date().toISOString() })
+    .eq("id", clientId)
+    .select("id");
+  if (error || !data?.length) return { ok: false, error: dbError(error?.code, "No se pudo guardar el objetivo.") };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
 // ---------- Portal del cliente (intranet_clients.portal) ----------
 
 const PORTAL_MISSING: FormState = { ok: false, error: "Falta correr docs/sql/2026-10-05-portal-intranet.sql en Supabase." };
@@ -793,6 +852,14 @@ export async function removeBanner(clientId: string): Promise<FormState> {
 
 // Fuerza una lectura fresca de lo que el portal trae de afuera: los tickets de
 // Notion y las reuniones de Google Calendar.
+// Descarta la hora de caché de SE Ranking y la vuelve a leer (solapa SEO).
+export async function refreshSeRanking(): Promise<FormState> {
+  if (!(await getAreaSession("clientes"))) return NO_ACCESS;
+  revalidateTag(SERANKING_TAG, { expire: 0 });
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
 export async function refreshPortal(): Promise<FormState> {
   if (!(await getAreaSession("clientes"))) return NO_ACCESS;
   revalidateTag(NOTION_TICKETS_TAG, { expire: 0 });

@@ -48,6 +48,14 @@ export const INTEGRATIONS = [
     placeholder: "",
     help: "Carpeta del cliente en la unidad compartida del estudio. El cliente la ve, descarga y sube archivos desde su cuenta.",
   },
+  {
+    value: "seranking",
+    label: "SE Ranking",
+    title: "SE Ranking",
+    refLabel: "Proyecto de SE Ranking",
+    placeholder: "",
+    help: "Proyecto del sitio del cliente en la cuenta de SE Ranking del estudio, de donde salen las posiciones de la solapa SEO.",
+  },
 ] as const;
 
 export type Integration = (typeof INTEGRATIONS)[number]["value"];
@@ -67,6 +75,7 @@ export const CONNECT_PAGES = {
   crm: { path: "crm/conectar", manualError: "El CRM se conecta cargando la cuenta y su clave de API." },
   clarity: { path: "web/conectar", manualError: "Clarity se conecta cargando el token de exportación del proyecto." },
   drive: { path: "drive/conectar", manualError: "Drive se conecta eligiendo la carpeta del cliente." },
+  seranking: { path: "seo/conectar", manualError: "SE Ranking se conecta eligiendo el proyecto de la lista." },
 } as const;
 
 export const hasConnectPage = (provider: Integration): provider is keyof typeof CONNECT_PAGES => provider in CONNECT_PAGES;

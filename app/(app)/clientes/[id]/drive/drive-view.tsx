@@ -31,7 +31,7 @@ export async function DriveView({
   internal: boolean;
   folder?: string;
 }) {
-  const title = "Drive";
+  const title = "Repositorio";
   const head = !internal && <Topbar crumb={client.name} title={title} />;
   const { connected, accountRef } = client.integrations.drive;
 

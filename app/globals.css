@@ -148,16 +148,16 @@ body {
   }
   .client-content { flex: 1; min-height: 0; display: flex; flex-direction: column; transition: opacity .15s; }
   /* Cambio de período en curso: la vista anterior queda atenuada hasta que llega la nueva. */
-  .client-shell:has(.client-tabbar[data-pending]) .client-content { opacity: .55; pointer-events: none; }
+  .client-shell:has(.client-period[data-pending]) .client-content { opacity: .55; pointer-events: none; }
+  /* Engranaje y período, en el encabezado a la izquierda del tema (ClientPeriodBar). */
+  .client-period { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+  .client-period .tab-config { margin: 0; }
   .client-tabbar { display: flex; align-items: center; gap: 16px; padding: 0 32px; }
   .client-tabs { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
   .client-tab { flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; padding: 10px 12px 12px; margin-bottom: -1px; border-bottom: 2px solid transparent; font-size: 13.5px; font-weight: 500; color: var(--muted); white-space: nowrap; transition: color .12s; }
   .client-tab:hover { color: var(--ink); }
   .client-tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--magenta); }
   .client-tab:focus-visible { outline: 2px solid var(--magenta); outline-offset: -2px; border-radius: 6px; }
-  .client-tabbar-range { flex-shrink: 0; padding-bottom: 8px; }
-  /* Reservado aunque la solapa no use período: así la barra no cambia de alto. */
-  .client-tabbar-range.off { visibility: hidden; }
   .tab-config { flex-shrink: 0; display: grid; place-items: center; width: 37px; height: 37px; margin: 0 -8px 8px 0; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--muted); transition: .12s; }
   .tab-config:hover { color: var(--magenta); border-color: var(--magenta); }
   .tab-config:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
@@ -204,12 +204,14 @@ body {
 
   .view { padding: 28px 32px 48px; flex: 1; }
   .grid { display: grid; gap: 16px; }
-  .g4 { grid-template-columns: repeat(4, 1fr); }
-  .g3 { grid-template-columns: repeat(3, 1fr); }
-  .g2 { grid-template-columns: repeat(2, 1fr); }
+  /* minmax(0, …) y no 1fr a secas: con 1fr la columna se agranda hasta que entre
+     lo más ancho de adentro (una tabla) y la página entera queda con scroll lateral. */
+  .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* align-items: start para que una tarjeta no se estire al alto de la de al
      lado y quede con un vacío abajo. */
-  .g-2-1 { grid-template-columns: 2fr 1fr; align-items: start; }
+  .g-2-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 22px; }
   .card.pad-lg { padding: 24px 26px; }
   .table-wrap { overflow-x: auto; }
@@ -282,7 +284,9 @@ body {
 
   /* Los nombres de anuncio son largos: se recortan antes de que aparezca scroll
      lateral (el nombre completo queda en el title). */
-  .ads-card .ctable td:first-child { max-width: 520px; }
+  /* width 100% + max-width 0: la columna del nombre toma lo que sobra después de
+     las de números y se recorta ahí, sin empujar el ancho de la tabla. */
+  .ads-card .ctable td:first-child { width: 100%; max-width: 0; }
   .ads-card .ctable td:first-child b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ctable tbody tr.ad-row.on, .ctable tbody tr.link-row.on { background: var(--grad-soft); }
 
@@ -318,6 +322,19 @@ body {
   .lead-row .info span { font-size: 12.5px; color: var(--muted); }
   /* Atención por chat (crm/chat-monitor.tsx). */
   .chat-notes { margin-top: 14px; font-size: 12.5px; }
+
+  /* "Tiempo de respuesta por etapa" (crm/chat-monitor.tsx): una tarjeta por etapa con
+     el tiempo típico en grande (verde hasta 15 min, amarillo hasta 1 h, rojo más) y el tiempo en horario laboral y fuera. */
+  .chat-hours { display: inline-flex; align-items: center; gap: 5px; text-align: right; }
+  .stage-speed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .stage-speed { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+  .stage-speed .name { font-size: 12.5px; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stage-speed .time { font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -.6px; line-height: 1; color: var(--navy); }
+  .stage-speed .time.fast { color: var(--ok); }
+  .stage-speed .time.mid { color: var(--warn); }
+  .stage-speed .time.slow { color: var(--down); }
+  .stage-speed .hours { display: flex; flex-direction: column; gap: 3px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .stage-speed .hours b { font-weight: 600; color: var(--ink); }
   .crm-base-note { margin: -8px 0 18px; font-size: 12.5px; }
   .chat-lead { color: inherit; }
   .chat-lead:hover { color: var(--magenta); text-decoration: underline; text-underline-offset: 3px; }
@@ -737,21 +754,17 @@ body {
 
   @media (max-width: 1150px) {
     .g4 { grid-template-columns: repeat(2, 1fr); }
-    .g-2-1, .g2, .g3 { grid-template-columns: 1fr; }
+    .g-2-1, .g2, .g3 { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 820px) {
     .sidebar { display: none; }
-    .g4 { grid-template-columns: 1fr; }
+    .g4 { grid-template-columns: minmax(0, 1fr); }
     .view { padding: 20px 18px 40px; }
     .topbar { padding: 16px 18px; }
-    /* Sin sidebar, las solapas son la única navegación del cliente: el período
-       baja a su propia fila para que no les quite ancho. */
-    .client-tabbar { flex-wrap: wrap; padding: 0 18px; gap: 0; }
-    .client-tabs { flex-basis: 100%; }
-    .client-tabbar-range { order: -1; padding: 0 0 8px; }
-    .tab-config { order: -1; margin: 0 8px 8px 0; }
-    /* En móvil la fila entera sobra donde no hay período. */
-    .client-tabbar-range.off { display: none; }
+    .client-tabbar { padding: 0 18px; }
+    /* En el encabezado no entra al lado del nombre: baja a su propia fila. */
+    .client-head .client-header { flex-wrap: wrap; }
+    .client-period { order: 10; flex-basis: 100%; }
   }
 }
 
@@ -2359,6 +2372,68 @@ body {
     .journey { grid-template-columns: 1fr; gap: 14px; }
     .journey-step, .journey-step + .journey-step { padding: 0 0 0 14px; border-left: 2px solid var(--line); }
     .journey-step + .journey-step::before { display: none; }
+  }
+
+  /* Solapa SEO (app/(app)/clientes/[id]/seo). */
+  .seo-section { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 14px; font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -.3px; color: var(--navy); }
+  .seo-section span { font-family: var(--font-dm-sans), sans-serif; font-size: 12.5px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+  * + .seo-section { margin-top: 28px; }
+  .seo-up { color: var(--ok); font-weight: 600; white-space: nowrap; }
+  .seo-down { color: var(--down); font-weight: 600; white-space: nowrap; }
+  .seo-top { color: var(--magenta); }
+  .seo-note { margin: 14px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+  .seo-note b { color: var(--navy); }
+  p.seo-note.mb-4 { margin-top: 0; }
+  /* La card es angosta (columna chica del grid): las 5 columnas se reparten el
+     ancho en vez de pedir 62 px cada una y abrir un scroll lateral. */
+  .seo-dist .stage-bars { overflow: hidden; gap: 6px; }
+  .seo-dist .stage-bars .col { min-width: 0; }
+  /* "Las búsquedas más grandes": keyword, barra por volumen, volumen y posición del sitio. */
+  .seo-big { display: flex; flex-direction: column; gap: 9px; }
+  .seo-big-row { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr) 72px 64px; align-items: center; gap: 12px; }
+  .seo-big-row .lbl { font-size: 12.5px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seo-big-row .track { height: 16px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+  .seo-big-row .bar { height: 100%; border-radius: 6px; background: var(--grad); }
+  .seo-big-row .vol { font-family: var(--font-display); font-size: 13px; font-weight: 600; color: var(--navy); text-align: right; }
+  .seo-big-row .pos { justify-self: end; font-family: var(--font-display); font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 20px; color: var(--navy); background: var(--surface-2); }
+  .seo-big-row .pos.top { color: #fff; background: var(--grad); }
+  .seo-big-row .pos.out { color: var(--muted-2); }
+  .seo-big-row.head { margin-bottom: -2px; }
+  .seo-big-row.head span { font-size: 11px; font-weight: 600; color: var(--muted-2); text-transform: uppercase; letter-spacing: .4px; }
+  .seo-big-row.head .vol { font-family: inherit; text-align: right; white-space: nowrap; }
+  .seo-big-row.head .pos { padding: 0; background: none; font-family: inherit; }
+  /* La nota baja al fondo de la card y ocupa el espacio que queda libre. */
+  .seo-big-card { display: flex; flex-direction: column; }
+  .seo-big-card .seo-big { flex: 1; }
+  .seo-big-note { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
+  @media (max-width: 520px) { .seo-big-row { grid-template-columns: minmax(0, 1fr) 72px 64px; } .seo-big-row .track { display: none; } }
+  .seo-filters { margin-bottom: 14px; }
+  .seo-filters .chip span { margin-left: 3px; opacity: .75; }
+  .seo-none { margin: 6px 0 0; font-size: 13px; }
+  .seo-sort { background: none; border: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
+  .seo-sort:hover, .seo-sort.on { color: var(--magenta); }
+  .seo-sort.on::after { content: " ↓"; }
+  .seo-table td:first-child b { font-weight: 600; color: var(--ink); }
+  .seo-map { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; color: var(--magenta); background: var(--grad-soft); white-space: nowrap; }
+  .seo-page { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seo-own td { background: var(--grad-soft); }
+
+  /* Objetivo de facturación (Vista general, solo equipo): objetivo, facturado, lo que falta y la barra de avance. */
+  .goal-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .goal-figs > div { padding: 4px 18px 4px 0; }
+  .goal-figs > div + div { padding-left: 22px; border-left: 1px solid var(--line); }
+  .goal-figs .label { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+  .goal-figs .val { margin-top: 8px; font-family: var(--font-display); font-weight: 700; font-size: 24px; letter-spacing: -0.6px; line-height: 1.1; color: var(--navy); }
+  .goal-figs small { display: block; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+  .goal-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; margin-top: 20px; }
+  .goal-bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .goal-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--grad); }
+  .goal-note { margin: 14px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted-2); }
+  .goal-note b { color: var(--navy); font-weight: 600; }
+  .goal-progress b { font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--magenta); font-variant-numeric: tabular-nums; }
+  @media (max-width: 720px) {
+    .goal-figs { grid-template-columns: 1fr; gap: 14px; }
+    .goal-figs > div, .goal-figs > div + div { padding: 0 0 0 14px; border-left: 2px solid var(--line); }
   }
 }
 

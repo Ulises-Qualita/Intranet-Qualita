@@ -3,7 +3,7 @@ import { RangePicker } from "@/components/range-picker";
 import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, KpiLocked, MissingIntegration, Pill } from "@/components/ui";
-import { getChatEvents, getChatStart } from "@/lib/crm-chats";
+import { getChatEvents, getStageEvents } from "@/lib/crm-chats";
 import { crmProviderLabel } from "@/lib/crm-shared";
 import { prepareCrmView } from "@/lib/crm-sync";
 import {
@@ -65,13 +65,14 @@ export async function CrmView({
   const showVideos = c.conn.meta && seesMeta;
   // Atención por chat: solo el equipo y solo Kommo, que es el que registra los mensajes.
   const kommoUrl = internal && secrets?.provider === "kommo" ? secrets.kommo?.url : undefined;
-  const [snapshot, all, campaigns, chatEvents, chatStart, allSales] = await Promise.all([
+  const [snapshot, all, campaigns, chatEvents, allSales, stageEvents] = await Promise.all([
     getCrmSnapshot(c.id),
     getLeads(c.id),
     showVideos ? getMetaCampaigns(c.id, range) : null,
     kommoUrl ? getChatEvents(c.id, range) : undefined,
-    kommoUrl ? getChatStart(c.id) : null,
     secrets?.sales_sheet ? getSales(c.id) : null,
+    // Historial de etapas: en qué etapa estaba cada lead cuando le respondieron.
+    kommoUrl ? getStageEvents(c.id) : null,
   ]);
 
   // Las oportunidades se recortan por fecha de creación y las ventas (ganadas,
@@ -411,10 +412,11 @@ export async function CrmView({
           <ChatMonitor
             events={chatEvents}
             leads={all}
-            storedSince={chatStart}
+            stages={stageEvents}
+            stageOrder={secrets?.stage_order}
+            stageError={secrets?.stage_error ?? null}
             range={range}
             error={secrets?.chat_error ?? null}
-            leadUrl={(leadId) => `${kommoUrl}/leads/detail/${leadId}`}
           />
         )}
 

@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Notas para Claude Code (complementan AGENTS.md)
 
 Las notas de cada integración o solapa (Meta, Clarity, Notion, Agente, Foro,
-Reuniones, Drive, Reportes, Google Ads, CRM, Portal/Hitos) están en
+Reuniones, Drive, Reportes, Google Ads, CRM, Portal/Hitos, SEO) están en
 `.claude/rules/*.md` y se cargan solas al tocar los archivos de esa función.
 Al documentar algo nuevo de una de ellas, agregarlo ahí y no acá.
 
@@ -84,6 +84,14 @@ No hay framework de tests configurado todavía.
   escriben con service_role validan con `canManageClient(clientId)`
   (`app/(app)/clientes/actions.ts`), no solo con el área. `addClient` asigna a quien
   crea el cliente (si no es admin), porque si no, no lo vería.
+- Objetivo de facturación (Vista general, **solo equipo**: `OverviewView` lo lee
+  con `internal`): un monto en pesos por mes en `intranet_clients.billing_goals`
+  (`docs/sql/2026-11-02-objetivo-facturacion.sql`), cargado a mano con "Editar
+  objetivo" (`saveBillingGoal`). Un mes sin objetivo propio hereda el del último mes
+  cargado antes (`goalFor` en `lib/billing-goals.ts`). Se compara con la facturación
+  del recorrido, con los dólares pasados a pesos al oficial de venta (`lib/usd-rate.ts`:
+  dolarapi.com hoy, argentinadatos.com para el cierre de un mes pasado); con un rango
+  que no es un mes calendario no se muestra.
 - Pestaña Equipo de cada cliente (`/clientes/[slug]/equipo` y `/mi-empresa/equipo`,
   misma `EquipoView`): los miembros activos de `intranet_client_assignments`, vía
   `getClientTeam()` con service_role (la cuenta del cliente no ve asignaciones ni
@@ -98,7 +106,7 @@ No hay framework de tests configurado todavía.
   por separado para el equipo y para la cuenta del cliente (Vista general siempre se
   ve). Catálogo en `lib/client-tabs.ts`; se guardan las **ocultas** en
   `intranet_clients.hidden_tabs` (`docs/sql/2026-09-28-solapas-cliente.sql`), así una
-  solapa nueva aparece activa sin migrar. `Client.hiddenTabs` filtra la barra de solapas del cliente (`app/(app)/clientes/[id]/layout.tsx`, arriba del contenido y con el selector de período, que es uno solo para todas las solapas y viaja en sus links) y
+  solapa nueva aparece activa sin migrar. `Client.hiddenTabs` filtra la barra de solapas del cliente (`app/(app)/clientes/[id]/layout.tsx`, arriba del contenido; el selector de período y el engranaje de la solapa van en el encabezado, a la izquierda del tema, con `ClientPeriodBar`; el período es uno solo para todas las solapas y viaja en sus links) y
   `clientTabs()`, y cada solapa tiene un `layout.tsx` con `TeamTabGate` /
   `ClientTabGate` (`components/tab-gate.tsx`) para que no se pueda entrar por URL.
   Una solapa nueva del cliente tiene que sumarse a `CLIENT_TABS` (y a `CLIENT_NAV` del

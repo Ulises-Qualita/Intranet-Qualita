@@ -12,9 +12,9 @@ const TAB_ICONS: Record<string, IconName> = {
   META: "bolt",
   CRM: "funnel",
   WEB: "eye",
-  "Portal del cliente": "media",
+  Calendario: "media",
   Reuniones: "calendar",
-  Drive: "folder",
+  Repositorio: "folder",
   Equipo: "team",
 };
 

@@ -1,11 +1,22 @@
-import { StageBars } from "@/components/charts";
 import { RangePicker } from "@/components/range-picker";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, KpiLocked, MissingIntegration } from "@/components/ui";
 import { getCrmSecrets } from "@/lib/crm-sync";
-import { type Client, crmPeriod, getGadsDaily, getLeads, getMetaDaily, getSales, leadFunnel, salesPeriod } from "@/lib/data";
-import { dollars, integer, money, orDash, percent, ratio, safeDiv } from "@/lib/format";
-import { type Period, periodPhrase } from "@/lib/period";
+import { goalFor } from "@/lib/billing-goals";
+import {
+  type Client,
+  crmPeriod,
+  getBillingGoals,
+  getGadsDaily,
+  getLeads,
+  getMetaDaily,
+  getSales,
+  salesPeriod,
+} from "@/lib/data";
+import { dollars, integer, money, orDash, percent, ratio, safeDiv, shortDate, todayISO } from "@/lib/format";
+import { monthName, type Period } from "@/lib/period";
+import { getUsdRate } from "@/lib/usd-rate";
+import { BillingGoalEditor } from "./billing-goal-editor";
 
 // Un paso del recorrido de la inversión. `value` null = falta la integración o el dato.
 type Step = { label: string; value: string | null; extra?: string | null; cost?: [figure: string, text: string] | null; missing?: string };
@@ -25,11 +36,13 @@ export async function OverviewView({
   base: string;
   internal: boolean;
 }) {
-  const [daily, gadsDaily, leads, secrets] = await Promise.all([
+  const [daily, gadsDaily, leads, secrets, billingGoals] = await Promise.all([
     c.conn.meta ? getMetaDaily(c.id, range) : [],
     c.conn.google_ads ? getGadsDaily(c.id, range) : [],
     c.conn.crm ? getLeads(c.id) : [],
     c.conn.crm ? getCrmSecrets(c.id) : null,
+    // El objetivo de facturación es solo del equipo: la cuenta del cliente no lo lee.
+    internal ? getBillingGoals(c.id) : null,
   ]);
   // Con planilla de ventas, las ventas y la facturación salen de ahí (por fecha de confirmación).
   const allSales = secrets?.sales_sheet ? await getSales(c.id) : null;
@@ -107,6 +120,105 @@ export async function OverviewView({
     },
   ];
 
+  // Objetivo de facturación (solo equipo): mensual, contra todo lo facturado en el
+  // período. Las ventas en dólares se pasan a pesos al dólar oficial (venta) del
+  // último día del período: el de hoy si el mes está en curso, el del cierre si ya
+  // terminó. Con un rango que no es un mes calendario no hay contra qué comparar.
+  const usd = billingGoals && range.month && billedUsd > 0 ? await getUsdRate(range.until) : null;
+  const billed = c.conn.crm && sales !== null ? billedArs + (usd ? billedUsd * usd.rate : 0) : null;
+  // Hay dólares pero no se pudo leer la cotización: se cuentan solo los pesos y se avisa.
+  const usdMissing = billedUsd > 0 && !usd;
+  let goalCard: React.ReactNode = null;
+  if (billingGoals) {
+    const month = range.month ?? null;
+    const label = (m: string) => {
+      const name = monthName(m);
+      return m.slice(0, 4) === todayISO().slice(0, 4) ? name : `${name} ${m.slice(0, 4)}`;
+    };
+    const goal = month ? goalFor(billingGoals.goals, month) : null;
+    const own = month ? (billingGoals.goals[month] ?? null) : null;
+    const inherited = goal && goal.from !== month ? { amount: goal.amount, label: label(goal.from) } : null;
+    const reached = goal && billed !== null ? billed / goal.amount : null;
+    const today = todayISO();
+    const daysLeft =
+      month && month === today.slice(0, 7)
+        ? new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate() - Number(today.slice(8, 10))
+        : null;
+
+    goalCard = (
+      <Card
+        title="Objetivo de facturación"
+        action={
+          month && !billingGoals.missing ? (
+            <BillingGoalEditor clientId={c.id} month={month} monthLabel={label(month)} own={own} inherited={inherited} />
+          ) : undefined
+        }
+        hint={periodo}
+      >
+        {billingGoals.missing ? (
+          <EmptyState label="Pendiente">Falta correr docs/sql/2026-11-02-objetivo-facturacion.sql en Supabase.</EmptyState>
+        ) : !month ? (
+          <EmptyState label="Sin datos">El objetivo es mensual: elegí un mes en el período para verlo.</EmptyState>
+        ) : !goal ? (
+          <EmptyState label="Sin objetivo">Todavía no hay un objetivo de facturación cargado para {label(month)}.</EmptyState>
+        ) : (
+          <div className="goal">
+            <div className="goal-figs">
+              <div>
+                <div className="label">Objetivo</div>
+                <div className="val">{money(goal.amount)}</div>
+                <small>{inherited ? `el de ${inherited.label}` : `de ${label(month)}`}</small>
+              </div>
+              <div>
+                <div className="label">Facturado</div>
+                <div className="val">{billed !== null ? money(billed) : "—"}</div>
+                <small>
+                  {billed === null
+                    ? crmMissing
+                    : usd
+                      ? `${money(billedArs)} en pesos + ${dollars(billedUsd)} convertidos`
+                      : usdMissing
+                        ? `solo pesos: ${dollars(billedUsd)} sin convertir`
+                        : sheet
+                          ? "según la planilla"
+                          : "según el CRM"}
+                </small>
+              </div>
+              <div>
+                <div className="label">{reached !== null && reached >= 1 ? "Superado por" : "Falta"}</div>
+                <div className="val">{billed !== null ? money(Math.abs(goal.amount - billed)) : "—"}</div>
+                <small>
+                  {daysLeft !== null ? (daysLeft === 0 ? "hoy termina el mes" : `quedan ${daysLeft} ${daysLeft === 1 ? "día" : "días"}`) : " "}
+                </small>
+              </div>
+            </div>
+            {reached !== null && (
+              <div className="goal-progress">
+                <div className="goal-bar" role="progressbar" aria-valuenow={Math.round(reached * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Avance del objetivo">
+                  <span style={{ width: `${Math.min(reached, 1) * 100}%` }} />
+                </div>
+                <b>{percent(reached * 100)}</b>
+              </div>
+            )}
+            {billed !== null && (usd || usdMissing) && (
+              <p className="goal-note">
+                {usd ? (
+                  <>
+                    Las ventas en dólares ({dollars(billedUsd)}) se suman pasadas a pesos al dólar oficial de venta del BNA
+                    del {shortDate(usd.date)}: <b>{money(usd.rate)}</b> por dólar, o sea {money(billedUsd * usd.rate)}.
+                    {month === todayISO().slice(0, 7) ? " Mientras el mes está en curso se usa la cotización de hoy." : ""}
+                  </>
+                ) : (
+                  "No se pudo leer la cotización del dólar oficial: el avance cuenta solo las ventas en pesos."
+                )}
+              </p>
+            )}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
   // Sin integración: el equipo ve el link para conectarla; el cliente, solo el aviso.
   const locked = (label: string, icon: "target" | "users" | "check" | "money", tab: "crm" | "meta") => (
     <KpiLocked
@@ -182,8 +294,7 @@ export async function OverviewView({
           )}
         </div>
 
-        {/* Apiladas y a todo el ancho: en dos columnas el recorrido de la inversión no
-            entra y el embudo aprieta los nombres de etapa. */}
+        {/* Apiladas y a todo el ancho: en dos columnas el recorrido de la inversión no entra. */}
         <div className="grid">
           {!adsConnected && !c.conn.crm ? (
             <MissingIntegration kind="meta" client={c} internal={internal} />
@@ -219,17 +330,7 @@ export async function OverviewView({
               </p>
             </Card>
           )}
-          {!c.conn.crm ? (
-            <MissingIntegration kind="crm" client={c} internal={internal} />
-          ) : (
-            <Card title="Embudo de ventas" hint={`${integer(opportunities)} oportunidades, ${periodo}`}>
-              {opportunities ? (
-                <StageBars stages={leadFunnel(crm.leads)} />
-              ) : (
-                <EmptyState label="Sin datos">Ninguna oportunidad creada {periodPhrase(range)}.</EmptyState>
-              )}
-            </Card>
-          )}
+          {goalCard}
         </div>
       </section>
     </>

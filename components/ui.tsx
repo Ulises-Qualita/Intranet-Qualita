@@ -88,7 +88,7 @@ export function KpiLocked({
   );
 }
 
-type ConnectKind = "meta" | "google_ads" | "crm" | "notion" | "clarity" | "drive";
+type ConnectKind = "meta" | "google_ads" | "crm" | "notion" | "clarity" | "drive" | "seranking";
 
 const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: string; cta: string }> = {
   notion: {
@@ -127,6 +127,12 @@ const CONNECT_COPY: Record<ConnectKind, { icon: IconName; title: string; desc: s
     desc: "Vinculá la carpeta de este cliente en la unidad compartida. El cliente solo va a ver esa carpeta: puede navegarla, descargar y subir archivos.",
     cta: "Elegir carpeta",
   },
+  seranking: {
+    icon: "search",
+    title: "Conectá SE Ranking",
+    desc: "Elegí el proyecto del sitio de este cliente en la cuenta de SE Ranking del estudio para ver sus posiciones en Google, la visibilidad y cómo se mueve cada keyword.",
+    cta: "Elegir proyecto de SE Ranking",
+  },
 };
 
 export function ConnectState({ kind, client }: { kind: ConnectKind; client: Pick<Client, "id" | "slug" | "name" | "integrations"> }) {
@@ -160,6 +166,7 @@ const NOT_CONNECTED: Record<ConnectKind, string> = {
   crm: "El CRM todavía no está conectado.",
   clarity: "La analítica del sitio todavía no está conectada.",
   drive: "La carpeta de archivos todavía no está disponible.",
+  seranking: "El seguimiento SEO todavía no está conectado.",
 };
 
 export function NotConnected({ kind }: { kind: ConnectKind }) {

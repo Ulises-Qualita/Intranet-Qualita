@@ -429,8 +429,10 @@ export type TurnStats = {
   medianOffHours: number | null;
   p75: number | null;
   p90: number | null;
-  // De las vueltas, cuántas tuvieron respuesta en 15 minutos y en una hora (0 a 1).
+  // De las vueltas, cuántas tuvieron respuesta en 15 minutos, en 30 (la tarjeta
+  // por etapa de la solapa CRM) y en una hora (0 a 1).
   within15: number | null;
+  within30: number | null;
   within60: number | null;
 };
 
@@ -455,6 +457,7 @@ export function turnStats(turns: ReplyTurn[]): TurnStats {
     p75: percentile(answered, 0.75),
     p90: percentile(answered, 0.9),
     within15: share(FAST_S),
+    within30: share(30 * 60),
     within60: share(3600),
   };
 }
