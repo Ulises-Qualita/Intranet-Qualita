@@ -5,6 +5,7 @@ import { signOut } from "@/app/auth/actions";
 import type { Client } from "@/lib/data";
 import { ClientAvatar } from "./client-avatar";
 import { Icon, type IconName } from "./icons";
+import { NavDrawerCloser } from "./mobile-nav";
 import { NavLink } from "./nav-link";
 
 const TAB_ICONS: Record<string, IconName> = {
@@ -32,6 +33,7 @@ export function ClientSidebar({
   const pathname = usePathname();
 
   return (
+    <>
     <aside className="sidebar">
       <div className="side-scroll">
         {/* Sin el logo de Qualita: acá la marca que se ve es la del cliente. */}
@@ -65,5 +67,8 @@ export function ClientSidebar({
         </div>
       </div>
     </aside>
+    {/* Fuera del <aside>: con el transform del cajón, un fixed adentro quedaría atado a él. */}
+    <NavDrawerCloser />
+    </>
   );
 }

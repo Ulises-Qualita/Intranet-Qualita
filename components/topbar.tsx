@@ -1,9 +1,11 @@
+import { NavToggle } from "./mobile-nav";
 import { ThemeToggle } from "./theme-toggle";
 
 export function Topbar({ crumb, title, children }: { crumb: string; title: string; children?: React.ReactNode }) {
   return (
     <div className="topbar">
-      <div>
+      <NavToggle />
+      <div className="topbar-title">
         <div className="crumb">
           <b>{crumb}</b> <span>/ {title}</span>
         </div>

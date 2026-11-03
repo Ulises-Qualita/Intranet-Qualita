@@ -1,4 +1,5 @@
 const PATHS = {
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   users: (
     <>
       <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { monthShortcuts, readPeriod } from "@/lib/period";
-import { CustomRange } from "./custom-range";
+import { CustomRange, MonthLabel } from "./custom-range";
 import { Icon } from "./icons";
 import { NavLink } from "./nav-link";
 
@@ -103,7 +103,7 @@ export function ClientPeriodBar({ base, tabs, periodTabs }: { base: string; tabs
               className={m.month === shownMonth ? "on" : undefined}
               onClick={() => navigate(`${pathname}?mes=${m.month}`, m.month)}
             >
-              {m.label}
+              <MonthLabel label={m.label} />
             </button>
           ))}
           <CustomRange basePath={pathname} period={period} navigate={(href) => navigate(href)} />

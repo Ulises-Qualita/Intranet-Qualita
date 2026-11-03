@@ -127,6 +127,10 @@ No hay framework de tests configurado todavía.
   `lib/supabase/server.ts`. PostgREST responde **`PGRST205`** (no la encuentra en su
   schema cache), no el `42P01` de Postgres; mirar solo uno deja el otro sin cubrir.
   `saveNotionConfig` en `app/(app)/admin/actions.ts` todavía compara contra `42P01`.
+- Móvil (≤ 820 px): la sidebar es un cajón (`components/mobile-nav.tsx`). El botón
+  `NavToggle` va en `Topbar` y `ClientHeader`; cada sidebar lleva `NavDrawerCloser`
+  (fondo para cerrar, cierre al navegar y con Escape). Un encabezado nuevo que no use
+  `Topbar` tiene que sumar `NavToggle`, o en el celular no hay forma de navegar.
 - Estilos: clases del mockup en `app/globals.css` (`@layer components`); tema oscuro =
   clase `.dark` en `<html>` + `localStorage("theme")`. Ojo con nombres de clase que
   choquen con utilidades de Tailwind (p. ej. `mb-16`).

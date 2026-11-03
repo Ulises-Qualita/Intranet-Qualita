@@ -15,6 +15,17 @@ export function openPicker(e: React.MouseEvent<HTMLInputElement>) {
   } catch {}
 }
 
+// Nombre del mes en los atajos: entero, y en el celular las tres primeras letras
+// ("Septiembre" → "Sep") para que los cuatro botones entren en una fila.
+export function MonthLabel({ label }: { label: string }) {
+  return (
+    <>
+      <span className="range-long">{label}</span>
+      <span className="range-short">{label.slice(0, 3)}</span>
+    </>
+  );
+}
+
 // Rango elegido a mano: dos calendarios (el selector de fecha nativo del
 // navegador) y "Aplicar", que lleva el rango a la URL como ?desde=&hasta=.
 // `navigate` reemplaza al router.push directo: la barra de solapas del cliente lo

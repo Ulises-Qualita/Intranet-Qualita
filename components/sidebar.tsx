@@ -8,6 +8,7 @@ import type { SessionUser } from "@/lib/auth";
 import type { Client } from "@/lib/data";
 import { ClientAvatar } from "./client-avatar";
 import { Icon, type IconName } from "./icons";
+import { NavDrawerCloser } from "./mobile-nav";
 import { NavLink } from "./nav-link";
 import { UserAvatar } from "./user-avatar";
 
@@ -41,6 +42,7 @@ export function Sidebar({
   const pathname = usePathname();
 
   return (
+    <>
     <aside className="sidebar">
       {/* Solo esta parte scrollea: el pie con el usuario queda siempre a la vista. */}
       <div className="side-scroll">
@@ -104,5 +106,8 @@ export function Sidebar({
         </div>
       </div>
     </aside>
+    {/* Fuera del <aside>: con el transform del cajón, un fixed adentro quedaría atado a él. */}
+    <NavDrawerCloser />
+    </>
   );
 }

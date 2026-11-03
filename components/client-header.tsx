@@ -1,6 +1,7 @@
 import type { Client } from "@/lib/data";
 import { ClientAvatar } from "./client-avatar";
 import { Icon } from "./icons";
+import { NavToggle } from "./mobile-nav";
 import { ThemeToggle } from "./theme-toggle";
 
 // La web cargada puede venir sin protocolo ("cliente.com").
@@ -12,6 +13,7 @@ const websiteHref = (website: string) => (/^https?:\/\//i.test(website) ? websit
 export function ClientHeader({ client, children }: { client: Client; children?: React.ReactNode }) {
   return (
     <div className="topbar client-header">
+      <NavToggle />
       <ClientAvatar client={client} />
       <div className="ch-text">
         <h1>{client.name}</h1>
