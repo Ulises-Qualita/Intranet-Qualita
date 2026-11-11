@@ -4,18 +4,21 @@ import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, KpiLocked, MissingIntegration, Pill } from "@/components/ui";
 import { getChatEvents, getStageEvents } from "@/lib/crm-chats";
-import { crmProviderLabel } from "@/lib/crm-shared";
+import { crmProviderLabel, noSourceLabel } from "@/lib/crm-shared";
 import { prepareCrmView } from "@/lib/crm-sync";
 import {
   type Client,
   crmPeriod,
   getCrmSnapshot,
   getLeads,
+  getGadsDaily,
   getMetaCampaigns,
+  getMetaDaily,
   getSales,
   leadFunnel,
   salesPeriod,
-  topVideoAds,
+  sourcesWithAdLeads,
+  topMetaVideos,
   withMetaAdNames,
 } from "@/lib/data";
 import { compare } from "@/lib/compare";
@@ -24,7 +27,7 @@ import { CRM_HISTORY_DAYS, type Period, periodPhrase, periodQuery, previousPerio
 import { AdsTable } from "./ads-table";
 import { ChatMonitor } from "./chat-monitor";
 import { SourceList } from "./source-list";
-import { TopVideos } from "./top-videos";
+import { TopVideos, topVideosHint } from "./top-videos";
 
 // Color del chip de etapa según cómo terminó la oportunidad: ganada, perdida o
 // todavía abierta.
@@ -65,7 +68,7 @@ export async function CrmView({
   const showVideos = c.conn.meta && seesMeta;
   // Atención por chat: solo el equipo y solo Kommo, que es el que registra los mensajes.
   const kommoUrl = internal && secrets?.provider === "kommo" ? secrets.kommo?.url : undefined;
-  const [snapshot, all, campaigns, chatEvents, allSales, stageEvents] = await Promise.all([
+  const [snapshot, all, campaigns, chatEvents, allSales, stageEvents, metaDaily, gadsDaily] = await Promise.all([
     getCrmSnapshot(c.id),
     getLeads(c.id),
     showVideos ? getMetaCampaigns(c.id, range) : null,
@@ -73,15 +76,32 @@ export async function CrmView({
     secrets?.sales_sheet ? getSales(c.id) : null,
     // Historial de etapas: en qué etapa estaba cada lead cuando le respondieron.
     kommoUrl ? getStageEvents(c.id) : null,
+    // Leads de Meta y conversiones de Google Ads del período, los mismos números
+    // de las solapas META y GADS (las dos con el área META): van en la card de
+    // oportunidades por origen. Si no se pueden leer, queda lo del CRM.
+    c.conn.meta && seesMeta ? getMetaDaily(c.id, range).catch(() => null) : null,
+    c.conn.google_ads && seesMeta ? getGadsDaily(c.id, range).catch(() => null) : null,
   ]);
 
+  // Leads sin origen: en Kommo son los que escribieron directo por WhatsApp.
+  const noSource = noSourceLabel(secrets?.provider);
   // Las oportunidades se recortan por fecha de creación y las ventas (ganadas,
   // tickets) por fecha de venta, según el selector del topbar.
-  const { leads, won, tickets, ticketAvg, ticketTotal, sellers, sources, wonSources, ads: crmAds } = crmPeriod(all, range);
+  const { leads, won, tickets, ticketAvg, ticketTotal, sellers, sources, wonSources, ads: crmAds } = crmPeriod(all, range, noSource);
   // El CRM puede guardar el anuncio con un nombre corto: se pasa al nombre de Meta
   // para que la tabla y los videos crucen con lo que muestra la solapa META.
   const ads = campaigns ? withMetaAdNames(crmAds, campaigns.flatMap((cp) => cp.ads)) : crmAds;
   const periodo = range.label;
+  // Oportunidades por origen: Meta y Google Ads con lo que reporta cada plataforma.
+  const sourceRows = sourcesWithAdLeads(
+    sources,
+    {
+      meta: metaDaily ? metaDaily.reduce((t, d) => t + d.leads, 0) : null,
+      gads: gadsDaily ? gadsDaily.reduce((t, d) => t + d.conversions, 0) : null,
+    },
+    noSource,
+  );
+  const platformName = { meta: "Meta Ads", gads: "Google Ads" } as const;
 
   // Comparación contra el período anterior. Las ventas se cuentan por fecha de
   // venta (no de creación del lead), así que ganadas y total en tickets también
@@ -97,21 +117,23 @@ export async function CrmView({
     firstDay <= previous.since &&
     previous.since >= shiftDate(todayISO(), CRM_HISTORY_DAYS) &&
     (!secrets?.since || previous.since >= secrets.since);
-  const before = comparable ? crmPeriod(all, previous) : null;
+  const before = comparable ? crmPeriod(all, previous, noSource) : null;
   const versus = versusLabel(range);
   const antes = `Antes (${previous.label})`;
   const leadsChange = before && compare(leads.length, before.leads.length, { better: "up", format: integer, versus: antes });
   const ticketChange = before && compare(ticketAvg, before.ticketAvg, { better: "up", format: (v) => money(v), versus: antes });
   const wonChange = before && compare(won, before.won, { better: "up", format: integer, versus: antes });
   const ticketTotalChange = before && compare(ticketTotal, before.ticketTotal, { better: "up", format: (v) => money(v), versus: antes });
-  const top = campaigns && topVideoAds(campaigns, ads);
+  // Mismo criterio que la solapa META: primero ventas, después CPL. Las ventas
+  // entran si el CRM sabe qué leads se ganaron (won no es null).
+  const top = campaigns && topMetaVideos(campaigns, won !== null ? ads : null);
 
   // Con planilla de ventas, las ventas y la facturación salen de ahí y se cuentan
   // por fecha de confirmación: eso sí se puede comparar con el período anterior,
   // siempre que la planilla lo cubra entero.
-  const sheet = allSales && salesPeriod(allSales, all, range);
+  const sheet = allSales && salesPeriod(allSales, all, range, noSource);
   const firstSale = allSales?.length ? allSales[allSales.length - 1].confirmed_on : null;
-  const sheetBefore = allSales && firstSale && firstSale <= previous.since ? salesPeriod(allSales, all, previous) : null;
+  const sheetBefore = allSales && firstSale && firstSale <= previous.since ? salesPeriod(allSales, all, previous, noSource) : null;
   const saleChange = (now: number | null, then: number | null | undefined, format: (v: number) => string) =>
     sheetBefore ? compare(now, then ?? null, { better: "up", format, versus: antes }) : null;
   return (
@@ -333,13 +355,22 @@ export async function CrmView({
           </div>
           <div className="stack-cards crm-side">
             <Card title="Oportunidades por origen" hint={periodo} className="source-card">
-              {sources.length === 0 ? (
+              {sourceRows.length === 0 ? (
                 <EmptyState label="Sin datos">Sin oportunidades en el período.</EmptyState>
               ) : (
                 <SourceList
                   title="Oportunidades por origen"
                   hint={periodo}
-                  rows={sources.map((s) => ({ name: s.name, detail: `${percent(s.share, 0)} del total`, value: integer(s.leads) }))}
+                  rows={sourceRows.map((s) => ({
+                    name: s.name,
+                    detail: [
+                      `${percent(s.share, 0)} del total`,
+                      s.platform ? `según ${platformName[s.platform]}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                    value: integer(s.leads),
+                  }))}
                 />
               )}
             </Card>
@@ -423,17 +454,12 @@ export async function CrmView({
         {top && (
           <Card
             title="Videos con mejor rendimiento"
-            hint={
-              top.by === "crm"
-                ? `según ventas y oportunidades del CRM · ${periodo}`
-                : `según leads de Meta (el CRM no tiene videos atribuidos) · ${periodo}`
-            }
+            hint={`${topVideosHint(top, won !== null)} · ${periodo}`}
             className="mt-4"
           >
             {top.videos.length ? (
               <TopVideos
                 videos={top.videos}
-                by={top.by}
                 showWon={won !== null}
                 clientSlug={c.slug}
                 base={base}
@@ -443,7 +469,7 @@ export async function CrmView({
             ) : (
               <EmptyState label="Sin datos">
                 {top.total
-                  ? `Ningún video generó oportunidades ni leads ${periodPhrase(range)}.`
+                  ? `Ningún video generó ventas ni leads ${periodPhrase(range)}.`
                   : `No hay anuncios de video con entrega ${periodPhrase(range)} (o todavía no se sincronizaron sus creativos).`}
               </EmptyState>
             )}

@@ -5,36 +5,35 @@ import { AdThumb } from "../meta/ad-preview";
 
 type Metric = [label: string, value: string];
 
-function metrics(v: VideoPerformance, by: "crm" | "meta", showWon: boolean): Metric[] {
+// Los videos van primero por ventas y después por CPL (topMetaVideos), así que
+// se muestran las dos cosas. Sin ventas a la vista (showWon false), solo Meta.
+function metrics(v: VideoPerformance, showWon: boolean): Metric[] {
   const ctr = orDash(safeDiv(v.clicks * 100, v.impressions), (x) => percent(x));
-  // Siempre, también en $0: lo que se mira de cada video es si trajo ventas.
-  // Con planilla de ventas, la parte en dólares va aparte.
+  // Siempre, también en $0. Con planilla de ventas, la parte en dólares va aparte.
   const billed: Metric = ["Facturado", [money(v.ticketTotal), v.usdTotal ? dollars(v.usdTotal) : null].filter(Boolean).join(" + ")];
-  if (by === "meta") {
-    return [
-      ["Leads (Meta)", integer(v.metaLeads)],
-      billed,
-      ["CPL", orDash(safeDiv(v.spend, v.metaLeads), (x) => money(x, 2))],
-      ["Gasto", money(v.spend)],
-      ["CTR", ctr],
-      ["Impresiones", compact(v.impressions)],
-    ];
-  }
   return [
-    ["Oportunidades", integer(v.crmLeads)],
-    ...(showWon ? [["Ganadas", integer(v.won)] as Metric] : []),
-    billed,
+    ...(showWon ? [["Ventas", integer(v.won)] as Metric, billed] : []),
+    ["Leads (Meta)", integer(v.metaLeads)],
+    ["CPL", orDash(safeDiv(v.spend, v.metaLeads), (x) => money(x, 2))],
     ["Gasto", money(v.spend)],
-    ["Costo por oportunidad", orDash(safeDiv(v.spend, v.crmLeads), (x) => money(x, 2))],
     ["CTR", ctr],
+    ...(showWon ? [] : [["Impresiones", compact(v.impressions)] as Metric]),
   ];
 }
 
+// Aclaración de la card: con qué criterio entraron los videos que se ven.
+export function topVideosHint(top: { videos: VideoPerformance[]; bySales: number }, withSales: boolean) {
+  if (!withSales) return "según CPL de Meta";
+  if (!top.bySales) return "según CPL de Meta (ningún video tiene ventas atribuidas)";
+  if (top.bySales === top.videos.length) return "según ventas atribuidas en el CRM";
+  return "primero por ventas atribuidas en el CRM, después por CPL de Meta";
+}
+
 // Los tres videos que mejor rindieron, con su creativo arriba (se reproduce al
-// hacer click) y los números abajo. El orden lo decide topVideoAds.
+// hacer click) y los números abajo. El orden lo decide topMetaVideos. La usan
+// las solapas META y CRM.
 export function TopVideos({
   videos,
-  by,
   showWon,
   clientSlug,
   base,
@@ -42,7 +41,6 @@ export function TopVideos({
   hideMedia = false,
 }: {
   videos: VideoPerformance[];
-  by: "crm" | "meta";
   showWon: boolean;
   clientSlug: string;
   // Ruta de las pestañas del cliente (/clientes/[slug] o /mi-empresa).
@@ -77,7 +75,7 @@ export function TopVideos({
             </>
           )}
           <dl className="video-stats">
-            {metrics(v, by, showWon).map(([label, value]) => (
+            {metrics(v, showWon).map(([label, value]) => (
               <div key={label}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>

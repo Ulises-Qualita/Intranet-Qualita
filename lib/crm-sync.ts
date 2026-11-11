@@ -45,6 +45,16 @@ export type CrmSecrets = {
   // Planilla de ventas confirmadas (lib/sales-sheet.ts). Con ella, la venta y su
   // monto salen de la planilla y no del CRM.
   sales_sheet?: { id: string; url: string; title?: string };
+  // Cruces a mano venta → lead, para cuando la planilla no tiene teléfono y el
+  // nombre no coincide con el del CRM: número de proyecto → external_id del lead.
+  // Ganan sobre el cruce automático. Va aparte de sales_sheet para que no se
+  // pierda al volver a conectar la planilla.
+  sale_links?: Record<string, string>;
+  // Anuncios que el CRM recibe con otro nombre: el lead creado desde `since`
+  // (YYYY-MM-DD, hora argentina) con anuncio `from` se guarda con `to`. Caso
+  // Arteplac: desde una edición en bloque del 20/10 en Meta, los clicks en
+  // ..._WEB02 llegan a la web con el nombre de "AD 1 - Testimonio Depto PH".
+  ad_aliases?: { from: string; to: string; since?: string }[];
   // Va aparte de sync_error, como los chats: si la planilla falla se siguen
   // usando las ventas que ya estaban guardadas.
   sales_error?: string | null;
@@ -186,10 +196,17 @@ async function syncSales(
   sheetId: string,
   leads: CrmLead[],
   excluded: Map<string, unknown>,
+  links: Record<string, string> = {},
 ): Promise<{ rows: SaleRow[]; error: string | null; stats?: SalesStats }> {
   try {
     const { sales, undated } = await readSalesSheet(sheetId);
     const { matches, byName } = matchSales(sales, leads, excluded);
+    // Cruces a mano (sale_links): solo si la venta y el lead siguen existiendo.
+    const known = new Set(leads.map((l) => l.externalId));
+    const projects = new Set(sales.map((s) => s.project));
+    for (const [project, lead] of Object.entries(links)) {
+      if (projects.has(project) && known.has(lead)) matches.set(project, lead);
+    }
     const rows: SaleRow[] = sales.map((s) => ({
       client_id: clientId,
       project: s.project,
@@ -225,7 +242,18 @@ async function syncSales(
   }
 }
 
-export type CrmSyncResult = { clientId: string; ok: boolean; leads: number; error?: string };
+// Nombre del anuncio del lead con los alias del cliente aplicados (ad_aliases).
+function aliasAd(lead: CrmLead, aliases: CrmSecrets["ad_aliases"]) {
+  const ad = lead.ad?.trim();
+  if (!ad || !aliases?.length) return lead.ad;
+  const created = Date.parse(lead.createdAt);
+  const alias = aliases.find(
+    (a) => a.from.trim() === ad && (!a.since || created >= Date.parse(`${a.since}T00:00:00-03:00`)),
+  );
+  return alias ? alias.to : lead.ad;
+}
+
+export type CrmSyncResult ={ clientId: string; ok: boolean; leads: number; error?: string };
 
 export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
   const secrets = await getCrmSecrets(clientId);
@@ -244,7 +272,9 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     // Con planilla de ventas, ganada = tiene una venta en la planilla, y el monto
     // es el de esa venta (pesos y dólares por separado). Las etapas ganadas y los
     // presupuestos del CRM dejan de contar.
-    const sales = secrets.sales_sheet ? await syncSales(db, clientId, secrets.sales_sheet.id, leads, excluded) : null;
+    const sales = secrets.sales_sheet
+      ? await syncSales(db, clientId, secrets.sales_sheet.id, leads, excluded, secrets.sale_links)
+      : null;
     // La venta cuenta el día de la primera confirmación de la planilla.
     const sold = new Map<string, { ars: number | null; usd: number | null; on: string }>();
     for (const sale of sales?.rows ?? []) {
@@ -305,7 +335,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         // tiene, se guarda el resto en vez de perder el sync entero.
         status: statuses.get(l.externalId),
         owner: l.owner,
-        ad: l.ad,
+        ad: aliasAd(l, secrets.ad_aliases),
         tags: l.tags,
         stage_changed_at: l.stageChangedAt,
         contact_created_at: l.contactCreatedAt,

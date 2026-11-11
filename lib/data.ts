@@ -741,8 +741,9 @@ export const NO_CRM_LEAD = "Sin oportunidad en el CRM";
 
 // Corte por período de las ventas, por fecha de confirmación (no por la del lead,
 // así la facturación del mes es la de lo que se vendió en el mes). El origen sale
-// del lead del CRM con el mismo teléfono.
-export function salesPeriod(sales: Sale[], leads: Lead[], period: Period | number) {
+// del lead del CRM con el mismo teléfono. `noSource`: nombre de los leads sin
+// origen (noSourceLabel de lib/crm-shared.ts).
+export function salesPeriod(sales: Sale[], leads: Lead[], period: Period | number, noSource = "Sin origen") {
   const { since, until } = toPeriod(period);
   const inPeriod = sales.filter((s) => s.confirmed_on >= since && s.confirmed_on <= until);
   const leadOf = new Map(leads.map((l) => [l.external_id, l]));
@@ -753,13 +754,13 @@ export function salesPeriod(sales: Sale[], leads: Lead[], period: Period | numbe
     const seller = sale.seller ?? UNASSIGNED;
     bySeller.set(seller, [...(bySeller.get(seller) ?? []), sale]);
     const lead = sale.lead_external_id ? leadOf.get(sale.lead_external_id) : undefined;
-    const source = lead ? lead.source?.trim() || "Sin origen" : NO_CRM_LEAD;
+    const source = lead ? lead.source?.trim() || noSource : NO_CRM_LEAD;
     bySource.set(source, [...(bySource.get(source) ?? []), sale]);
   }
 
   const total = inPeriod.length || 1;
   const sum = (list: Sale[], key: "amount_ars" | "amount_usd") => list.reduce((t, s) => t + (s[key] ?? 0), 0);
-  const last = (name: string) => name === NO_CRM_LEAD || name === "Sin origen";
+  const last = (name: string) => name === NO_CRM_LEAD || name === noSource;
 
   return {
     sales: inPeriod,
@@ -946,10 +947,10 @@ export type SourceStats = { name: string; leads: number; share: number; ticketTo
 // De dónde vienen las oportunidades (o las ventas, si se le pasan solo las
 // ganadas). "Sin origen" va último y aparte: en el CRM el campo es opcional y
 // suele quedar vacío, así que conviene verlo separado.
-function groupSources(leads: Lead[]): SourceStats[] {
+function groupSources(leads: Lead[], noSource: string): SourceStats[] {
   const bySource = new Map<string, { leads: number; ticketTotal: number }>();
   for (const lead of leads) {
-    const name = lead.source?.trim() || "Sin origen";
+    const name = lead.source?.trim() || noSource;
     const source = bySource.get(name) ?? { leads: 0, ticketTotal: 0 };
     source.leads += 1;
     if (lead.amount && lead.amount > 0) source.ticketTotal += lead.amount;
@@ -960,13 +961,47 @@ function groupSources(leads: Lead[]): SourceStats[] {
   return [...bySource.entries()]
     .map(([name, s]) => ({ name, ...s, share: (s.leads * 100) / total }))
     .sort((a, b) => {
-      if (a.name === "Sin origen") return 1;
-      if (b.name === "Sin origen") return -1;
+      if (a.name === noSource) return 1;
+      if (b.name === noSource) return -1;
       return b.leads - a.leads;
     });
 }
 
-export type TagStats = { name: string; leads: number; won: number; ticketTotal: number };
+// "Oportunidades por origen" con los leads de publicidad que reportan las
+// plataformas (pedido del usuario): las filas Meta y Google Ads del CRM toman el
+// número de las solapas META (leads) y GADS (conversiones). `null` = la plataforma no se puede usar (sin conexión o sin
+// acceso) y la fila queda como en el CRM. Solo nombres exactos: "Instagram" suelto
+// puede ser orgánico y no se toca.
+export type AdSource = "meta" | "gads";
+const AD_SOURCES: { key: AdSource; name: string; match: RegExp }[] = [
+  { key: "meta", name: "Meta", match: /^(meta|meta ads|facebook ads)$/i },
+  { key: "gads", name: "Google Ads", match: /^(google|google ads|adwords)$/i },
+];
+
+export function sourcesWithAdLeads(
+  sources: SourceStats[],
+  platform: Record<AdSource, number | null>,
+  noSource: string,
+): (SourceStats & { platform?: AdSource })[] {
+  const rows: (SourceStats & { platform?: AdSource })[] = sources.map((s) => {
+    const ad = AD_SOURCES.find((a) => a.match.test(s.name.trim()));
+    const leads = ad ? platform[ad.key] : null;
+    return ad && leads !== null ? { ...s, leads: Math.round(leads), platform: ad.key } : { ...s };
+  });
+  // Si el CRM no tiene la fila pero la plataforma trajo leads, se suma.
+  for (const ad of AD_SOURCES) {
+    const leads = platform[ad.key];
+    if (leads && !rows.some((r) => r.platform === ad.key) && !rows.some((r) => ad.match.test(r.name.trim()))) {
+      rows.push({ name: ad.name, leads: Math.round(leads), share: 0, ticketTotal: 0, platform: ad.key });
+    }
+  }
+  const total = rows.reduce((t, r) => t + r.leads, 0) || 1;
+  return rows
+    .map((r) => ({ ...r, share: (r.leads * 100) / total }))
+    .sort((a, b) => Number(a.name === noSource) - Number(b.name === noSource) || b.leads - a.leads);
+}
+
+export type TagStats ={ name: string; leads: number; won: number; ticketTotal: number };
 
 // Oportunidades por etiqueta (creadas en el período) y sus ventas (por fecha de
 // venta). Una oportunidad puede tener varias, así que la suma de las filas no da
@@ -993,7 +1028,8 @@ function groupTags(leads: Lead[], sold: Lead[]): TagStats[] | null {
 // Corte por período para la vista de CRM. Las oportunidades van por fecha de
 // creación; las ventas (ganadas, tickets, facturación), por fecha de venta: un
 // lead de agosto que se gana en octubre es una venta de octubre (saleDay).
-export function crmPeriod(leads: Lead[], period: Period | number) {
+// `noSource`: nombre de los leads sin origen (noSourceLabel de lib/crm-shared.ts).
+export function crmPeriod(leads: Lead[], period: Period | number, noSource = "Sin origen") {
   const { since, until } = toPeriod(period);
   const inPeriod = leads.filter((l) => {
     const day = localDate(l.created_at);
@@ -1029,9 +1065,9 @@ export function crmPeriod(leads: Lead[], period: Period | number) {
     ticketAvg: tickets.length ? tickets.reduce((total, t) => total + t, 0) / tickets.length : null,
     ticketTotal: tickets.reduce((total, t) => total + t, 0),
     sellers: groupSellers(inPeriod, sold),
-    sources: groupSources(inPeriod),
+    sources: groupSources(inPeriod, noSource),
     // Sin la columna de estado no hay forma de saber cuáles son ventas.
-    wonSources: hasStatus ? groupSources(sold) : null,
+    wonSources: hasStatus ? groupSources(sold, noSource) : null,
     ads: groupAds(inPeriod, sold),
     tags: groupTags(inPeriod, sold),
   };
@@ -1202,10 +1238,27 @@ export type VideoPerformance = {
 // nombre: por eso se agrupa por nombre, sumando el gasto de todas las copias, y
 // la miniatura y la vista previa salen de la copia con más gasto.
 //
-// Orden: ventas ganadas, después oportunidades, después facturado (lo que el CRM
-// sabe y Meta no). Si ningún video tiene oportunidades atribuidas en el CRM, se
-// ordena por los leads que reporta Meta, y `by` lo indica para decirlo en la card.
-export function topVideoAds(campaigns: MetaCampaign[], crmAds: AdStats[], limit = 3) {
+// Los videos con mejor rendimiento del período (solapas META y CRM). Primero los que
+// tienen ventas atribuidas en el CRM (ganadas por fecha de venta, como en
+// crmPeriod), por ventas, facturado en pesos y en dólares, y menor gasto. Los
+// lugares que quedan se completan con los de mejor CPL según Meta (más leads a
+// igual CPL), sin repetir. Sin CRM (`crmAds` null) va solo por CPL.
+export function topMetaVideos(campaigns: MetaCampaign[], crmAds: AdStats[] | null, limit = 3) {
+  const videos = videoPerformance(campaigns, crmAds ?? []);
+  const sales = videos
+    .filter((v) => v.won > 0)
+    .sort((a, b) => b.won - a.won || b.ticketTotal - a.ticketTotal || b.usdTotal - a.usdTotal || a.spend - b.spend)
+    .slice(0, limit);
+  const cpl = (v: VideoPerformance) => v.spend / v.metaLeads;
+  const byCpl = videos
+    .filter((v) => v.won === 0 && v.metaLeads > 0)
+    .sort((a, b) => cpl(a) - cpl(b) || b.metaLeads - a.metaLeads)
+    .slice(0, limit - sales.length);
+  return { videos: [...sales, ...byCpl], bySales: sales.length, total: videos.length };
+}
+
+// Une cada video de Meta (agrupado por nombre) con lo que el CRM le atribuye.
+function videoPerformance(campaigns: MetaCampaign[], crmAds: AdStats[]): VideoPerformance[] {
   const byName = new Map<string, VideoPerformance>();
   for (const ad of campaigns.flatMap((c) => c.ads)) {
     if (ad.creative?.type !== "video") continue;
@@ -1238,16 +1291,7 @@ export function topVideoAds(campaigns: MetaCampaign[], crmAds: AdStats[], limit 
     v.usdTotal = stats.usdTotal;
   }
 
-  const videos = [...byName.values()];
-  const by: "crm" | "meta" = videos.some((v) => v.crmLeads > 0) ? "crm" : "meta";
-  const ranked =
-    by === "crm"
-      ? videos
-          .filter((v) => v.crmLeads > 0)
-          .sort((a, b) => b.won - a.won || b.crmLeads - a.crmLeads || b.ticketTotal - a.ticketTotal)
-      : videos.filter((v) => v.metaLeads > 0).sort((a, b) => b.metaLeads - a.metaLeads || a.spend - b.spend);
-
-  return { by, videos: ranked.slice(0, limit), total: videos.length };
+  return [...byName.values()];
 }
 
 // ---------- Inversión en Meta y Google Ads del estudio (Inicio) ----------

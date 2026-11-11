@@ -41,3 +41,15 @@ paths:
   `/clientes/[slug]/meta/analisis` (`components/analysis/analysis-view.tsx`) muestra
   lectura, lo que funciona, la lista para tildar (hecha / descartada, con quién y
   cuándo; `components/analysis/actions.ts`) y los análisis anteriores (`?id=`).
+- **Videos con mejor rendimiento** (solapa META, debajo de "Campañas y anuncios";
+  pedido para Arteplac): la misma card de videos de la solapa CRM (`TopVideos` con
+  `by="sales"`), con `topMetaVideos` de `lib/data.ts`. Hasta 3: primero los videos
+  con ventas atribuidas en el CRM (ganadas por fecha de venta, `crmPeriod(...).ads`
+  + `withMetaAdNames`), por ventas, facturado y menor gasto; los lugares que quedan
+  se completan con los de mejor CPL de Meta, sin repetir (pedido: que no quede un
+  solo video). Las ventas entran si el cliente tiene CRM y quien mira lo ve
+  (`seesCrm`: área `crm` en el equipo; en `/mi-empresa`, que la solapa CRM no esté
+  oculta para el cliente); si no, la card va solo por CPL y sin ventas ni facturado.
+  La card "Videos con mejor rendimiento" de la solapa CRM usa el mismo criterio
+  (antes iba por oportunidades del CRM, `topVideoAds`, que se borró); el texto de
+  la aclaración sale de `topVideosHint` (`crm/top-videos.tsx`).

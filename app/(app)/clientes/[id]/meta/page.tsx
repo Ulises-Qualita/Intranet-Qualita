@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
+import { canAccess } from "@/lib/auth-shared";
 import { getClient } from "@/lib/data";
 import { readPeriod } from "@/lib/period";
 import { MetaView } from "./meta-view";
@@ -24,5 +25,14 @@ export default async function ClienteMetaPage({
   }
   if (!c) notFound();
 
-  return <MetaView c={c} range={readPeriod(query)} base={`/clientes/${c.slug}`} internal anuncio={query.anuncio} />;
+  return (
+    <MetaView
+      c={c}
+      range={readPeriod(query)}
+      base={`/clientes/${c.slug}`}
+      internal
+      anuncio={query.anuncio}
+      seesCrm={canAccess(session.profile, "crm")}
+    />
+  );
 }

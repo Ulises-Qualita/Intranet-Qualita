@@ -26,6 +26,12 @@ export const isCrmProvider = (value: unknown): value is CrmProvider =>
 
 export const crmProviderLabel = (value: string) => CRM_PROVIDERS.find((p) => p.value === value)?.label ?? value;
 
+// Cómo se llaman las oportunidades sin origen cargado. En Kommo (Arteplac) todo
+// entra por WhatsApp, así que un lead sin origen es alguien que escribió directo
+// (pedido del usuario); en Odoo puede ser cualquier cosa y queda "Sin origen".
+export const noSourceLabel = (provider: string | null | undefined) =>
+  provider === "kommo" ? "WhatsApp directo" : "Sin origen";
+
 // Lead ya traducido al modelo de la intranet, venga del CRM que venga.
 export type CrmLead = {
   externalId: string;

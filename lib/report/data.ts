@@ -5,6 +5,7 @@
 // Meta y Google Ads, pipeline del CRM y Clarity. Cada parte es null si no hay
 // integración o datos; el HTML omite la sección en vez de inventar valores.
 import { getCrmSecrets } from "../crm-sync";
+import { noSourceLabel } from "../crm-shared";
 import {
   type Client,
   crmPeriod,
@@ -254,7 +255,8 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
   if (!client.conn.crm) return null;
   const [leads, secrets] = await Promise.all([getLeads(client.id), getCrmSecrets(client.id)]);
   const { since, until } = period;
-  const current = crmPeriod(leads, period);
+  const noSource = noSourceLabel(secrets?.provider);
+  const current = crmPeriod(leads, period, noSource);
   const inPeriod = current.leads;
   if (!inPeriod.length) return null;
 
@@ -344,7 +346,7 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
   const tickets = wonLeads.map((l) => l.amount).filter((a): a is number => !!a && a > 0);
   // Con planilla de ventas, la facturación oficial es la de ahí.
   const allSales = secrets?.sales_sheet ? await getSales(client.id) : null;
-  const sheet = allSales && salesPeriod(allSales, leads, period);
+  const sheet = allSales && salesPeriod(allSales, leads, period, noSource);
   const sales: ReportCrm["sales"] = sheet
     ? {
         fromSheet: true,

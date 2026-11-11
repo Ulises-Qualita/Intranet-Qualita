@@ -101,3 +101,30 @@ paths:
   **al momento de escribir**, en el orden del embudo (`stage_order`). Ahí cuenta cada
   vuelta (el cliente escribe, una o varias veces seguidas, hasta que le contestan),
   no solo la primera respuesta a leads nuevos.
+- Cruces a mano venta → lead: `sale_links` en los secrets del CRM (número de proyecto
+  → `external_id` del lead), para ventas de la planilla sin teléfono cuyo nombre no
+  coincide con el del CRM. `syncSales` los aplica por encima de `matchSales` si la
+  venta y el lead siguen existiendo. Sin pantalla: se cargan en la base. Arteplac:
+  `2026-5072` (Emma Dhillon, sin teléfono en la planilla) → `26054299` (contacto
+  Satnam en Kommo).
+- Leads sin origen: `noSourceLabel(provider)` de `lib/crm-shared.ts`, que se pasa a
+  `crmPeriod` / `salesPeriod`. En Kommo se llaman **"WhatsApp directo"** (en
+  Arteplac todo entra por WhatsApp; pedido del usuario), en Odoo siguen "Sin origen".
+- "Oportunidades por origen" (solapa CRM): las filas **Meta** y **Google Ads** usan
+  los leads que reporta cada plataforma en el período (leads de `intranet_meta_daily`
+  = KPI de la solapa META; conversiones de `intranet_gads_daily` = solapa GADS), no
+  las oportunidades del CRM con ese origen (pedido del usuario). `sourcesWithAdLeads`
+  de `lib/data.ts`: solo nombres exactos (`Meta`, `Google Ads`…; "Instagram" suelto
+  puede ser orgánico), suma la fila si el CRM no la tiene, recalcula el % sobre el
+  total de la card. No se muestra cuántas había en el CRM (pedido). Pide el área META
+  (`seesMeta`); sin ella o sin la integración, la fila queda como en el CRM. El KPI
+  "Oportunidades", el embudo, el agente y los reportes siguen contando el CRM.
+- Alias de anuncios: `ad_aliases` en los secrets del CRM (`{ from, to, since }`):
+  `syncCrmClient` guarda en `intranet_leads.ad` el nombre `to` para los leads con
+  anuncio `from` creados desde `since` (`aliasAd` en `lib/crm-sync.ts`). Sin
+  pantalla: se cargan en la base. Arteplac: "AD 1 - Testimonio Depto PH" →
+  `ATP_COC_A01_D07_TESTIMONIAL_VID_V01_WEB02` desde 2026-10-20. Ese día se
+  editaron en bloque WEB02 y tres anuncios "AD 1" (pausados, 0 impresiones desde
+  entonces) y desde ahí los clicks de WEB02 llegan a la web con `ad_name` = "AD 1 -
+  Testimonio Depto PH" (WEB02 trajo 83 leads según Meta y ninguno con su nombre en
+  el CRM). Puede pasar lo mismo con `..._WEB09` (duplicado de `..._WEB08`).

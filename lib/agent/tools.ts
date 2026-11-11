@@ -28,6 +28,7 @@ import {
   type Client,
 } from "../data";
 import { chatStats, duration, getChatEvents, getChatStart, getStageEvents, replyTurns, stageEntries, turnStats, WORK_HOURS, type ReplyTurn } from "../crm-chats";
+import { noSourceLabel } from "../crm-shared";
 import { getCrmSecrets } from "../crm-sync";
 import { localDate, todayISO } from "../format";
 import { customPeriod, lastDays, monthPeriod, type Period } from "../period";
@@ -363,10 +364,11 @@ const crmResumen: AgentTool = {
     const [leads, snapshot, secrets] = await Promise.all([getLeads(client.id), getCrmSnapshot(client.id), getCrmSecrets(client.id)]);
     if (!leads.length) return { cliente: client.name, periodo: periodOut(range), aviso: "No hay leads sincronizados." };
 
-    const period = crmPeriod(leads, range);
+    const noSource = noSourceLabel(secrets?.provider);
+    const period = crmPeriod(leads, range, noSource);
     // Con planilla, la venta y la facturación oficiales salen de ahí.
     const allSales = secrets?.sales_sheet ? await getSales(client.id) : null;
-    const sheet = allSales && salesPeriod(allSales, leads, range);
+    const sheet = allSales && salesPeriod(allSales, leads, range, noSource);
     // El CRM puede guardar el anuncio con un nombre corto: se pasa al de Meta (solo
     // los nombres; si no se pueden leer, quedan los del CRM).
     const campaigns = client.conn.meta ? await getMetaCampaigns(client.id, range).catch(() => null) : null;

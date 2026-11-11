@@ -303,16 +303,18 @@ body {
   .funnel-card { display: flex; flex-direction: column; }
   /* Apiladas, las dos tarjetas de origen se reparten ese alto. */
   .stack-cards > .source-card { flex: 1; }
-  /* Columna derecha del CRM (crm-view.tsx): no cuenta para el alto de la fila
-     (height 0 + min-height 100%, como feed-card), así lo manda la izquierda
-     (embudo, vendedores, anuncios). Los orígenes van con su alto y "Últimas
-     oportunidades" ocupa lo que queda, con scroll adentro. */
-  .crm-side { height: 0; min-height: 100%; }
+  /* Columna derecha del CRM (crm-view.tsx): los orígenes van con su alto y
+     "Últimas oportunidades" ocupa lo que queda, con scroll adentro. La lista
+     tiene base 0px (no 0%, que con alto indefinido cuenta como contenido), así
+     que no agranda la fila: el alto lo manda la izquierda (embudo, vendedores,
+     anuncios), salvo que los orígenes sean más altos; ahí crece la fila en vez
+     de desbordarse sobre la tarjeta de abajo (antes era height 0 y se pisaban). */
   .crm-side > .source-card { flex: none; }
-  .crm-side > .feed-card { flex: 1; height: auto; min-height: 0; }
+  .crm-side > .feed-card { flex: 1 1 0px; height: auto; min-height: 0; }
+  .crm-side .feed-list { flex: 1 1 0px; min-height: 160px; }
   @media (max-width: 1150px) {
-    .crm-side { height: auto; min-height: 0; }
-    .crm-side .feed-list { max-height: 480px; }
+    .crm-side > .feed-card { flex: none; }
+    .crm-side .feed-list { flex: none; min-height: 0; max-height: 480px; }
   }
 
   .lead-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }

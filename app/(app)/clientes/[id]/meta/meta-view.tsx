@@ -5,7 +5,18 @@ import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, MissingIntegration } from "@/components/ui";
 import { type Better, compare } from "@/lib/compare";
-import { type Client, getMetaCampaigns, getMetaDaily, getMetaFirstDate, type MetaDaily } from "@/lib/data";
+import {
+  type Client,
+  crmPeriod,
+  getLeads,
+  getMetaCampaigns,
+  getMetaDaily,
+  getMetaFirstDate,
+  type MetaDaily,
+  topMetaVideos,
+  withMetaAdNames,
+} from "@/lib/data";
+import { TopVideos, topVideosHint } from "../crm/top-videos";
 import { compact, integer, money, orDash, percent, safeDiv, shortDate, todayISO } from "@/lib/format";
 import { META_HISTORY_DAYS, type Period, periodPhrase, periodQuery, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
 import { AnalysisBar } from "@/components/analysis/analysis-bar";
@@ -16,19 +27,22 @@ import { CampaignTable } from "./campaign-table";
 // Métricas de META de un cliente. La usan el equipo (/clientes/[slug]/meta) y la
 // cuenta del propio cliente (/mi-empresa/meta): quien la llama ya validó el
 // acceso. Con `internal` en false no se muestran los avisos de sincronización ni
-// los links para reconectar, que son tarea del equipo.
+// los links para reconectar, que son tarea del equipo. `seesCrm` decide si los
+// videos con mejor rendimiento se ordenan primero por ventas del CRM.
 export async function MetaView({
   c,
   range,
   base,
   internal,
   anuncio,
+  seesCrm,
 }: {
   c: Client;
   range: Period;
   base: string;
   internal: boolean;
   anuncio?: string;
+  seesCrm: boolean;
 }) {
   if (!c.conn.meta) {
     return (
@@ -51,12 +65,20 @@ export async function MetaView({
   const showAnalysis = internal && (await featureEnabled("platformAnalysis"));
   // Para comparar: el período anterior del mismo largo, y desde cuándo hay datos.
   const previous = previousPeriod(range);
-  const [daily, campaigns, before, firstDate] = await Promise.all([
+  // Videos con mejor rendimiento: las ventas salen del CRM, así que entran solo si
+  // el cliente tiene CRM y el usuario puede verlo; si no, van solo por CPL.
+  const withSales = c.conn.crm && seesCrm;
+  const [daily, campaigns, before, firstDate, leads] = await Promise.all([
     getMetaDaily(c.id, range),
     getMetaCampaigns(c.id, range),
     getMetaDaily(c.id, previous),
     getMetaFirstDate(c.id),
+    withSales ? getLeads(c.id) : null,
   ]);
+  // Ventas por anuncio del período (por fecha de venta), con el nombre corto del
+  // CRM pasado al de Meta, igual que en la solapa CRM.
+  const crmAds = leads && withMetaAdNames(crmPeriod(leads, range).ads, campaigns.flatMap((cp) => cp.ads));
+  const top = topMetaVideos(campaigns, crmAds);
 
   const totals = (rows: MetaDaily[]) => {
     const sum = (key: "spend" | "leads" | "impressions" | "clicks") => rows.reduce((acc, d) => acc + d[key], 0);
@@ -163,6 +185,24 @@ export async function MetaView({
             <EmptyState label="Sin datos">Ningún anuncio tuvo entrega {periodPhrase(range)}.</EmptyState>
           ) : (
             <CampaignTable campaigns={campaigns} clientSlug={c.slug} highlight={anuncio} />
+          )}
+        </Card>
+
+        <Card title="Videos con mejor rendimiento" hint={`${topVideosHint(top, withSales)} · ${range.label}`} className="mb-4">
+          {top.videos.length ? (
+            <TopVideos
+              videos={top.videos}
+              showWon={withSales}
+              clientSlug={c.slug}
+              base={base}
+              query={periodQuery(range)}
+            />
+          ) : (
+            <EmptyState label="Sin datos">
+              {top.total
+                ? `Ningún video generó ${withSales ? "ventas ni leads" : "leads"} ${periodPhrase(range)}.`
+                : `No hay anuncios de video con entrega ${periodPhrase(range)} (o todavía no se sincronizaron sus creativos).`}
+            </EmptyState>
           )}
         </Card>
 
