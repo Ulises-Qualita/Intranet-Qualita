@@ -84,8 +84,8 @@ No hay framework de tests configurado todavía.
   escriben con service_role validan con `canManageClient(clientId)`
   (`app/(app)/clientes/actions.ts`), no solo con el área. `addClient` asigna a quien
   crea el cliente (si no es admin), porque si no, no lo vería.
-- Objetivo de facturación (Vista general, **solo equipo**: `OverviewView` lo lee
-  con `internal`): un monto en pesos por mes en `intranet_clients.billing_goals`
+- Objetivo de facturación (Vista general; lo ve también la cuenta del cliente, pero
+  "Editar objetivo" solo aparece con `internal`): un monto en pesos por mes en `intranet_clients.billing_goals`
   (`docs/sql/2026-11-02-objetivo-facturacion.sql`), cargado a mano con "Editar
   objetivo" (`saveBillingGoal`). Un mes sin objetivo propio hereda el del último mes
   cargado antes (`goalFor` en `lib/billing-goals.ts`). Se compara con la facturación

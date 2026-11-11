@@ -41,8 +41,9 @@ export async function OverviewView({
     c.conn.google_ads ? getGadsDaily(c.id, range) : [],
     c.conn.crm ? getLeads(c.id) : [],
     c.conn.crm ? getCrmSecrets(c.id) : null,
-    // El objetivo de facturación es solo del equipo: la cuenta del cliente no lo lee.
-    internal ? getBillingGoals(c.id) : null,
+    // El objetivo de facturación lo ve también la cuenta del cliente (solo lectura:
+    // "Editar objetivo" es del equipo).
+    getBillingGoals(c.id),
   ]);
   // Con planilla de ventas, las ventas y la facturación salen de ahí (por fecha de confirmación).
   const allSales = secrets?.sales_sheet ? await getSales(c.id) : null;
@@ -149,14 +150,18 @@ export async function OverviewView({
       <Card
         title="Objetivo de facturación"
         action={
-          month && !billingGoals.missing ? (
+          internal && month && !billingGoals.missing ? (
             <BillingGoalEditor clientId={c.id} month={month} monthLabel={label(month)} own={own} inherited={inherited} />
           ) : undefined
         }
         hint={periodo}
       >
         {billingGoals.missing ? (
-          <EmptyState label="Pendiente">Falta correr docs/sql/2026-11-02-objetivo-facturacion.sql en Supabase.</EmptyState>
+          <EmptyState label="Pendiente">
+            {internal
+              ? "Falta correr docs/sql/2026-11-02-objetivo-facturacion.sql en Supabase."
+              : "Todavía no hay un objetivo de facturación cargado."}
+          </EmptyState>
         ) : !month ? (
           <EmptyState label="Sin datos">El objetivo es mensual: elegí un mes en el período para verlo.</EmptyState>
         ) : !goal ? (

@@ -308,9 +308,12 @@ body {
      tiene base 0px (no 0%, que con alto indefinido cuenta como contenido), así
      que no agranda la fila: el alto lo manda la izquierda (embudo, vendedores,
      anuncios), salvo que los orígenes sean más altos; ahí crece la fila en vez
-     de desbordarse sobre la tarjeta de abajo (antes era height 0 y se pisaban). */
+     de desbordarse sobre la tarjeta de abajo (antes era height 0 y se pisaban).
+     min-height auto (no 0): la tarjeta nunca queda más baja que su título + el
+     mínimo de la lista; con 0 se achicaba y la lista se salía encima de "Videos
+     con mejor rendimiento". */
   .crm-side > .source-card { flex: none; }
-  .crm-side > .feed-card { flex: 1 1 0px; height: auto; min-height: 0; }
+  .crm-side > .feed-card { flex: 1 1 0px; height: auto; min-height: auto; }
   .crm-side .feed-list { flex: 1 1 0px; min-height: 160px; }
   @media (max-width: 1150px) {
     .crm-side > .feed-card { flex: none; }
