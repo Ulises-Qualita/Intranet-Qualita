@@ -2,8 +2,10 @@
 // endpoint SSE (app/api/analisis/route.ts), que va mostrando cada paso en un modal.
 import type { Client } from "../data";
 import type { Period } from "../period";
+import { criteriaBlocks } from "../ad-criteria";
 import { isMissingTable } from "../supabase/server";
 import { analyzeWithClaude } from "./ai";
+import { buildGadsContext } from "./gads-data";
 import { AnalysisDataError, buildMetaContext } from "./meta-data";
 import type { AnalysisResult, Platform } from "./shared";
 import { followUpContext, getAnalyses, saveAnalysis } from "./store";
@@ -42,23 +44,26 @@ export async function generateAnalysis(
   user: { id: string; seesCrm: boolean },
   progress: AnalysisProgress,
 ): Promise<{ id: string; dropped: number }> {
-  if (platform !== "meta") throw new AnalysisError("El análisis de Google Ads todavía no está disponible.");
-  if (!client.conn.meta) throw new AnalysisError("El cliente no tiene Meta conectado.");
+  const isMeta = platform === "meta";
+  if (isMeta && !client.conn.meta) throw new AnalysisError("El cliente no tiene Meta conectado.");
+  if (!isMeta && !client.conn.google_ads) throw new AnalysisError("El cliente no tiene Google Ads conectado.");
 
   // El análisis anterior: sirve para el seguimiento y para saber si están las tablas.
   const previous = await getAnalyses(client.id, platform, 1);
   if (previous === null) throw new AnalysisError("Falta crear las tablas del análisis (docs/sql/2026-10-15-analisis-plataforma.sql).");
 
   progress.step("datos");
-  const { context, targets } = await buildMetaContext(client, period, user.seesCrm).catch((e) => {
+  const { context, targets } = await (isMeta ? buildMetaContext(client, period, user.seesCrm) : buildGadsContext(client, period)).catch((e) => {
     if (e instanceof AnalysisDataError) throw new AnalysisError(e.message);
     console.error("[analisis] datos", client.id, e);
-    throw new AnalysisError("No se pudo leer la cuenta de Meta. Probá de nuevo en un rato.");
+    throw new AnalysisError(`No se pudo leer la cuenta de ${isMeta ? "Meta" : "Google Ads"}. Probá de nuevo en un rato.`);
   });
   const followUp = followUpContext(previous[0]);
+  // Lo que cargó la agencia en Administración → Criterio de pauta.
+  const { blocks: criteria } = await criteriaBlocks(platform);
 
   progress.step("claude");
-  const { result, model } = await analyzeWithClaude(followUp ? { ...context, analisisAnterior: followUp } : context, user.id).catch((e) => {
+  const { result, model } = await analyzeWithClaude(platform, followUp ? { ...context, analisisAnterior: followUp } : context, user.id, criteria).catch((e) => {
     console.error("[analisis] claude", client.id, e);
     throw new AnalysisError(e instanceof Error ? e.message : "Claude no pudo analizar la cuenta.");
   });

@@ -9,7 +9,9 @@ import { type Client, type GadsCampaign, type GadsMetrics, getGadsCampaigns, get
 import { compact, integer, money, orDash, percent, safeDiv, shortDate, todayISO } from "@/lib/format";
 import { formatCustomerId } from "@/lib/google-ads";
 import { prepareGadsView } from "@/lib/google-ads-sync";
-import { GADS_HISTORY_DAYS, type Period, periodPhrase, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
+import { GADS_HISTORY_DAYS, type Period, periodPhrase, periodQuery, previousPeriod, shiftDate, versusLabel } from "@/lib/period";
+import { AnalysisBar } from "@/components/analysis/analysis-bar";
+import { featureEnabled } from "@/lib/features";
 
 // Métricas de Google Ads de un cliente. La usan el equipo (/clientes/[slug]/gads) y
 // la cuenta del propio cliente (/mi-empresa/gads): quien la llama ya validó el
@@ -69,7 +71,10 @@ export async function GadsView({ c, range, base, internal }: { c: Client; range:
   const beforeHistory = range.since < shiftDate(todayISO(), GADS_HISTORY_DAYS);
 
   // Asegura datos la primera vez y programa el refresco si quedaron viejos.
-  const secrets = await prepareGadsView(c.id, accountRef);
+  const [secrets, showAnalysis] = await Promise.all([
+    prepareGadsView(c.id, accountRef),
+    internal ? featureEnabled("platformAnalysis") : false,
+  ]);
   const previous = previousPeriod(range);
   const [daily, campaigns, before, firstDate] = await Promise.all([
     getGadsDaily(c.id, range),
@@ -104,6 +109,17 @@ export async function GadsView({ c, range, base, internal }: { c: Client; range:
             </Link>
           )}
         </SyncStatus>
+        {/* Analizar plataforma: solo el equipo (la página ya validó el área META). */}
+        {showAnalysis && (
+          <AnalysisBar
+            clientId={c.id}
+            clientSlug={c.slug}
+            platform="google_ads"
+            period={periodQuery(range)}
+            periodLabel={range.label}
+            href={`/clientes/${c.slug}/gads/analisis`}
+          />
+        )}
         {beforeHistory && (
           <p className="hint-text mb-4">
             Se guardan los últimos {GADS_HISTORY_DAYS} días de Google Ads: antes de esa fecha no hay datos para mostrar.

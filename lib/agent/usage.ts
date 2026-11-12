@@ -18,6 +18,7 @@ export const USAGE_KINDS = [
     unit: ["análisis", "análisis"],
     empty: "Todavía no se generaron análisis de campañas en este período.",
   },
+  { kind: "marca", title: "Manuales de marca", unit: ["manual", "manuales"], empty: "Todavía no se leyeron manuales de marca en este período." },
 ] as const;
 
 export type UsageKind = (typeof USAGE_KINDS)[number]["kind"];

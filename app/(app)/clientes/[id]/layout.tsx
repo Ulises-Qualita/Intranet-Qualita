@@ -34,6 +34,8 @@ const CLIENT_NAV = (
     { suffix: "/tareas", label: "Tareas", area: "tareas", tab: "tareas" },
     { suffix: "/portal", label: "Calendario", area: "clientes", tab: "portal" },
     { suffix: "/equipo", label: "Equipo", area: "clientes", tab: "equipo" },
+    // Brandbook del cliente. Para la cuenta del cliente arranca apagada.
+    { suffix: "/marca", label: "Manual de marca", area: "clientes", tab: "marca" },
   ] satisfies ClientNavItem[]
 ).filter((item) => SHOW_TASKS || item.suffix !== "/tareas");
 

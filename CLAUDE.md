@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Notas para Claude Code (complementan AGENTS.md)
 
-Las notas de cada integración o solapa (Meta, Clarity, Notion, Agente, Foro,
+Las notas de cada integración o solapa (Meta, Clarity, Notion, Agente, Foro, Manual de marca,
 Reuniones, Drive, Reportes, Google Ads, CRM, Portal/Hitos, SEO) están en
 `.claude/rules/*.md` y se cargan solas al tocar los archivos de esa función.
 Al documentar algo nuevo de una de ellas, agregarlo ahí y no acá.
@@ -57,7 +57,8 @@ No hay framework de tests configurado todavía.
   compartido con el otro app.
 - Administración en solapas con ruta propia, en el grupo `app/(app)/admin/(tabs)/`:
   `/admin` (Usuarios y accesos), `/admin/cuentas` (Cuentas de clientes, solo rol
-  admin) y `/admin/gastos`. Mismo esquema que el panel del cliente: el `layout.tsx`
+  admin), `/admin/criterio` (Criterio de pauta, ver `.claude/rules/meta.md`) y
+  `/admin/gastos`. Mismo esquema que el panel del cliente: el `layout.tsx`
   del grupo dibuja el `Topbar` y la barra (`admin-tabs.tsx`, con las clases
   `client-tabbar` / `client-tab`), las páginas no dibujan `Topbar` y el `loading.tsx`
   usa `TabSkeleton`. `/admin/notion` queda fuera del grupo. Las acciones de cuentas
@@ -106,7 +107,9 @@ No hay framework de tests configurado todavía.
   por separado para el equipo y para la cuenta del cliente (Vista general siempre se
   ve). Catálogo en `lib/client-tabs.ts`; se guardan las **ocultas** en
   `intranet_clients.hidden_tabs` (`docs/sql/2026-09-28-solapas-cliente.sql`), así una
-  solapa nueva aparece activa sin migrar. `Client.hiddenTabs` filtra la barra de solapas del cliente (`app/(app)/clientes/[id]/layout.tsx`, arriba del contenido; el selector de período y el engranaje de la solapa van en el encabezado, a la izquierda del tema, con `ClientPeriodBar`; el período es uno solo para todas las solapas y viaja en sus links) y
+  solapa nueva aparece activa sin migrar (salvo las de `CLIENT_DEFAULT_OFF`, como
+  Manual de marca, que para el cliente arrancan apagadas: ver `.claude/rules/marca.md`).
+  `Client.hiddenTabs` filtra la barra de solapas del cliente (`app/(app)/clientes/[id]/layout.tsx`, arriba del contenido; el selector de período y el engranaje de la solapa van en el encabezado, a la izquierda del tema, con `ClientPeriodBar`; el período es uno solo para todas las solapas y viaja en sus links) y
   `clientTabs()`, y cada solapa tiene un `layout.tsx` con `TeamTabGate` /
   `ClientTabGate` (`components/tab-gate.tsx`) para que no se pueda entrar por URL.
   Una solapa nueva del cliente tiene que sumarse a `CLIENT_TABS` (y a `CLIENT_NAV` del
@@ -131,6 +134,9 @@ No hay framework de tests configurado todavía.
   `NavToggle` va en `Topbar` y `ClientHeader`; cada sidebar lleva `NavDrawerCloser`
   (fondo para cerrar, cierre al navegar y con Escape). Un encabezado nuevo que no use
   `Topbar` tiene que sumar `NavToggle`, o en el celular no hay forma de navegar.
+- Acciones de fila (Editar, Borrar, Abrir…): `ActionButton` de `components/actions.tsx`
+  (ícono + texto, con borde; `danger` para borrar), nunca links de texto. Confirmar
+  con `ConfirmDialog` del mismo archivo, nunca `window.confirm` (pedido del usuario).
 - Estilos: clases del mockup en `app/globals.css` (`@layer components`); tema oscuro =
   clase `.dark` en `<html>` + `localStorage("theme")`. Ojo con nombres de clase que
   choquen con utilidades de Tailwind (p. ej. `mb-16`).

@@ -38,6 +38,8 @@ export function clientTabs(client: Client) {
     { href: `${CLIENT_BASE}/guias`, label: "Guías", show: client.conn.drive && !!client.guidesFolder && driveConfigured(), tab: "guias" },
     // Siempre visible: si no hay nadie asignado, la vista lo dice.
     { href: `${CLIENT_BASE}/equipo`, label: "Equipo", show: true, tab: "equipo" },
+    // Arranca apagada (CLIENT_DEFAULT_OFF): el equipo la prende por cliente.
+    { href: `${CLIENT_BASE}/marca`, label: "Manual de marca", show: true, tab: "marca" },
   ];
   return tabs
     .filter((t) => t.show && !(t.tab && isTabHidden(client.hiddenTabs, "client", t.tab)))

@@ -29,6 +29,11 @@ export const AI_TASKS = [
     label: "Análisis de plataforma",
     detail: "Las recomendaciones de \"Analizar plataforma\" en META y GADS. Sin esfuerzo elegido usa Alto.",
   },
+  {
+    key: "marca",
+    label: "Manual de marca",
+    detail: "La lectura del brandbook en PDF: colores, tipografías, logo y tono. Sin esfuerzo elegido usa Medio.",
+  },
 ] as const;
 
 export type AiTask = (typeof AI_TASKS)[number]["key"];

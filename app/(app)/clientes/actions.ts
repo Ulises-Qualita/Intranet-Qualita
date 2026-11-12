@@ -3,7 +3,7 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getAreaSession } from "@/lib/auth";
 import { isClientStatus } from "@/lib/client-status";
-import { isTabKey, parseHiddenTabs, tabInZone, type TabZone } from "@/lib/client-tabs";
+import { applyTabChange, isTabKey, tabInZone, type TabZone } from "@/lib/client-tabs";
 import { crmProviderLabel, isCrmProvider } from "@/lib/crm-shared";
 import { deleteCrmSecrets, getCrmSecrets, saveCrmSecrets, syncCrmClient } from "@/lib/crm-sync";
 import { driveErrorMessage, getItem, isDriveId, isInside } from "@/lib/drive";
@@ -192,8 +192,7 @@ export async function setClientTab(clientId: string, zone: TabZone, tab: string,
   if (readError?.code === "42703") return { ok: false, error: "Falta correr docs/sql/2026-09-28-solapas-cliente.sql en Supabase." };
   if (readError || !row) return { ok: false, error: dbError(readError?.code, "No se encontró el cliente.") };
 
-  const hidden = parseHiddenTabs(row.hidden_tabs);
-  hidden[zone] = visible ? hidden[zone].filter((k) => k !== tab) : [...new Set([...hidden[zone], tab])];
+  const hidden = applyTabChange(row.hidden_tabs, zone, tab, visible);
 
   const { data, error } = await supabase
     .from("intranet_clients")

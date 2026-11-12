@@ -16,7 +16,7 @@ paths:
   El token de usuario de larga duración (~60 días) va en `intranet_integration_secrets`
   (provider `meta`) y `account_ref` guarda el `act_…`. Graph API en `lib/meta.ts`. Env:
   `META_APP_ID`, `META_APP_SECRET`, opcionales `META_LOGIN_CONFIG_ID`, `META_GRAPH_VERSION`.
-- **Analizar plataforma** (solapa META, solo equipo con área `meta`; GADS pendiente).
+- **Analizar plataforma** (solapas META y GADS, solo equipo con área `meta`; lo de Google Ads está en `.claude/rules/google-ads.md`).
   **Desactivada por defecto**: la prende un admin en Administración → Funciones en
   prueba (`lib/features.ts`, fila `features` de `intranet_settings`, clave
   `platformAnalysis`; la franja, el endpoint, la pantalla y la acción lo chequean).
@@ -41,6 +41,18 @@ paths:
   `/clientes/[slug]/meta/analisis` (`components/analysis/analysis-view.tsx`) muestra
   lectura, lo que funciona, la lista para tildar (hecha / descartada, con quién y
   cuándo; `components/analysis/actions.ts`) y los análisis anteriores (`?id=`).
+- **Criterio de pauta** (Administración → `/admin/criterio`, 2026-11-12): textos
+  escritos y archivos (PDF, Word, txt/md/csv, imágenes) por plataforma (Meta y Google
+  Ads) que Claude recibe en cada análisis antes del contexto (`criteriaBlocks` de
+  `lib/ad-criteria.ts`, como bloques `document`/`image`; tope de 15 MB de adjuntos),
+  con la regla de seguirlo y decir cuándo los datos piden apartarse. Tabla
+  `intranet_ad_criteria` + bucket privado `intranet-ad-criteria`
+  (`docs/sql/2026-11-12-criterio-pauta.sql`). La subida va del navegador a Storage con
+  URL firmada; después `criterionUploaded` extrae el texto de Word (`mammoth`) y de
+  los de texto y lo guarda en `content` (Claude no lee .docx); PDF e imágenes se
+  bajan y se mandan tal cual. Cada uno se puede pausar. Lo ve el área admin, lo
+  cambia el rol admin (`app/(app)/admin/criteria-actions.ts`, UI en
+  `criteria-admin.tsx`). La RLS deja leer también al área META, que corre el análisis.
 - **Videos con mejor rendimiento** (solapa META, debajo de "Campañas y anuncios";
   pedido para Arteplac): la misma card de videos de la solapa CRM (`TopVideos` con
   `by="sales"`), con `topMetaVideos` de `lib/data.ts`. Hasta 3: primero los videos

@@ -42,3 +42,16 @@ paths:
   (`getGadsSpendByClient`) y el reporte. La cuenta del cliente lee sus totales
   diarios para la Vista general (`docs/sql/2026-10-07-google-ads-cliente.sql`) y,
   desde 2026-10-19, también las campañas. Falta llevarlo al agente.
+- **Analizar plataforma** en GADS (2026-11-12): mismo sistema que META (ver
+  `.claude/rules/meta.md`), con `AnalysisBar` en `gads-view.tsx` y la pantalla
+  `/clientes/[slug]/gads/analisis`. `lib/analysis/gads-data.ts` lee en vivo por GAQL:
+  campañas (tipo, puja, CPA/ROAS objetivo, presupuesto, redes, cuota de impresiones
+  perdida por presupuesto y ranking), grupos de anuncios, grupos de recursos de PMax,
+  palabras clave (concordancia, nivel de calidad; 80 de más gasto), términos de
+  búsqueda (80), anuncios RSA con títulos y descripciones (40), acciones de
+  conversión (primaria o no) y conversiones por acción, y cortes por dispositivo, día,
+  edad y sexo. Solo la cuenta y las campañas son obligatorias; el resto, si falla,
+  queda vacío. Los anuncios no tienen nombre: se nombran `"primer título" (id …)`.
+  Categorías y niveles de destino por plataforma en `lib/analysis/shared.ts`
+  (`CATEGORIES`, `PLATFORM_TARGET_LEVELS`) y prompt por plataforma en `ai.ts`. Sin CRM:
+  las ventas no se cruzan con Google Ads. Las mismas tablas (columna `platform`).

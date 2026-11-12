@@ -183,7 +183,7 @@ export type AdsCampaignDay = AdsMetrics & {
   channel: string | null;
 };
 
-type RawMetrics = {
+export type RawMetrics = {
   impressions?: string;
   clicks?: string;
   costMicros?: string;
@@ -191,10 +191,10 @@ type RawMetrics = {
   conversionsValue?: number;
 };
 
-const METRIC_FIELDS = "metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value";
+export const METRIC_FIELDS = "metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value";
 
 // Los enteros llegan como texto (int64) y el costo en millonésimas.
-const toMetrics = (m: RawMetrics = {}): AdsMetrics => ({
+export const toMetrics = (m: RawMetrics = {}): AdsMetrics => ({
   impressions: Number(m.impressions ?? 0),
   clicks: Number(m.clicks ?? 0),
   cost: Math.round(Number(m.costMicros ?? 0) / 10_000) / 100,
@@ -203,7 +203,7 @@ const toMetrics = (m: RawMetrics = {}): AdsMetrics => ({
 });
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const between = (since: string, until: string) => {
+export const between = (since: string, until: string) => {
   if (!ISO_DATE.test(since) || !ISO_DATE.test(until)) throw new GoogleAdsError("Rango de fechas inválido.");
   return `segments.date BETWEEN '${since}' AND '${until}'`;
 };

@@ -11,7 +11,7 @@ export const FEATURES = [
     key: "platformAnalysis",
     label: "Analizar plataforma",
     detail:
-      "Botón en las solapas META (y GADS, cuando esté) que analiza la cuenta publicitaria con Claude y deja recomendaciones para tildar. Solo lo ve el equipo con el área META.",
+      "Botón en las solapas META y GADS que analiza la cuenta publicitaria con Claude y deja recomendaciones para tildar. Solo lo ve el equipo con el área META.",
   },
   {
     key: "forum",

@@ -13,19 +13,31 @@ export type Priority = (typeof PRIORITIES)[number];
 export const EFFORTS = ["bajo", "medio", "alto"] as const;
 export type Effort = (typeof EFFORTS)[number];
 
-export const CATEGORIES = [
-  "presupuesto",
-  "segmentación",
-  "creatividades",
-  "estructura",
-  "puja y optimización",
-  "ubicaciones",
-  "medición",
-  "embudo y ventas",
-] as const;
+// Categorías y lugares a los que puede apuntar una recomendación, por plataforma:
+// el esquema que recibe Claude usa solo los de la plataforma analizada.
+export const CATEGORIES: Record<Platform, readonly string[]> = {
+  meta: ["presupuesto", "segmentación", "creatividades", "estructura", "puja y optimización", "ubicaciones", "medición", "embudo y ventas"],
+  google_ads: [
+    "presupuesto",
+    "palabras clave",
+    "términos de búsqueda",
+    "anuncios y recursos",
+    "segmentación",
+    "estructura",
+    "puja y optimización",
+    "redes y dispositivos",
+    "medición",
+    "embudo y ventas",
+  ],
+};
 
-export const TARGET_LEVELS = ["cuenta", "campaña", "conjunto", "anuncio"] as const;
+export const TARGET_LEVELS = ["cuenta", "campaña", "conjunto", "grupo de anuncios", "grupo de recursos", "palabra clave", "anuncio"] as const;
 export type TargetLevel = (typeof TARGET_LEVELS)[number];
+
+export const PLATFORM_TARGET_LEVELS: Record<Platform, readonly TargetLevel[]> = {
+  meta: ["cuenta", "campaña", "conjunto", "anuncio"],
+  google_ads: ["cuenta", "campaña", "grupo de anuncios", "grupo de recursos", "palabra clave", "anuncio"],
+};
 
 export const REC_STATUSES = [
   { id: "pendiente", label: "Pendiente" },
