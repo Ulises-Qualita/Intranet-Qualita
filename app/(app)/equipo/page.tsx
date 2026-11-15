@@ -1,13 +1,15 @@
-import { OnlineCount, OnlineDot, OnlineStatus } from "@/components/presence";
+import { redirect } from "next/navigation";
+import { OnlineCount } from "@/components/presence";
 import { Topbar } from "@/components/topbar";
-import { NoAccess, Pill } from "@/components/ui";
-import { UserAvatar } from "@/components/user-avatar";
+import { NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
-import { getAllClients, getTasks, getTeam, isLateTask, isOpenTask } from "@/lib/data";
-import { todayISO } from "@/lib/format";
-import { SHOW_TASKS } from "@/lib/tasks";
-import { TeamClients } from "./team-clients";
+import { canAccess } from "@/lib/auth-shared";
+import { getInternalClient } from "@/lib/data";
+import { StudioTeam } from "./studio-team";
 
+// El equipo del estudio vive en la solapa Equipo del panel interno de Qualita
+// (pedido del usuario); esta ruta manda ahí. Si ese panel no existe o quien entra
+// no lo ve (no lo tiene asignado), se sigue mostrando acá.
 export default async function EquipoPage() {
   const session = await getAreaSession("equipo");
   if (!session) {
@@ -18,75 +20,15 @@ export default async function EquipoPage() {
       </>
     );
   }
-
-  // Con las tareas ocultas no se consulta Notion.
-  const [team, clients, tasks] = await Promise.all([getTeam(), getAllClients(), SHOW_TASKS ? getTasks() : []]);
-  const openTasks = tasks.filter(isOpenTask);
-  const today = todayISO();
+  const studio = canAccess(session.profile, "clientes") ? await getInternalClient() : null;
+  if (studio) redirect(`/clientes/${studio.slug}/equipo`);
 
   return (
     <>
       <Topbar crumb="Qualita" title="Equipo">
         <OnlineCount />
       </Topbar>
-      <section className="view">
-        <div className="grid g3 team-grid">
-          {team.map((m) => {
-            const assigned = clients.filter((c) => c.active && c.assigneeIds.includes(m.id));
-            const mine = openTasks.filter((t) => t.assignee_id === m.id);
-            const late = mine.filter((t) => isLateTask(t, today)).length;
-            return (
-              <article key={m.id} className={`card team-card${m.active ? "" : " off"}`}>
-                <header className="team-head">
-                  <div className="av-wrap">
-                    <UserAvatar className="team-av" name={m.name} avatarUrl={m.avatarUrl} />
-                    <OnlineDot userId={m.id} />
-                  </div>
-                  <div className="team-id">
-                    <h3>{m.name}</h3>
-                    {m.jobTitle && <span className="team-job">{m.jobTitle}</span>}
-                    <span className="team-mail" title={m.email ?? undefined}>
-                      {m.email}
-                    </span>
-                    {m.active ? (
-                      <OnlineStatus userId={m.id} />
-                    ) : (
-                      <span className="muted">{m.invited ? "Invitación pendiente" : "Sin acceso a la intranet"}</span>
-                    )}
-                  </div>
-                  {m.role === "admin" ? <Pill variant="admin">Admin</Pill> : <Pill variant="pausado">Miembro</Pill>}
-                </header>
-
-                <dl className="team-stats">
-                  {SHOW_TASKS && (
-                    <div>
-                      <dt>Tareas abiertas</dt>
-                      <dd>{mine.length}</dd>
-                      {late > 0 && (
-                        <span className="team-late">
-                          {late} {late === 1 ? "vencida" : "vencidas"}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div>
-                    <dt>{assigned.length === 1 ? "Cliente" : "Clientes"}</dt>
-                    <dd>{assigned.length}</dd>
-                  </div>
-                </dl>
-
-                {assigned.length > 0 ? (
-                  <TeamClients
-                    clients={assigned.map(({ id, slug, name, initials, logoUrl }) => ({ id, slug, name, initials, logoUrl }))}
-                  />
-                ) : (
-                  <p className="team-empty">Sin clientes asignados</p>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      </section>
+      <StudioTeam />
     </>
   );
 }

@@ -296,7 +296,7 @@ export function DeleteApplicationButton({ clientId, index, name }: { clientId: s
           onConfirm={() => deleteBrandApplication(clientId, index)}
           onClose={() => setOpen(false)}
         >
-          Se saca de la sección Aplicaciones. Se puede volver a sacar del PDF.
+          Se saca del manual en la intranet. Se puede volver a sacar del PDF.
         </ConfirmDialog>
       )}
     </>

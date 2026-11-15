@@ -74,11 +74,17 @@ export type ApplicationPage = { page: number; path: string };
 
 // 2: cada posteo e historia de redes por separado (antes se marcaba la
 // composición entera y en el mockup un "posteo" eran varios).
-export const APPS_VERSION = 2;
+// 3: las fotos se recortan a su resolución real (antes, estiradas a 1800 px,
+// salían pixeladas); se vuelven a sacar para recortarlas de nuevo.
+// 4: además de las piezas, las muestras de estilo visual (fotos de ejemplo,
+// íconos, kit de interfaz), con kind "estilo", para el panel Estilo visual.
+export const APPS_VERSION = 4;
 
 // Pieza del manual: dónde está en el PDF y, ya recortada, la imagen en el bucket
 // (`{clientId}/aplicacion/…`; null mientras no se recortó).
-export type BrandApplication = LogoSource & { kind: "redes" | "aplicacion"; path?: string | null };
+// kind "estilo": no es una pieza sino una muestra del estilo visual (su `name` es
+// el tema: "Fotografía", "Iconografía"…); va al panel Estilo visual, no a la mesa.
+export type BrandApplication = LogoSource & { kind: "redes" | "aplicacion" | "estilo"; path?: string | null };
 
 // Página (desde 1) y caja en fracciones de la página (0 a 1, desde arriba a la izquierda).
 export type LogoSource = { page: number; name: string; x: number; y: number; w: number; h: number };

@@ -23,7 +23,8 @@ export default async function ClientesPage() {
   }
 
   const isAdmin = session.profile?.role === "admin";
-  const [clients, team] = await Promise.all([getAllClients(), getTeam()]);
+  // Sin el panel interno de Qualita, que va aparte en la barra lateral.
+  const [clients, team] = await Promise.all([getAllClients().then((all) => all.filter((c) => !c.internal)), getTeam()]);
   const members = new Map(team.map((m) => [m.id, m]));
 
   return (

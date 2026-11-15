@@ -2,7 +2,7 @@
 
 import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { ActionButton } from "@/components/actions";
 import { Icon } from "@/components/icons";
 import { BRAND_BUCKET, type BrandApplication, type LogoSource } from "@/lib/brand-shared";
@@ -155,13 +155,69 @@ export async function saveLogosFromPdf(clientId: string, pdfUrl: string, sources
 
 // ---------- Aplicaciones ----------
 
-// Recorta una aplicación tal cual está en la página (sin quitar el fondo), como JPG.
-async function cropApplication(doc: PDFDocumentProxy, a: BrandApplication): Promise<Blob> {
+type Matrix = [number, number, number, number, number, number];
+const mul = (m: Matrix, n: Matrix): Matrix => [
+  m[0] * n[0] + m[2] * n[1],
+  m[1] * n[0] + m[3] * n[1],
+  m[0] * n[2] + m[2] * n[3],
+  m[1] * n[2] + m[3] * n[3],
+  m[0] * n[4] + m[2] * n[5] + m[4],
+  m[1] * n[4] + m[3] * n[5] + m[5],
+];
+
+// Píxeles por punto de las fotos del PDF que caen en esa zona de la página (la de
+// más resolución entre las que cubren al menos un 15%), o null si ahí no hay
+// fotos (texto y vectores). Recorre los operadores de la página siguiendo la
+// matriz de cada imagen. Hace falta porque pdf.js agranda las fotos sin
+// suavizar: pasadas a 1800 px salían pixeladas (un posteo de 211 px, casi 7 veces).
+async function imageDensity(lib: typeof import("pdfjs-dist"), page: PDFPageProxy, x0: number, y0: number, x1: number, y1: number): Promise<number | null> {
+  const { OPS } = lib;
+  const [vx0, vy0, vx1, vy1] = page.view;
+  const list = await page.getOperatorList();
+  let ctm: Matrix = [1, 0, 0, 1, 0, 0];
+  const stack: Matrix[] = [];
+  const area = Math.max((x1 - x0) * (y1 - y0), 1e-6);
+  let best: number | null = null;
+  for (let i = 0; i < list.fnArray.length; i++) {
+    const fn = list.fnArray[i];
+    const args = list.argsArray[i] as unknown[];
+    if (fn === OPS.save) stack.push(ctm);
+    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.transform) ctm = mul(ctm, args as Matrix);
+    else if (fn === OPS.paintFormXObjectBegin) {
+      stack.push(ctm);
+      if (Array.isArray(args[0])) ctm = mul(ctm, args[0] as Matrix);
+    } else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject) {
+      const inline = args[0] as { width?: number; height?: number } | null;
+      const w = Number(fn === OPS.paintImageXObject ? args[1] : inline?.width);
+      const h = Number(fn === OPS.paintImageXObject ? args[2] : inline?.height);
+      const [wPt, hPt] = [Math.hypot(ctm[0], ctm[1]), Math.hypot(ctm[2], ctm[3])];
+      if (!(w > 0 && h > 0 && wPt > 0 && hPt > 0)) continue;
+      // Caja de la imagen en fracciones de la página (el PDF mide desde abajo).
+      const xs = [ctm[4], ctm[4] + ctm[0], ctm[4] + ctm[2], ctm[4] + ctm[0] + ctm[2]].map((v) => (v - vx0) / (vx1 - vx0));
+      const ys = [ctm[5], ctm[5] + ctm[1], ctm[5] + ctm[3], ctm[5] + ctm[1] + ctm[3]].map((v) => 1 - (v - vy0) / (vy1 - vy0));
+      const ox = Math.min(x1, Math.max(...xs)) - Math.max(x0, Math.min(...xs));
+      const oy = Math.min(y1, Math.max(...ys)) - Math.max(y0, Math.min(...ys));
+      if (ox <= 0 || oy <= 0 || (ox * oy) / area < 0.15) continue;
+      const density = Math.max(w / wPt, h / hPt);
+      if (best === null || density > best) best = density;
+    }
+  }
+  return best;
+}
+
+// Recorta una aplicación tal cual está en la página (sin quitar el fondo), como
+// JPG. Si es una foto, a su resolución real (la vista grande la agranda
+// suavizada); si es texto o vectores, a 1800 px de lado largo.
+async function cropApplication(lib: typeof import("pdfjs-dist"), doc: PDFDocumentProxy, a: BrandApplication): Promise<Blob> {
   const page = await doc.getPage(a.page);
   const base = page.getViewport({ scale: 1 });
   const [x0, y0] = [clamp(a.x), clamp(a.y)];
   const [x1, y1] = [clamp(a.x + a.w), clamp(a.y + a.h)];
-  const scale = Math.min(8, 1800 / Math.max((x1 - x0) * base.width, (y1 - y0) * base.height, 1));
+  const full = Math.min(8, 1800 / Math.max((x1 - x0) * base.width, (y1 - y0) * base.height, 1));
+  const density = await imageDensity(lib, page, x0, y0, x1, y1).catch(() => null);
+  const scale = density ? Math.min(full, Math.max(density, 0.5)) : full;
   const vp = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(2, Math.round((x1 - x0) * vp.width));
@@ -171,7 +227,7 @@ async function cropApplication(doc: PDFDocumentProxy, a: BrandApplication): Prom
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvas, viewport: vp, transform: [1, 0, 0, 1, -x0 * vp.width, -y0 * vp.height] }).promise;
   const out = trimToContent(canvas);
-  return new Promise<Blob>((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error("jpg"))), "image/jpeg", 0.86));
+  return new Promise<Blob>((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error("jpg"))), "image/jpeg", 0.92));
 }
 
 // Si la zona tiene fondo liso (la página del manual alrededor de la pieza), la
@@ -229,7 +285,7 @@ export async function saveApplicationsFromPdf(clientId: string, pdfUrl: string, 
     const saved: BrandApplication[] = [];
     for (const [i, a] of apps.entries()) {
       try {
-        const path = await uploadImage(clientId, await cropApplication(doc, a), `${i + 1}-${fileName(a.name).replace(/\.png$/, ".jpg")}`);
+        const path = await uploadImage(clientId, await cropApplication(lib, doc, a), `${i + 1}-${fileName(a.name).replace(/\.png$/, ".jpg")}`);
         if (path) saved.push({ ...a, path });
       } catch {
         // Una que no se pudo recortar no frena al resto.

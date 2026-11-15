@@ -85,6 +85,27 @@ No hay framework de tests configurado todavía.
   escriben con service_role validan con `canManageClient(clientId)`
   (`app/(app)/clientes/actions.ts`), no solo con el área. `addClient` asigna a quien
   crea el cliente (si no es admin), porque si no, no lo vería.
+- Panel interno de Qualita (pedido: "como un cliente, pero separado porque es
+  interno, con todas las solapas por ahora"): una fila de `intranet_clients` con
+  `internal = true` (`docs/sql/2026-11-13-cliente-interno.sql`, la crea con slug
+  `qualita`). Usa las rutas y solapas de cualquier cliente (`/clientes/qualita`),
+  pero `getClients()` la excluye (sidebar de clientes, Inicio, Administración,
+  agente) y `/clientes` y `/equipo` la filtran; se llega por la entrada "Qualita"
+  de la zona Qualita de la sidebar (`getInternalClient()`, prop `studio`). Sin logo subido usa el isotipo
+  de la intranet (`/qualita-isotipo.png`), también como ícono de esa entrada. La RLS
+  es la de un cliente: admins y miembros asignados. Solapas propias
+  (`lib/client-nav.ts`, `teamNav`; ahí vive también el catálogo `CLIENT_NAV` del
+  panel del equipo): sin Vista general (la entrada redirige a la primera solapa),
+  sin META, GADS, CRM, Reuniones, Repositorio, Reportes ni Calendario (`INTERNAL_OFF`;
+  `TeamTabGate` las redirige si se entra por URL), y con **Redes** y **Cerebros**
+  (`clientes/[id]/redes` y `/cerebros`, solo para el interno), por ahora con el
+  cartel `WorkInProgress` (`components/work-in-progress.tsx`, una grúa de obra en línea que sube y baja un bloque, y "IT ya está trabajando en esta sección").
+  Su solapa Equipo es **la pantalla Equipo del estudio** (`StudioTeam` en
+  `app/(app)/equipo/studio-team.tsx`: tarjetas con puesto, en línea, rol y clientes
+  asignados, ordenadas por importancia del puesto con `jobRank`: founders,
+  directores, responsables/managers, resto), con el área `equipo`. Quien ve el
+  panel interno ya no tiene "Equipo" en la sidebar y `/equipo` lo redirige ahí;
+  quien no lo ve (no asignado) sigue con `/equipo` como antes.
 - Objetivo de facturación (Vista general; lo ve también la cuenta del cliente, pero
   "Editar objetivo" solo aparece con `internal`): un monto en pesos por mes en `intranet_clients.billing_goals`
   (`docs/sql/2026-11-02-objetivo-facturacion.sql`), cargado a mano con "Editar

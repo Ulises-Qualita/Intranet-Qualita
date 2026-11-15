@@ -18,8 +18,7 @@ import {
 } from "@/lib/brand-shared";
 import type { Client } from "@/lib/data";
 import { fileSize, shortDate } from "@/lib/format";
-import { getInstagramProfile, getMetaSecrets } from "@/lib/meta";
-import { type BoardFile, type BoardFont, type BoardInstagram, BrandBoard } from "./brand-board";
+import { type BoardFile, type BoardFont, BrandBoard } from "./brand-board";
 import { DeleteBookButton, EditBrandButton, ExtractButton, PdfUploader } from "./brand-ui";
 
 // Manual de marca de un cliente: resuelve los datos (fuentes, URLs firmadas) y
@@ -88,7 +87,6 @@ export async function BrandView({ c, internal }: { c: Client; internal: boolean 
   const [pdfView, pdfDownload] = book?.hasPdf ? await Promise.all([brandPdfUrl(c.id, false), brandPdfUrl(c.id, true)]) : [null, null];
   const data: BrandData = book?.data ?? EMPTY_BRAND;
   const media = await brandApplicationMedia(data);
-  const instagram = media.apps.some((a) => a.kind === "redes") ? await instagramFor(c) : null;
   const byKind = (k: AssetKind) => assets.filter((a) => a.kind === k);
   const [logos, fontFiles, others] = [byKind("logo"), byKind("fuente"), byKind("otro")];
 
@@ -121,6 +119,7 @@ export async function BrandView({ c, internal }: { c: Client; internal: boolean 
     return {
       family: f.family,
       role: f.role ?? null,
+      usage: f.usage ?? null,
       css: `${cssFamily(f)}, var(--font-display), sans-serif`,
       weights: weightsOf(f),
       download: file?.url
@@ -155,7 +154,6 @@ export async function BrandView({ c, internal }: { c: Client; internal: boolean 
           mainLogo={data.logo.main ?? null}
           applications={media.apps}
           appsSearched={data.applications !== undefined && data.applicationsVersion === APPS_VERSION}
-          instagram={instagram}
           name={c.name}
           internal={internal}
           summary={data.summary}
@@ -206,26 +204,4 @@ function AdminBar({ c, book, data, pdfView }: { c: Client; book: BrandBook | und
       {book?.status === "error" && <p className="form-error bh-admin-error">{book.error ?? "No se pudo leer el manual."}</p>}
     </div>
   );
-}
-
-// Perfil de Instagram para el mockup de redes: lo que deje leer la conexión de
-// Meta del cliente (seguidores, bio…); si no hay, solo lo que sabemos del cliente
-// (nombre, rubro, web), sin números inventados.
-async function instagramFor(c: Client): Promise<BoardInstagram> {
-  const meta = c.integrations.meta;
-  const secrets = meta?.connected && meta.accountRef ? await getMetaSecrets(c.id).catch(() => null) : null;
-  const ig = secrets && meta?.accountRef ? await getInstagramProfile(secrets.access_token, meta.accountRef).catch(() => null) : null;
-  const handle = c.name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9._]+/g, "");
-  return {
-    username: ig?.username ?? handle,
-    name: ig?.name ?? c.name,
-    picture: ig?.picture ?? null,
-    followers: ig?.followers ?? null,
-    following: ig?.following ?? null,
-    posts: ig?.posts ?? null,
-    bio: ig?.bio ?? null,
-    website: ig?.website ?? c.website ?? null,
-    category: c.sector,
-    real: !!ig,
-  };
 }

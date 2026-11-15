@@ -1,43 +1,12 @@
 import { ClientHeader } from "@/components/client-header";
 import { type ClientTab, ClientPeriodBar, ClientTabsBar } from "@/components/client-tabs-bar";
 import { Topbar } from "@/components/topbar";
-import { type AreaKey, canAccess } from "@/lib/auth-shared";
+import { canAccess } from "@/lib/auth-shared";
 import { getSession } from "@/lib/auth";
-import { isTabHidden, type TabKey } from "@/lib/client-tabs";
+import { teamNav } from "@/lib/client-nav";
 import { getClient, getTasks, isOpenTask } from "@/lib/data";
 import { SHOW_TASKS } from "@/lib/tasks";
 import { RefreshPortalButton } from "./portal/refresh-button";
-
-// Solo las vistas de consulta del cliente. Editar se entra desde la tabla de
-// /clientes: es una acción de gestión, no una solapa que se mire a diario.
-// tab: la clave con que se desactiva en "Editar cliente" (lib/client-tabs.ts);
-// Vista general no tiene, siempre se ve.
-type ClientNavItem = { suffix: string; label: string; area: AreaKey; tab?: TabKey };
-const CLIENT_NAV = (
-  [
-    { suffix: "", label: "Vista general", area: "clientes" },
-    { suffix: "/meta", label: "META", area: "meta", tab: "meta" },
-    // Google Ads: misma área que META (publicidad). Solo en el panel del equipo.
-    { suffix: "/gads", label: "GADS", area: "meta", tab: "gads" },
-    { suffix: "/crm", label: "CRM", area: "crm", tab: "crm" },
-    // Sin área propia: analítica del sitio, para quien ya ve el panel del cliente.
-    { suffix: "/web", label: "WEB", area: "clientes", tab: "web" },
-    // Posiciones en buscadores (SE Ranking). Solo en el panel del equipo.
-    { suffix: "/seo", label: "SEO", area: "clientes", tab: "seo" },
-    { suffix: "/reuniones", label: "Reuniones", area: "clientes", tab: "reuniones" },
-    // Sin área propia, como WEB: los archivos del cliente.
-    { suffix: "/drive", label: "Repositorio", area: "clientes", tab: "drive" },
-    // Videos tutoriales de las plataformas del cliente: una carpeta dentro de su Drive.
-    { suffix: "/guias", label: "Guías", area: "clientes", tab: "guias" },
-    // Solo en el panel del equipo: la cuenta del cliente no la tiene.
-    { suffix: "/reportes", label: "Reportes", area: "clientes", tab: "reportes" },
-    { suffix: "/tareas", label: "Tareas", area: "tareas", tab: "tareas" },
-    { suffix: "/portal", label: "Calendario", area: "clientes", tab: "portal" },
-    { suffix: "/equipo", label: "Equipo", area: "clientes", tab: "equipo" },
-    // Brandbook del cliente. Para la cuenta del cliente arranca apagada.
-    { suffix: "/marca", label: "Manual de marca", area: "clientes", tab: "marca" },
-  ] satisfies ClientNavItem[]
-).filter((item) => SHOW_TASKS || item.suffix !== "/tareas");
 
 // Las solapas que se recortan por período (?mes= / ?desde=&hasta=, lib/period.ts).
 // Ninguna de ellas puede tener un loading.tsx propio: ?mes= lo reiniciaría y el
@@ -89,9 +58,9 @@ export default async function ClienteLayout({
           : suffix === "/guias" && client.conn.drive && client.guidesFolder
           ? { href: `${base}/guias/conectar`, label: "Cambiar carpeta de guías" }
           : undefined;
-  const tabs: ClientTab[] = CLIENT_NAV.filter(
-    (item) => canAccess(profile, item.area) && !(item.tab && isTabHidden(client.hiddenTabs, "team", item.tab)),
-  ).map(({ suffix, label }) => ({
+  // El catálogo y el filtro por área y por solapas apagadas: lib/client-nav.ts
+  // (el panel interno de Qualita tiene su propio juego de solapas).
+  const tabs: ClientTab[] = teamNav(client, profile).map(({ suffix, label }) => ({
     suffix,
     label,
     badge: suffix === "/tareas" ? openTasks : undefined,

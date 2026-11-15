@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CLIENT_BASE, getClientZone } from "@/lib/client-zone";
+import { INTERNAL_OFF } from "@/lib/client-nav";
 import { CLIENT_TABS, isTabHidden, type TabKey } from "@/lib/client-tabs";
 import { getClient } from "@/lib/data";
 import { Icon } from "./icons";
@@ -14,6 +15,8 @@ import { Icon } from "./icons";
 // muestra su propio "Sin acceso".
 export async function TeamTabGate({ slug, tab, children }: { slug: string; tab: TabKey; children: React.ReactNode }) {
   const client = await getClient(slug);
+  // El panel interno de Qualita no tiene estas solapas: vuelve a su entrada.
+  if (client?.internal && INTERNAL_OFF.includes(tab)) redirect(`/clientes/${client.slug}`);
   if (!client || !isTabHidden(client.hiddenTabs, "team", tab)) return children;
 
   const label = CLIENT_TABS.find((t) => t.key === tab)?.team ?? tab;

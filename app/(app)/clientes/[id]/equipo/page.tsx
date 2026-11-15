@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
+import { canAccess } from "@/lib/auth-shared";
 import { getClient } from "@/lib/data";
+import { StudioTeam } from "../../../equipo/studio-team";
 import { EquipoView } from "./equipo-view";
 
 export default async function ClienteEquipoPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,6 +19,9 @@ export default async function ClienteEquipoPage({ params }: { params: Promise<{ 
     );
   }
   if (!client) notFound();
+  // Panel interno de Qualita: acá va el equipo del estudio entero (la pantalla
+  // Equipo de antes), con su misma área.
+  if (client.internal) return canAccess(session.profile, "equipo") ? <StudioTeam count /> : <NoAccess />;
 
   return <EquipoView client={client} internal />;
 }

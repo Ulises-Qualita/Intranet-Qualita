@@ -95,21 +95,18 @@ paths:
   hay ninguna se guarda `[]` para no volver a buscar. "Volver a sacar del PDF" en
   el panel las reemplaza y borra las imágenes viejas. El editor no las toca (`saveBrandData`
   conserva las guardadas) y borrar el manual borra sus imágenes. Vista: el bloque
-  muestra una tira de fotos. El panel (solapa "Aplicaciones"), elegido por el usuario: las
-  de redes en Instagram en una computadora (`SocialMockups`: el perfil de
-  escritorio dentro de un monitor, con publicaciones, seguidores, seguidos,
-  nombre, rubro, bio y web; **sin** barra del navegador, barra lateral de
-  Instagram ni botones Seguir / Enviar mensaje: que se lea como una forma de
-  mostrar las piezas, no como un Instagram real (pedido); historias = las verticales < 0,7 que
-  avanzan solas, grilla, posteo abierto en una ventana con me gusta). El perfil
-  sale de Meta si el cliente lo tiene conectado (`getInstagramProfile` en
-  lib/meta.ts, con el token de anuncios: `promote_pages` →
-  `instagram_business_account` trae bio y web; si no, `instagram_accounts` trae
-  usuario, foto y números; 6 h en memoria; `instagramFor` en brand-view); si no,
-  solo nombre, rubro y web del cliente, sin números inventados. No se lee
-  instagram.com (lo bloquea y va contra sus condiciones). Y las otras
-  aplicaciones sobre una mesa de trabajo (`WorkTable`: arrastrar, doble clic para
-  ampliar, Ordenar / Desparramar). Se probaron y se sacaron un carrusel 3D y el celular (con y sin la computadora al lado). Ampliar abre `Lightbox` (su propio
+  muestra un abanico de hasta 5 piezas enteras (`bb-real-fan`: alterna
+  aplicaciones y redes, el alto sale de la suma de proporciones `--sum` para que
+  entren sin recortar; antes era una tira de fotos recortadas sobre negro) con
+  el mismo fondo de la mesa y la cantidad de piezas. El panel (solapa "Aplicaciones"), elegido por el usuario
+  (2026-11-13): **solo la mesa de trabajo**, con todas las piezas juntas
+  (`WorkTable`: cada pieza entera y sin marco, en filas del mismo alto que
+  calcula `arrange` según el tamaño de la mesa para que ninguna se corte; clic
+  la amplía, se arrastran, Ordenar / Desparramar, fondo con un tinte del color
+  principal y filtro Todas / Redes / Otras si el manual trae
+  de las dos). Se sacó el Instagram dentro de un monitor que mostraba las de redes
+  (`SocialMockups`, con el perfil leído de Meta: `getInstagramProfile` también se
+  borró). Se probaron y se sacaron antes un carrusel 3D y el celular. Ampliar abre `Lightbox` (su propio
   `<dialog>`, imagen con `max-height` en `dvh`). No gustaron: bento con recorte,
   mosaico y ver las páginas del PDF con las piezas marcadas (se sacó; quedó
   `applicationPages` solo para limpiar esas imágenes). Sin piezas
@@ -120,6 +117,49 @@ paths:
   anterior cuenta como no buscada y el tablero del equipo la vuelve a sacar sola
   (y al volver a leer el manual no se conserva). El recorte se ajusta al borde de
   la pieza si el fondo alrededor es liso (`trimToContent` en logo-from-pdf.tsx).
+- Nitidez de las aplicaciones (2026-11-13, "se ve borrosa"): las fotos dentro del
+  PDF suelen ser chicas (en Arteplac, 1 px por punto: un posteo mide 211×264) y
+  pdf.js las agranda **sin suavizar** si pasan de 1,33× (`getImageSmoothingEnabled`),
+  así que a 1800 px salían pixeladas. `imageDensity` (logo-from-pdf.tsx) recorre
+  los operadores de la página y da los px por punto de las fotos de esa zona;
+  `cropApplication` recorta a esa resolución (texto y vectores siguen a 1800 px).
+  `APPS_VERSION` 3 hace que las ya guardadas se vuelvan a sacar solas. La vista
+  grande (`Lightbox`) agranda cada imagen hasta 2,2 veces su tamaño real
+  (`img.sized`, variables `--nw` / `--ar`), suavizada por el navegador. Más
+  nitidez solo con un PDF exportado con mejores imágenes. El nombre de cada pieza
+  va en blanco sobre un degradado oscuro: `--navy` es claro en el tema oscuro y
+  con texto blanco no se leía.
+- Más datos en el tablero (2026-11-13, "le falta info", pedido: sin que parezca
+  mucho texto; el usuario lo quiere probar y puede pedir volver atrás: el estado
+  anterior quedó en el stash "base manual de marca"). Todo sale de lo ya extraído,
+  sin volver a leer el PDF: en el bloque del logo, área segura y tamaño mínimo
+  (`logoSpecs` los saca de las reglas; si no hay, quedan las palabras del tono;
+  el área segura va con un dibujito y en palabras, "1x libre alrededor · x = ancho
+  de la forma a", porque "1x · Área segura" no se entendía);
+  y una fila nueva entre el tono y las aplicaciones con **Jerarquía** (nombre en
+  la tipografía de títulos + primera frase del resumen en la de texto + tamaños
+  H1/H2… de `headingSizes`, que los lee de `usage` de las fuentes), **Estilo
+  visual** (temas de `data.imagery` con `styleNotes`, sobre el color de acento;
+  abre un panel propio `estilo` con una tarjeta por pauta, que antes iban
+  plegadas en Tono). Cada uno abre **su propio panel** (pedido: Jerarquía abría
+  Tipografía sin mostrar la jerarquía): `jerarquia` (`HierarchyPanel`: cada nivel
+  a su tamaño real con textos de la marca, y el uso de cada fuente). Hubo un
+  tercer bloque, **No hacer** (prohibiciones cortas, con panel "Sí y no"): el
+  usuario pidió quitarlo; las reglas siguen plegadas en Logo y en Tono. Cada bloque aparece solo
+  si el manual trae el dato y se reparten el ancho (`extraSpan`).
+- Panel Estilo visual = explorador por tema (2026-11-13, pedido: "son todas
+  cards, algo más visual e interactivo"). `styleTopics` arma los temas: cada pauta
+  con título ("Fotografía: …") más las que le siguen sin título. A la izquierda la
+  lista de temas; a la derecha el elegido con su **muestra real del manual** (clic
+  = `Lightbox`, miniaturas si hay varias). Sin muestra propia, tres **piezas del
+  manual** como ejemplo (redes primero, distintas por tema, rotuladas "Piezas del
+  manual"; pedido: "ejemplos en vez de la card naranja"); la pauta en grande sobre
+  el color de acento queda solo si el manual no tiene piezas. Las muestras son recortes del PDF con `kind: "estilo"` en
+  `data.applications` (fotos de ejemplo, íconos, kit UI; `name` = el tema), que
+  salen en la misma llamada que las aplicaciones (`APPS_VERSION` 4; hasta 28 en
+  total) y se emparejan con su tema por nombre (`stems`); una sin tema arma el
+  suyo. El tablero las separa: `realApps` (mesa, abanico) no las incluye. El
+  equipo puede quitar una muestra mal recortada desde el panel.
 - Logo principal: `data.logo.main` (id del recurso, `setMainLogo`, botón "Marcar
   como principal"); sin elegir, el que se llama "Principal" (Claude pone primero
   el principal, el de la portada, y lo nombra así) o el primero subido. El bloque

@@ -31,11 +31,15 @@ export function Sidebar({
   user,
   access,
   clients,
+  studio = null,
   hidden = [],
 }: {
   user: SessionUser;
   access: Record<AreaKey, boolean>;
   clients: Client[];
+  // El panel interno de Qualita (un "cliente" que es el estudio): va en la zona
+  // Qualita, debajo de Inicio, y no en la lista de clientes.
+  studio?: Client | null;
   // Items apagados en Administración → Funciones en prueba (p. ej. "/foro").
   hidden?: string[];
 }) {
@@ -55,8 +59,12 @@ export function Sidebar({
 
         <div className="nav-title">Qualita</div>
         {STUDIO_NAV.filter(
-          (item) => !hidden.includes(item.href) && (item.area ? access[item.area] : Object.values(access).some(Boolean)),
-        ).map((item) => (
+          // Con el panel interno de Qualita a la vista, el equipo está en su solapa Equipo.
+          (item) =>
+            !hidden.includes(item.href) &&
+            !(item.href === "/equipo" && studio) &&
+            (item.area ? access[item.area] : Object.values(access).some(Boolean)),
+        ).flatMap((item) => [
           // Administración tiene solapas con ruta propia (/admin/cuentas…): sigue marcada en todas.
           <NavLink
             key={item.href}
@@ -65,8 +73,21 @@ export function Sidebar({
           >
             <Icon name={item.icon} />
             {item.label}
-          </NavLink>
-        ))}
+          </NavLink>,
+          ...(item.href === "/" && studio
+            ? [
+                <NavLink
+                  key="studio"
+                  href={`/clientes/${studio.slug}`}
+                  className={`nav-btn${pathname === `/clientes/${studio.slug}` || pathname.startsWith(`/clientes/${studio.slug}/`) ? " active" : ""}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- isotipo de la intranet (o el logo subido). */}
+                  <img className="nav-logo" src={studio.logoUrl ?? "/qualita-isotipo.png"} alt="" />
+                  {studio.name}
+                </NavLink>,
+              ]
+            : []),
+        ])}
 
         {access.clientes && (
           <>

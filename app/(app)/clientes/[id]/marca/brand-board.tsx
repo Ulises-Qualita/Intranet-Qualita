@@ -19,6 +19,8 @@ import { type LogoTone, bestBackground, readability, useLogoTones } from "./logo
 export type BoardFont = {
   family: string;
   role: string | null;
+  // Para qué se usa según el manual (de ahí salen los tamaños H1, H2…).
+  usage: string | null;
   // CSS font-family listo para usar (Google, @font-face o el nombre a secas).
   css: string;
   weights: [number, string][];
@@ -39,22 +41,7 @@ export type BoardFile = {
 
 // Aplicación real o ejemplo para redes recortado del PDF (index: su lugar en
 // data.applications, para quitarla).
-export type BoardApp = { index: number; name: string; kind: "redes" | "aplicacion"; url: string; page: number; x: number; y: number; w: number; h: number };
-
-// Perfil de Instagram para el mockup: de Meta si el cliente lo tiene conectado
-// (real = true); si no, solo nombre, rubro y web del cliente, sin números.
-export type BoardInstagram = {
-  username: string;
-  name: string | null;
-  picture: string | null;
-  followers: number | null;
-  following: number | null;
-  posts: number | null;
-  bio: string | null;
-  website: string | null;
-  category: string | null;
-  real: boolean;
-};
+export type BoardApp = { index: number; name: string; kind: "redes" | "aplicacion" | "estilo"; url: string; page: number; x: number; y: number; w: number; h: number };
 
 export type BoardProps = {
   clientId: string;
@@ -68,7 +55,6 @@ export type BoardProps = {
   applications: BoardApp[];
   // false: todavía no se buscaron en el PDF (manual leído antes); se buscan solas.
   appsSearched: boolean;
-  instagram: BoardInstagram | null;
   summary: string;
   colors: BrandColor[];
   fonts: BoardFont[];
@@ -80,7 +66,7 @@ export type BoardProps = {
   pdf: { view: string; download: string | null; size: string } | null;
 };
 
-type PanelId = "logo" | "colores" | "tipografia" | "tono" | "ejemplos" | "recursos";
+type PanelId = "logo" | "colores" | "tipografia" | "jerarquia" | "tono" | "estilo" | "ejemplos" | "recursos";
 
 const WHITE = "#FFFFFF";
 const INK = "#111111";
@@ -89,7 +75,9 @@ const TITLES: Record<PanelId, string> = {
   logo: "Logo",
   colores: "Colores",
   tipografia: "Tipografía",
+  jerarquia: "Jerarquía",
   tono: "Tono",
+  estilo: "Estilo visual",
   ejemplos: "Aplicaciones",
   recursos: "Recursos",
 };
@@ -98,7 +86,9 @@ const ICONS: Record<PanelId, IconName> = {
   logo: "image",
   colores: "grid",
   tipografia: "file-text",
+  jerarquia: "list",
   tono: "chat",
+  estilo: "media",
   ejemplos: "sparkles",
   recursos: "folder",
 };
@@ -114,6 +104,47 @@ function logoBackground(l: BoardFile | undefined, tones: Record<string, LogoTone
   const t = l?.url ? tones[l.url] : null;
   if (t) return bestBackground(t, [WHITE, ...(primary ? [primary.hex] : []), ...colors.slice(0, 5).map((c) => c.hex), INK]);
   return l?.negative ? (primary?.hex ?? INK) : WHITE;
+}
+
+// ---------- Datos del manual en corto (para los bloques del tablero) ----------
+
+const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+// Lo que las reglas del logo dan en números: área de seguridad y tamaño mínimo.
+// El área segura va con su dibujo y dicha en palabras ("1x libre alrededor", y
+// qué es x si el manual lo define): "1x · Área segura" sola no se entendía.
+type LogoSpec = { label: string; value: string; safe?: boolean; title?: string };
+function logoSpecs(rules: string[]): LogoSpec[] {
+  const out: LogoSpec[] = [];
+  const safe = rules.find((r) => /([áa]rea|zona|espacio) de (seguridad|protecci[óo]n|resguardo|respeto|reserva)/i.test(r));
+  const area = safe?.match(/\d+(?:[.,]\d+)?\s?(?:x|%|mm|cm|px)(?![a-záéíóú])/i)?.[0];
+  const unit = safe?.match(/\bx\s*=\s*([^.;(]+)/i)?.[1].trim();
+  if (area && safe)
+    out.push({ label: unit && unit.length <= 40 ? `x = ${unit}` : "Área de seguridad", value: `${area.replace(/\s/g, "")} libre alrededor`, safe: true, title: safe });
+  const min = rules.find((r) => /m[íi]nim/i.test(r));
+  const sizes = min ? [...new Set([...min.matchAll(/\d+(?:[.,]\d+)?\s?(?:cm|mm|px|pt)\b/gi)].map((m) => m[0]))] : [];
+  if (sizes.length) out.push({ label: "Tamaño mínimo", value: sizes.slice(0, 2).join(" · "), title: min });
+  return out;
+}
+
+// Pautas de imagen y gráficos: el tema de cada una (lo que va antes de los dos
+// puntos, o el arranque de la frase si es corto) y el resto del texto. Solo las
+// primeras (`titled`) llevan título en el panel: en las otras repetiría la frase.
+type StyleNote = { head: string; text: string; titled: boolean };
+function styleNotes(imagery: string[]): StyleNote[] {
+  return imagery.map((raw) => {
+    const r = raw.trim();
+    const colon = r.indexOf(":");
+    if (colon > 0 && colon <= 30) return { head: r.slice(0, colon), text: capital(r.slice(colon + 1).trim()), titled: true };
+    const cut = r.search(/[;,.]/);
+    return { head: cut > 3 && cut <= 32 ? r.slice(0, cut) : "", text: r, titled: false };
+  });
+}
+
+// Tamaños de la jerarquía que nombre el manual ("H1 32 px"), en orden.
+function headingSizes(fonts: BoardFont[]): string[] {
+  const text = fonts.map((f) => f.usage ?? "").join(" ");
+  return [...new Set([...text.matchAll(/H([1-6])\s*:?\s*(\d+)\s*px/gi)].map((m) => `H${m[1]} ${m[2]}`))].slice(0, 4);
 }
 
 // El principal primero: el que eligió el equipo, si no el que se llama "Principal"
@@ -142,16 +173,45 @@ export function BrandBoard(props: BoardProps) {
   const displayCss = display?.css;
   const hasTone = p.voice.keywords.length > 0 || !!p.voice.description || p.voice.dos.length > 0;
   const showFiles = p.files.length > 0 || p.internal;
+  // Más datos del manual en el tablero: números del logo, jerarquía, estilo y lo que no va.
+  const specs = logoSpecs(p.logoNotes.rules);
+  const notes = styleNotes(p.imagery);
+  const heads = [...notes.filter((n) => n.titled), ...notes.filter((n) => !n.titled && n.head)].map((n) => n.head).slice(0, 5);
+  const sizes = headingSizes(p.fonts);
+  const lead = p.summary.trim().split(/(?<=\.)\s/)[0] ?? "";
+  // Color de acento para el bloque de estilo (si es casi blanco, queda neutro).
+  const accent = p.colors.find((c) => c !== primary && /acent|accent|secundar/i.test(c.role ?? "")) ?? p.colors.find((c) => c !== primary);
+  const accentHex = accent && contrast(accent.hex, WHITE) > 1.25 ? accent.hex : undefined;
+  const extras = [!!display && !!lead && "jerarquia", heads.length >= 2 && "estilo"].filter(Boolean) as string[];
   // Aplicada: las piezas reales del PDF; sin ellas, piezas de muestra (con color principal).
-  const realApps = p.applications;
+  // Las muestras de estilo (kind "estilo") van al panel Estilo visual, no a la mesa.
+  const realApps = p.applications.filter((a) => a.kind !== "estilo");
+  const styleShots = p.applications.filter((a) => a.kind === "estilo");
   const hasExamples = realApps.length > 0 || !!primary || (p.internal && !!p.pdf);
+  // Vista previa del bloque: hasta 5 piezas en abanico, alternando aplicaciones y
+  // redes, las que entran enteras a lo ancho.
+  const fanKinds = [realApps.filter((a) => a.kind === "aplicacion"), realApps.filter((a) => a.kind === "redes")];
+  const fanPool: BoardApp[] = [];
+  for (let i = 0; fanPool.length < 7 && (fanKinds[0][i] || fanKinds[1][i]); i++) fanPool.push(...fanKinds.flatMap((k) => (k[i] ? [k[i]] : [])));
+  const fanRatios = useImageRatios(fanPool.map((a) => a.url));
+  const fan: BoardApp[] = [];
+  let fanWidth = 0;
+  for (const a of fanPool) {
+    const r = fanRatios[a.url] ?? 1;
+    if (fan.length >= 5) break;
+    if (fan.length >= 2 && fanWidth + r > 4.3) continue;
+    fan.push(a);
+    fanWidth += r;
+  }
   const appsPending = useAutoApplications(p.internal && !!p.pdf && !p.appsSearched, p.clientSlug);
 
   const sections: PanelId[] = [
     "logo",
     ...(p.colors.length ? (["colores"] as const) : []),
     ...(p.fonts.length ? (["tipografia"] as const) : []),
+    ...(extras.includes("jerarquia") ? (["jerarquia"] as const) : []),
     ...(hasTone ? (["tono"] as const) : []),
+    ...(notes.length ? (["estilo"] as const) : []),
     ...(hasExamples ? (["ejemplos"] as const) : []),
     ...(showFiles ? (["recursos"] as const) : []),
   ];
@@ -189,6 +249,9 @@ export function BrandBoard(props: BoardProps) {
     examples: { c: smalls ? 8 : 12, r: 2, m: 2, mr: 2 },
     small: { c: hasExamples ? 4 : 12 / Math.max(smalls, 1), r: hasExamples && smalls === 1 ? 2 : 1, m: 1, mr: 1 },
   } satisfies Record<string, Span>;
+  // Fila de datos: se reparten el ancho; en el celular la jerarquía va entera y
+  // los otros dos de a medio si están los dos.
+  const extraSpan = (id: string): Span => ({ c: 12 / extras.length, r: 2, m: id === "jerarquia" || extras.filter((e) => e !== "jerarquia").length < 2 ? 2 : 1, mr: 2 });
   let order = 0;
 
   return (
@@ -209,7 +272,24 @@ export function BrandBoard(props: BoardProps) {
               Sacar el logo del PDF
             </span>
           )}
-          {p.voice.keywords.length > 0 && <span className="bb-logo-words">{p.voice.keywords.slice(0, 3).join(" · ")}</span>}
+          {specs.length > 0 ? (
+            <span className="bb-logo-specs">
+              {specs.map((x) => (
+                <span key={x.label} className={x.safe ? "safe" : undefined} title={x.title}>
+                  {x.safe && (
+                    <svg viewBox="0 0 40 28" width="40" height="28" aria-hidden>
+                      <rect x="1" y="1" width="38" height="26" rx="3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2.6 2.6" opacity=".55" />
+                      <rect x="9" y="8" width="22" height="12" rx="2" fill="currentColor" opacity=".85" />
+                    </svg>
+                  )}
+                  <b>{x.value}</b>
+                  <small>{x.label}</small>
+                </span>
+              ))}
+            </span>
+          ) : (
+            p.voice.keywords.length > 0 && <span className="bb-logo-words">{p.voice.keywords.slice(0, 3).join(" · ")}</span>
+          )}
           <TileLabel icon="image">Logo</TileLabel>
         </button>
 
@@ -283,17 +363,55 @@ export function BrandBoard(props: BoardProps) {
           </button>
         )}
 
+        {extras.includes("jerarquia") && (
+          <button type="button" className="bb-tile bb-spec" style={spanStyle(extraSpan("jerarquia"), order++)} onClick={() => open("jerarquia")}>
+            <span className="bb-spec-h" style={{ fontFamily: displayCss }}>
+              {p.name}
+            </span>
+            <span className="bb-spec-p" style={{ fontFamily: body?.css }}>
+              {lead}
+            </span>
+            <span className="bb-spec-tags">{(sizes.length ? sizes : [display?.family, body !== display ? body?.family : null]).filter(Boolean).join("  ·  ")}</span>
+            <TileLabel icon="list">Jerarquía</TileLabel>
+          </button>
+        )}
+
+        {extras.includes("estilo") && (
+          <button
+            type="button"
+            className="bb-tile bb-style"
+            style={{ ...spanStyle(extraSpan("estilo"), order++), ...(accentHex ? { background: accentHex, color: isDark(accentHex) ? WHITE : INK } : {}) }}
+            onClick={() => open("estilo")}
+          >
+            <span className="bb-style-list" style={{ fontFamily: displayCss }}>
+              {heads.map((h) => (
+                <span key={h}>{h}</span>
+              ))}
+            </span>
+            <TileLabel icon="media">Estilo visual</TileLabel>
+          </button>
+        )}
+
         {realApps.length > 0 ? (
-          <button type="button" className="bb-tile bb-examples bb-real" style={spanStyle(S.examples, order++)} onClick={() => open("ejemplos")}>
-            <span className="bb-real-strip">
-              {realApps.slice(0, 4).map((a) => (
+          <button
+            type="button"
+            className="bb-tile bb-examples bb-real"
+            style={{ ...spanStyle(S.examples, order++), ...(primary ? ({ "--tint": primary.hex } as CSSProperties) : {}) }}
+            onClick={() => open("ejemplos")}
+          >
+            <span
+              className="bb-real-fan"
+              style={{ "--sum": fanWidth, "--sum3": fan.slice(0, 3).reduce((s, a) => s + (fanRatios[a.url] ?? 1), 0) } as CSSProperties}
+            >
+              {fan.map((a) => (
                 // eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage.
                 <img key={a.index} src={a.url} alt="" loading="lazy" />
               ))}
             </span>
-            <TileLabel icon="sparkles" onDark>
-              Aplicaciones
-            </TileLabel>
+            <span className="bb-real-count">
+              {realApps.length} {realApps.length === 1 ? "pieza" : "piezas"}
+            </span>
+            <TileLabel icon="sparkles">Aplicaciones</TileLabel>
           </button>
         ) : primary ? (
           <button type="button" className="bb-tile bb-examples" style={spanStyle(S.examples, order++)} onClick={() => open("ejemplos")}>
@@ -360,10 +478,24 @@ export function BrandBoard(props: BoardProps) {
           {panel === "colores" && <ColorsPanel colors={p.colors} />}
           {panel === "tipografia" && <TypePanel key={fontIndex} fonts={p.fonts} initial={fontIndex} />}
           {panel === "logo" && <LogoPanel {...p} primary={primary} displayCss={displayCss} tones={tones} />}
-          {panel === "tono" && <TonePanel voice={p.voice} imagery={p.imagery} summary={p.summary} displayCss={displayCss} />}
+          {panel === "tono" && <TonePanel voice={p.voice} summary={p.summary} displayCss={displayCss} />}
+          {panel === "jerarquia" && display && <HierarchyPanel name={p.name} display={display} body={body ?? display} sizes={sizes} keywords={p.voice.keywords} lead={lead} />}
+          {panel === "estilo" && (
+            <StylePanel
+              notes={notes}
+              shots={styleShots}
+              pieces={realApps}
+              accent={accentHex ?? primary?.hex}
+              tint={primary?.hex}
+              displayCss={display?.css}
+              pending={appsPending}
+              clientId={p.clientId}
+              internal={p.internal}
+            />
+          )}
           {panel === "ejemplos" && (
             <>
-              <RealAppsPanel apps={realApps} instagram={p.instagram} name={p.name} logo={heroLogo?.url ?? null} logoBg={heroBg} clientId={p.clientId} clientSlug={p.clientSlug} internal={p.internal} pdf={!!p.pdf} />
+              <RealAppsPanel apps={realApps} tint={primary?.hex} clientId={p.clientId} clientSlug={p.clientSlug} internal={p.internal} pdf={!!p.pdf} />
               {!realApps.length && primary && <ExamplesPanel {...p} primary={primary} display={display} body={body} logo={examplesLogo} />}
             </>
           )}
@@ -804,12 +936,10 @@ function LogoPanel({
 
 function TonePanel({
   voice,
-  imagery,
   summary,
   displayCss,
 }: {
   voice: BoardProps["voice"];
-  imagery: string[];
   summary: string;
   displayCss: string | undefined;
 }) {
@@ -843,15 +973,249 @@ function TonePanel({
           </div>
         </div>
       )}
-      {imagery.length > 0 && (
-        <details className="bb-details">
-          <summary>Imágenes y gráficos · {imagery.length}</summary>
-          <ol>
-            {imagery.map((r, i) => (
-              <li key={i}>{r}</li>
-            ))}
-          </ol>
-        </details>
+    </>
+  );
+}
+
+// ---------- Jerarquía ----------
+
+// La escala tipográfica a tamaño real: los títulos que nombra el manual (H1 32 px…)
+// en la tipografía de títulos y el texto en la de cuerpo, con textos de la marca.
+// Si el manual no da tamaños, una escala de referencia sin medidas.
+function HierarchyPanel({
+  name,
+  display,
+  body,
+  sizes,
+  keywords,
+  lead,
+}: {
+  name: string;
+  display: BoardFont;
+  body: BoardFont;
+  sizes: string[];
+  keywords: string[];
+  lead: string;
+}) {
+  const samples = [name, keywords.length ? capital(keywords.slice(0, 3).join(", ")) : name, keywords.length > 3 ? capital(keywords.slice(3, 6).join(", ")) : name, name];
+  const steps: { tag: string; px: number; exact: boolean }[] = sizes.length
+    ? sizes.map((x) => ({ tag: x.split(" ")[0], px: Number(x.split(" ")[1]), exact: true }))
+    : [
+        { tag: "Título", px: 40, exact: false },
+        { tag: "Subtítulo", px: 26, exact: false },
+        { tag: "Destacado", px: 19, exact: false },
+      ];
+  return (
+    <>
+      <div className="bb-scale">
+        {steps.map((x, i) => (
+          <div key={x.tag} className="bb-scale-row">
+            <span className="bb-scale-meta">
+              <b>{x.tag}</b>
+              {x.exact && <span>{x.px} px</span>}
+              <span>{display.family}</span>
+            </span>
+            <span className="bb-scale-sample" style={{ fontFamily: display.css, fontSize: x.px, fontWeight: 700 }}>
+              {samples[Math.min(i, samples.length - 1)]}
+            </span>
+          </div>
+        ))}
+        <div className="bb-scale-row">
+          <span className="bb-scale-meta">
+            <b>Texto</b>
+            <span>{body.family}</span>
+          </span>
+          <span className="bb-scale-sample text" style={{ fontFamily: body.css }}>
+            {lead}
+          </span>
+        </div>
+      </div>
+      {(display.usage || body.usage) && (
+        <div className="bb-style-grid">
+          {[display, ...(body !== display ? [body] : [])].map(
+            (f) =>
+              f.usage && (
+                <div key={f.family} className="bb-style-card">
+                  <b style={{ fontFamily: f.css }}>{f.family}</b>
+                  <p>{f.usage}</p>
+                </div>
+              ),
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------- Estilo visual ----------
+
+// Las pautas de imagen y gráficos del manual, una tarjeta por tema.
+// Explorador por tema (pedido: "son todas cards, algo más visual e interactivo").
+// Cada tema junta su pauta con título ("Fotografía: …"), las que le siguen sin
+// título y las muestras reales del manual que le corresponden (recortes del PDF
+// con kind "estilo", emparejados por nombre). Una muestra sin tema arma el suyo.
+type StyleTopic = { title: string; notes: string[]; shots: BoardApp[] };
+const STOP = new Set(["para", "como", "sobr", "entr", "desd", "esta", "este", "todo", "cada"]);
+const stems = (t: string) =>
+  t
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 4)
+    .map((w) => w.slice(0, 4))
+    .filter((w) => !STOP.has(w));
+
+function styleTopics(notes: StyleNote[], shots: BoardApp[]): StyleTopic[] {
+  const topics: StyleTopic[] = [];
+  for (const n of notes) {
+    if (n.titled || !topics.length) topics.push({ title: n.titled ? n.head : "General", notes: [n.text], shots: [] });
+    else topics[topics.length - 1].notes.push(n.text);
+  }
+  for (const shot of shots) {
+    const name = stems(shot.name);
+    let best: StyleTopic | null = null;
+    let top = 0;
+    for (const t of topics) {
+      const title = stems(t.title);
+      const body = stems(t.notes.join(" "));
+      const score = name.reduce((sum, w) => sum + (title.includes(w) ? 3 : body.includes(w) ? 1 : 0), 0);
+      if (score > top) {
+        top = score;
+        best = t;
+      }
+    }
+    if (best) best.shots.push(shot);
+    else topics.push({ title: shot.name, notes: [], shots: [shot] });
+  }
+  return topics;
+}
+
+// A la izquierda los temas; a la derecha el tema elegido: su muestra del manual
+// (clic para ampliar, miniaturas si hay varias) o, si no tiene, la pauta en grande
+// sobre el color de acento con la tipografía de títulos; abajo, el resto de las pautas.
+// Sin muestra propia pero con piezas del manual (posteos, papelería), van tres de
+// esas como ejemplo (pedido: "mostrar ejemplos en vez de la card naranja"),
+// distintas en cada tema y rotuladas como piezas, no como muestra del tema.
+function StylePanel({
+  notes,
+  shots,
+  pieces,
+  accent,
+  tint,
+  displayCss,
+  pending,
+  clientId,
+  internal,
+}: {
+  notes: StyleNote[];
+  shots: BoardApp[];
+  pieces: BoardApp[];
+  accent: string | undefined;
+  tint: string | undefined;
+  displayCss: string | undefined;
+  pending: boolean;
+  clientId: string;
+  internal: boolean;
+}) {
+  const [at, setAt] = useState(0);
+  const [pick, setPick] = useState(0);
+  const [zoom, setZoom] = useState<{ list: BoardApp[]; index: number } | null>(null);
+  const topics = styleTopics(notes, shots);
+  const index = Math.min(at, topics.length - 1);
+  const topic = topics[index];
+  if (!topic) return null;
+  const shot = topic.shots[Math.min(pick, topic.shots.length - 1)];
+  // Ejemplos de respaldo: primero las de redes (son las que muestran foto y
+  // gráfica), tres por tema sin repetir hasta dar la vuelta.
+  const pool = [...pieces.filter((a) => a.kind === "redes"), ...pieces.filter((a) => a.kind !== "redes")];
+  const samples = shot ? [] : pool.length <= 3 ? pool : [0, 1, 2].map((i) => pool[(index * 3 + i) % pool.length]);
+  const visual = !!shot || samples.length > 0;
+  const lines = visual ? topic.notes : topic.notes.slice(1);
+  const lead = visual ? null : topic.notes[0];
+  return (
+    <>
+      <div className="bb-sx" style={{ "--sx": accent, "--tint": tint } as CSSProperties}>
+        <div className="bb-sx-nav" role="tablist" aria-label="Temas del estilo visual">
+          {topics.map((t, i) => (
+            <button
+              key={i}
+              type="button"
+              role="tab"
+              aria-selected={i === index}
+              className={i === index ? "on" : undefined}
+              onClick={() => {
+                setAt(i);
+                setPick(0);
+              }}
+            >
+              <small>{String(i + 1).padStart(2, "0")}</small>
+              <b>{t.title}</b>
+              {t.shots.length > 0 && <Icon name="image" size={14} strokeWidth={2} />}
+            </button>
+          ))}
+        </div>
+        <div key={index} className="bb-sx-main" role="tabpanel">
+          {shot ? (
+            <div className="bb-sx-stage">
+              <button type="button" className="bb-sx-shot" aria-label={`Ampliar ${shot.name}`} onClick={() => setZoom({ list: shots, index: shots.indexOf(shot) })}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
+                <img src={shot.url} alt={shot.name} />
+              </button>
+              {topic.shots.length > 1 && (
+                <div className="bb-sx-thumbs">
+                  {topic.shots.map((x, i) => (
+                    <button key={x.index} type="button" className={x === shot ? "on" : undefined} aria-label={`Muestra ${i + 1}`} aria-pressed={x === shot} onClick={() => setPick(i)}>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
+                      <img src={x.url} alt="" loading="lazy" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : samples.length ? (
+            <div className="bb-sx-stage bb-sx-samples">
+              <span className="bb-sx-tag">Piezas del manual</span>
+              <div>
+                {samples.map((x, i) => (
+                  <button key={x.index} type="button" className="bb-sx-shot" aria-label={`Ampliar ${x.name}`} title={x.name} onClick={() => setZoom({ list: samples, index: i })}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
+                    <img src={x.url} alt={x.name} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            lead && (
+              <div className="bb-sx-stage bb-sx-poster" style={accent ? { background: accent, color: isDark(accent) ? WHITE : INK } : undefined}>
+                <p className={lead.length > 120 ? "long" : undefined} style={{ fontFamily: displayCss }}>
+                  {lead}
+                </p>
+              </div>
+            )
+          )}
+          {lines.length > 0 && (
+            <div className="bb-sx-notes">
+              {lines.map((t, i) => (
+                <p key={i}>{t}</p>
+              ))}
+            </div>
+          )}
+          {internal && shot && (
+            <div className="bb-sx-admin">
+              <DeleteApplicationButton clientId={clientId} index={shot.index} name={shot.name} />
+            </div>
+          )}
+        </div>
+      </div>
+      {pending && !shots.length && <p className="bb-hint bb-sx-pending">Buscando las muestras de estilo en el PDF…</p>}
+      {zoom && zoom.list[zoom.index] && (
+        <Lightbox
+          items={zoom.list.map((x) => ({ ...x, group: x.kind === "estilo" ? "Estilo visual" : groupOf(x) }))}
+          index={zoom.index}
+          onIndex={(i) => setZoom({ ...zoom, index: i })}
+          onClose={() => setZoom(null)}
+        />
       )}
     </>
   );
@@ -859,13 +1223,9 @@ function TonePanel({
 
 // ---------- La marca aplicada ----------
 
-// Las piezas reales del manual (recortadas del PDF), en dos vistas una abajo de
-// la otra (elegidas por el usuario):
-// - Redes sociales: Instagram en una computadora (perfil con los datos reales
-//   de Meta si está conectado, grilla, posteo abierto e historias).
-// - Otras aplicaciones: sobre una mesa de trabajo (se arrastran, se levantan y se
-//   ordenan).
-// Cualquiera se abre grande con Lightbox.
+// Las piezas reales del manual (recortadas del PDF), todas sobre una mesa de
+// trabajo (elegido por el usuario; antes las de redes iban en un Instagram dentro
+// de un monitor, que se sacó). Cualquiera se abre grande con Lightbox.
 type ViewItem = BoardApp & { group: string };
 const groupOf = (a: BoardApp) => (a.kind === "redes" ? "Redes sociales" : "Otras aplicaciones");
 
@@ -891,20 +1251,14 @@ function useImageRatios(urls: string[]) {
 
 function RealAppsPanel({
   apps,
-  instagram,
-  name,
-  logo,
-  logoBg,
+  tint,
   clientId,
   clientSlug,
   internal,
   pdf,
 }: {
   apps: BoardApp[];
-  instagram: BoardInstagram | null;
-  name: string;
-  logo: string | null;
-  logoBg: string | undefined;
+  tint: string | undefined;
   clientId: string;
   clientSlug: string;
   internal: boolean;
@@ -912,44 +1266,11 @@ function RealAppsPanel({
 }) {
   const [view, setView] = useState<{ list: ViewItem[]; index: number } | null>(null);
   const ratios = useImageRatios(apps.map((a) => a.url));
-  const social = apps.filter((a) => a.kind === "redes");
-  const others = apps.filter((a) => a.kind === "aplicacion");
-  const open = (list: BoardApp[], a: BoardApp) => setView({ list: list.map((x) => ({ ...x, group: groupOf(x) })), index: list.indexOf(a) });
 
   if (!apps.length) return null;
   return (
     <>
-      {social.length > 0 && (
-        <section className="bb-real-group">
-          <div className="bb-block-head">
-            <h3>Redes sociales</h3>
-            <span className="bb-hint">Tocá un posteo o una historia</span>
-          </div>
-          <SocialMockups
-            items={social}
-            ratios={ratios}
-            profile={
-              instagram ?? { username: name.toLowerCase().replace(/[^a-z0-9._]+/g, ""), name, picture: null, followers: null, following: null, posts: null, bio: null, website: null, category: null, real: false }
-            }
-            logo={logo}
-            logoBg={logoBg}
-            onZoom={(a) => open(social, a)}
-          />
-          {internal && instagram && !instagram.real && (
-            <p className="bb-hint igd-note">Conectando Meta en el cliente se ven sus seguidores y su bio reales.</p>
-          )}
-        </section>
-      )}
-
-      {others.length > 0 && (
-        <section className="bb-real-group">
-          <div className="bb-block-head">
-            <h3>Otras aplicaciones</h3>
-            <span className="bb-hint">Arrastrá las piezas; doble clic para verlas grandes</span>
-          </div>
-          <WorkTable items={others} ratios={ratios} onZoom={(a) => open(others, a)} />
-        </section>
-      )}
+      <WorkTable items={apps} ratios={ratios} tint={tint} onZoom={(a, list) => setView({ list: list.map((x) => ({ ...x, group: groupOf(x) })), index: list.indexOf(a) })} />
 
       {internal && (
         <div className="bb-real-admin">
@@ -968,356 +1289,229 @@ function RealAppsPanel({
   );
 }
 
-// ---------- Redes: Instagram en una computadora ----------
-
-type IgScreen = { at: "perfil" } | { at: "post"; i: number } | { at: "historia"; i: number };
-const STORY_MS = 5000;
-
-// Números como los muestra Instagram: 1.234, 12,3 mil, 1,2 M.
-const igCount = (n: number) =>
-  n < 10000 ? n.toLocaleString("es-AR") : new Intl.NumberFormat("es-AR", { notation: "compact", maximumFractionDigits: 1 }).format(n);
-
-function SocialMockups({
-  items,
-  ratios,
-  profile,
-  logo,
-  logoBg,
-  onZoom,
-}: {
-  items: BoardApp[];
-  ratios: Record<string, number>;
-  profile: BoardInstagram;
-  logo: string | null;
-  logoBg: string | undefined;
-  onZoom: (a: BoardApp) => void;
-}) {
-  const [screen, setScreen] = useState<IgScreen>({ at: "perfil" });
-  const [liked, setLiked] = useState<Record<number, boolean>>({});
-  // Historias: las verticales (9:16); el resto son posteos. Sin posteos, todas van a la grilla.
-  const vertical = items.filter((a) => (ratios[a.url] ?? 1) < 0.7);
-  const posts = items.filter((a) => !vertical.includes(a));
-  const stories = posts.length ? vertical : [];
-  const grid = posts.length ? posts : vertical;
-  const post = screen.at === "post" ? grid[screen.i] : undefined;
-  const user = profile.username;
-  const like = (a: BoardApp) => setLiked((m) => ({ ...m, [a.index]: !m[a.index] }));
-  const host = profile.website?.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
-
-  const avatar = (size: number) => (
-    <span className="ig-avatar" style={{ width: size, height: size, background: profile.picture ? "#fff" : (logoBg ?? "#fff") }}>
-      {profile.picture || logo ? (
-        // eslint-disable-next-line @next/next/no-img-element -- foto de Instagram o URL firmada de Storage.
-        <img src={(profile.picture ?? logo)!} alt="" className={profile.picture ? "photo" : undefined} />
-      ) : (
-        <b>{profile.name?.charAt(0)}</b>
-      )}
-    </span>
-  );
-
-  return (
-    <div className="igd">
-      <div className="igd-monitor">
-        <div className="igd-browser">
-          <div className="igd-page">
-            <div className="igd-profile">
-              <div className="igd-head">
-                <span className={stories.length ? "ig-ring" : "igd-plain"}>{avatar(118)}</span>
-                <div className="igd-info">
-                  <div className="igd-row">
-                    <b className="igd-user">{user}</b>
-                  </div>
-                  <div className="igd-row igd-stats">
-                    <span>
-                      <b>{igCount(profile.posts ?? grid.length)}</b> publicaciones
-                    </span>
-                    {profile.followers !== null && (
-                      <span>
-                        <b>{igCount(profile.followers)}</b> seguidores
-                      </span>
-                    )}
-                    {profile.following !== null && (
-                      <span>
-                        <b>{igCount(profile.following)}</b> seguidos
-                      </span>
-                    )}
-                  </div>
-                  <div className="igd-bio">
-                    {profile.name && <b>{profile.name}</b>}
-                    {profile.category && <span className="igd-cat">{profile.category}</span>}
-                    {profile.bio && <span className="igd-text">{profile.bio}</span>}
-                    {host && (
-                      <a href={profile.website!.startsWith("http") ? profile.website! : `https://${profile.website}`} target="_blank" rel="noopener noreferrer" className="igd-link">
-                        <Icon name="globe" size={12} strokeWidth={2.2} />
-                        {host}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <IgHighlights stories={stories} onOpen={(i) => setScreen({ at: "historia", i })} />
-              <div className="igd-tabs" aria-hidden>
-                <span className="on">
-                  <Icon name="grid" size={12} strokeWidth={2.2} />
-                  Publicaciones
-                </span>
-                <span>
-                  <Icon name="play" size={12} strokeWidth={2.2} />
-                  Reels
-                </span>
-                <span>
-                  <Icon name="users" size={12} strokeWidth={2.2} />
-                  Etiquetadas
-                </span>
-              </div>
-              <div className="igd-grid">
-                {grid.map((a, i) => (
-                  <button key={a.index} type="button" onClick={() => setScreen({ at: "post", i })} aria-label={`Abrir ${a.name}`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
-                    <img src={a.url} alt={a.name} loading="lazy" />
-                    {liked[a.index] && <span className="igd-liked">♥</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {post && screen.at === "post" && (
-              <div className="igd-modal" onClick={(e) => e.target === e.currentTarget && setScreen({ at: "perfil" })}>
-                <button type="button" className="igd-close" onClick={() => setScreen({ at: "perfil" })} aria-label="Cerrar posteo">
-                  ×
-                </button>
-                {screen.i > 0 && (
-                  <button type="button" className="ig-nav prev" onClick={() => setScreen({ at: "post", i: screen.i - 1 })} aria-label="Posteo anterior">
-                    ‹
-                  </button>
-                )}
-                <div className="igd-card">
-                  <button type="button" className="igd-media" onClick={() => onZoom(post)} onDoubleClick={() => like(post)} aria-label={`Ver ${post.name} en grande`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
-                    <img key={post.index} src={post.url} alt={post.name} />
-                  </button>
-                  <div className="igd-side">
-                    <div className="ig-post-head">
-                      {avatar(30)}
-                      <b>{user}</b>
-                    </div>
-                    <p className="ig-caption">
-                      <b>{user}</b> {post.name}
-                    </p>
-                    <div className="ig-actions">
-                      <LikeButton liked={!!liked[post.index]} onLike={() => like(post)} />
-                    </div>
-                  </div>
-                </div>
-                {screen.i < grid.length - 1 && (
-                  <button type="button" className="ig-nav next" onClick={() => setScreen({ at: "post", i: screen.i + 1 })} aria-label="Posteo siguiente">
-                    ›
-                  </button>
-                )}
-              </div>
-            )}
-
-            {screen.at === "historia" && stories[screen.i] && (
-              <div className="igd-modal dark">
-                <div className="igd-story">
-                  <IgStory
-                    key={screen.i}
-                    stories={stories}
-                    index={screen.i}
-                    user={user}
-                    avatar={avatar(28)}
-                    onIndex={(i) => setScreen(i < 0 || i >= stories.length ? { at: "perfil" } : { at: "historia", i })}
-                    onClose={() => setScreen({ at: "perfil" })}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      <span className="igd-stand" aria-hidden />
-      <span className="igd-foot" aria-hidden />
-    </div>
-  );
-}
-
-function IgHighlights({ stories, onOpen }: { stories: BoardApp[]; onOpen: (i: number) => void }) {
-  if (!stories.length) return null;
-  return (
-    <div className="ig-highlights">
-      {stories.map((s, i) => (
-        <button key={s.index} type="button" onClick={() => onOpen(i)}>
-          <span className="ig-ring">
-            {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
-            <img src={s.url} alt="" />
-          </span>
-          <small>{s.name}</small>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function LikeButton({ liked, onLike }: { liked: boolean; onLike: () => void }) {
-  return (
-    <button type="button" className={liked ? "on" : undefined} onClick={onLike} aria-label={liked ? "Quitar me gusta" : "Me gusta"} aria-pressed={liked}>
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
-        <path
-          d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.2 0 3.6 1.2 5.2 3 1.6-1.8 3-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"
-          fill={liked ? "#ed4956" : "none"}
-          stroke={liked ? "#ed4956" : "currentColor"}
-          strokeWidth="1.8"
-        />
-      </svg>
-    </button>
-  );
-}
-
-function IgStory({
-  stories,
-  index,
-  user,
-  avatar,
-  onIndex,
-  onClose,
-}: {
-  stories: BoardApp[];
-  index: number;
-  user: string;
-  avatar: React.ReactNode;
-  onIndex: (i: number) => void;
-  onClose: () => void;
-}) {
-  const [paused, setPaused] = useState(false);
-  const item = stories[index];
-  useEffect(() => {
-    if (paused) return;
-    const t = setTimeout(() => onIndex(index + 1), STORY_MS);
-    return () => clearTimeout(t);
-  }, [index, paused, onIndex]);
-  return (
-    <div
-      className="ig-story"
-      onPointerDown={() => setPaused(true)}
-      onPointerUp={(e) => {
-        setPaused(false);
-        const r = e.currentTarget.getBoundingClientRect();
-        if ((e.target as HTMLElement).closest("button")) return;
-        onIndex(e.clientX - r.left < r.width / 3 ? index - 1 : index + 1);
-      }}
-      onPointerLeave={() => setPaused(false)}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
-      <img src={item.url} alt={item.name} draggable={false} />
-      <div className="ig-bars">
-        {stories.map((s, i) => (
-          <span key={s.index}>
-            <i className={i < index ? "done" : i === index ? `run${paused ? " paused" : ""}` : undefined} style={{ animationDuration: `${STORY_MS}ms` }} />
-          </span>
-        ))}
-      </div>
-      <div className="ig-story-head">
-        {avatar}
-        <b>{user}</b>
-        <button type="button" onClick={onClose} aria-label="Cerrar historia">
-          ×
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ---------- Mesa de trabajo ----------
 
-type TablePos = { x: number; y: number; r: number; z: number };
+type Placed = { x: number; y: number; w: number; h: number; r: number };
+type TableFilter = "todas" | "redes" | "aplicacion";
+const FILTERS: [TableFilter, string][] = [
+  ["todas", "Todas"],
+  ["redes", "Redes"],
+  ["aplicacion", "Otras"],
+];
 
-// Desparramadas: posiciones "al azar" pero fijas para cada pieza (semilla = índice).
-function scatter(n: number, seed: number): TablePos[] {
+// Dónde va cada pieza (centro y tamaño en px de la mesa): filas del mismo alto,
+// centradas, con la cantidad de filas que deja las piezas más grandes sin que
+// ninguna se salga. "Suelta" = un poco más chicas, corridas y giradas (fijo para
+// cada semilla); si no, alineadas.
+function arrange(ratios: number[], W: number, H: number, loose: boolean, seed: number): Placed[] {
+  const n = ratios.length;
+  if (!n || W < 80 || H < 80) return [];
+  const pad = W < 520 ? 14 : 28;
+  const gap = W < 520 ? 10 : 18;
+  const total = ratios.reduce((s, r) => s + r, 0);
+  let best: { h: number; rows: number[][] } | null = null;
+  for (let R = 1; R <= Math.min(n, 6); R++) {
+    const rows: number[][] = Array.from({ length: R }, () => []);
+    let cum = 0;
+    ratios.forEach((r, i) => {
+      rows[Math.min(R - 1, Math.floor(((cum + r / 2) / total) * R))].push(i);
+      cum += r;
+    });
+    if (rows.some((row) => !row.length)) continue;
+    const byWidth = Math.min(...rows.map((row) => (W - 2 * pad - gap * (row.length - 1)) / row.reduce((s, i) => s + ratios[i], 0)));
+    const h = Math.min(byWidth, (H - 2 * pad - gap * (R - 1)) / R);
+    if (!best || h > best.h) best = { h, rows };
+  }
+  if (!best) return [];
   const rand = (k: number) => {
     const v = Math.sin((k + 1) * 12.9898 + seed * 78.233) * 43758.5453;
     return v - Math.floor(v);
   };
-  const cols = Math.ceil(Math.sqrt(n * 1.6));
-  const rows = Math.ceil(n / cols);
-  return Array.from({ length: n }, (_, i) => ({
-    x: ((i % cols) + 0.5) / cols * 100 + (rand(i) - 0.5) * (60 / cols),
-    y: (Math.floor(i / cols) + 0.5) / rows * 100 + (rand(i + 50) - 0.5) * (50 / rows),
-    r: (rand(i + 100) - 0.5) * 18,
-    z: i + 1,
-  }));
+  const cell = Math.max(40, Math.min(best.h, H * 0.64));
+  const h = cell * (loose ? 0.92 : 1);
+  const y0 = (H - (best.rows.length * cell + gap * (best.rows.length - 1))) / 2;
+  const out: Placed[] = [];
+  best.rows.forEach((row, r) => {
+    let x = (W - (row.reduce((s, i) => s + ratios[i] * cell, 0) + gap * (row.length - 1))) / 2;
+    for (const i of row) {
+      const cw = ratios[i] * cell;
+      out[i] = {
+        x: x + cw / 2 + (loose ? (rand(i) - 0.5) * gap * 1.2 : 0),
+        y: y0 + r * (cell + gap) + cell / 2 + (loose ? (rand(i + 50) - 0.5) * gap * 1.4 : 0),
+        w: ratios[i] * h,
+        h,
+        r: loose ? (rand(i + 100) - 0.5) * 9 : 0,
+      };
+      x += cw + gap;
+    }
+  });
+  return out;
 }
 
-function ordered(n: number): TablePos[] {
-  const cols = Math.ceil(Math.sqrt(n * 1.6));
-  const rows = Math.ceil(n / cols);
-  return Array.from({ length: n }, (_, i) => ({ x: ((i % cols) + 0.5) / cols * 100, y: (Math.floor(i / cols) + 0.5) / rows * 100, r: 0, z: i + 1 }));
-}
-
-function WorkTable({ items, ratios, onZoom }: { items: BoardApp[]; ratios: Record<string, number>; onZoom: (a: BoardApp) => void }) {
-  const n = items.length;
+// Todas las piezas sobre la mesa, cada una entera y sin marco: clic la abre
+// grande, se arrastran (se inclinan según para dónde van) y se filtran por tipo
+// si el manual trae de los dos (redes y otras aplicaciones). El fondo toma un
+// tinte del color principal de la marca.
+function WorkTable({
+  items,
+  ratios,
+  tint,
+  onZoom,
+}: {
+  items: BoardApp[];
+  ratios: Record<string, number>;
+  tint: string | undefined;
+  onZoom: (a: BoardApp, list: BoardApp[]) => void;
+}) {
+  const [filter, setFilter] = useState<TableFilter>("todas");
+  const counts = { todas: items.length, redes: items.filter((a) => a.kind === "redes").length, aplicacion: items.filter((a) => a.kind === "aplicacion").length };
+  const mixed = counts.redes > 0 && counts.aplicacion > 0;
+  const shown = mixed && filter !== "todas" ? items.filter((a) => a.kind === filter) : items;
+  const [loose, setLoose] = useState(true);
   const [seed, setSeed] = useState(1);
-  const [pos, setPos] = useState<TablePos[]>(() => scatter(n, 1));
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  // Lo que se movió a mano (por índice de la pieza) y cuál quedó arriba.
+  const [moved, setMoved] = useState<Record<number, { x: number; y: number }>>({});
+  const [order, setOrder] = useState<Record<number, number>>({});
   const [lifted, setLifted] = useState<number | null>(null);
+  const [tilt, setTilt] = useState(0);
   const table = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ i: number; dx: number; dy: number } | null>(null);
-  const top = useRef(n + 1);
-  // Si cambia la cantidad (se quitó una), se vuelven a desparramar.
-  const [count, setCount] = useState(n);
-  if (count !== n) {
-    setCount(n);
-    setPos(scatter(n, seed));
-  }
-  const size = n <= 3 ? 30 : n <= 6 ? 24 : n <= 10 ? 19 : 16;
+  const drag = useRef<{ id: number; dx: number; dy: number; x0: number; y0: number; lastX: number; dragged: boolean } | null>(null);
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const top = useRef(items.length + 1);
 
-  const raise = (i: number) => {
-    top.current += 1;
-    const z = top.current;
-    setPos((p) => p.map((q, k) => (k === i ? { ...q, z } : q)));
+  useEffect(() => {
+    const el = table.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBox({ w: Math.round(el.clientWidth), h: Math.round(el.clientHeight) }));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      if (settle.current) clearTimeout(settle.current);
+    };
+  }, []);
+
+  const ratioKey = shown.map((a) => (ratios[a.url] ?? 1).toFixed(3)).join(",");
+  const placed = useMemo(
+    () => (box && ratioKey ? arrange(ratioKey.split(",").map(Number), box.w, box.h, loose, seed) : []),
+    [ratioKey, box, loose, seed],
+  );
+  // Al cambiar el armado (filtro, tamaño, orden) lo movido a mano se descarta.
+  const layoutKey = `${filter}|${ratioKey}|${box?.w}x${box?.h}|${loose}|${seed}`;
+  const [lastKey, setLastKey] = useState(layoutKey);
+  if (lastKey !== layoutKey) {
+    setLastKey(layoutKey);
+    setMoved({});
+    setLifted(null);
+  }
+
+  const drop = () => {
+    drag.current = null;
+    if (settle.current) clearTimeout(settle.current);
+    setTilt(0);
+    setLifted(null);
   };
 
   return (
     <div className="wt">
-      <div ref={table} className="wt-table" onPointerDown={(e) => e.target === e.currentTarget && setLifted(null)}>
-        {items.map((a, i) => {
-          const q = pos[i] ?? { x: 50, y: 50, r: 0, z: 1 };
-          const ratio = ratios[a.url] ?? 1;
+      <div className="wt-bar">
+        {mixed && (
+          <div className="bb-seg" role="group" aria-label="Qué piezas mostrar">
+            {FILTERS.map(([id, label]) => (
+              <button key={id} type="button" className={filter === id ? "on" : undefined} aria-pressed={filter === id} onClick={() => setFilter(id)}>
+                {label} <small>{counts[id]}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        <span className="bb-hint wt-hint">Clic para ampliar · arrastrá para mover</span>
+        <div className="wt-tools">
+          <button
+            type="button"
+            className="act-btn"
+            onClick={() => {
+              setLoose(false);
+              setMoved({});
+            }}
+          >
+            <Icon name="grid" size={14} strokeWidth={2} />
+            <span>Ordenar</span>
+          </button>
+          <button
+            type="button"
+            className="act-btn"
+            onClick={() => {
+              setLoose(true);
+              setSeed(seed + 1);
+              setMoved({});
+            }}
+          >
+            <Icon name="refresh" size={14} strokeWidth={2} />
+            <span>Desparramar</span>
+          </button>
+        </div>
+      </div>
+      <div ref={table} className="wt-table" style={tint ? ({ "--tint": tint } as CSSProperties) : undefined}>
+        {shown.map((a, i) => {
+          const p = placed[i];
+          if (!p || !box) return null;
+          const at = moved[a.index] ?? p;
+          const up = lifted === a.index;
           return (
             <div
               key={a.index}
-              className={`wt-piece${lifted === i ? " lifted" : ""}`}
+              className={`wt-piece${up ? " lifted" : ""}`}
               style={
                 {
-                  left: `${q.x}%`,
-                  top: `${q.y}%`,
-                  width: `${ratio < 1 ? size * Math.max(ratio, 0.6) : size}%`,
-                  zIndex: lifted === i ? 9999 : q.z,
-                  "--r": `${lifted === i ? 0 : q.r}deg`,
+                  left: at.x,
+                  top: at.y,
+                  width: p.w,
+                  height: p.h,
+                  zIndex: up ? 9999 : (order[a.index] ?? i + 1),
+                  "--r": `${up ? tilt : p.r}deg`,
                 } as CSSProperties
               }
               onPointerDown={(e) => {
-                const box = table.current!.getBoundingClientRect();
-                drag.current = { i, dx: e.clientX - (box.left + (q.x / 100) * box.width), dy: e.clientY - (box.top + (q.y / 100) * box.height) };
+                if (e.button !== 0) return;
+                const rect = table.current!.getBoundingClientRect();
+                drag.current = { id: a.index, dx: e.clientX - rect.left - at.x, dy: e.clientY - rect.top - at.y, x0: e.clientX, y0: e.clientY, lastX: e.clientX, dragged: false };
                 e.currentTarget.setPointerCapture(e.pointerId);
-                raise(i);
-                setLifted(i);
               }}
               onPointerMove={(e) => {
-                if (!drag.current || drag.current.i !== i) return;
-                const box = table.current!.getBoundingClientRect();
-                const x = Math.min(98, Math.max(2, ((e.clientX - drag.current.dx - box.left) / box.width) * 100));
-                const y = Math.min(96, Math.max(4, ((e.clientY - drag.current.dy - box.top) / box.height) * 100));
-                setPos((p) => p.map((v, k) => (k === i ? { ...v, x, y } : v)));
+                const d = drag.current;
+                if (!d || d.id !== a.index) return;
+                if (!d.dragged) {
+                  if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 5) return;
+                  d.dragged = true;
+                  top.current += 1;
+                  const z = top.current;
+                  setOrder((o) => ({ ...o, [a.index]: z }));
+                  setLifted(a.index);
+                }
+                const rect = table.current!.getBoundingClientRect();
+                const x = Math.min(box.w - 24, Math.max(24, e.clientX - rect.left - d.dx));
+                const y = Math.min(box.h - 24, Math.max(24, e.clientY - rect.top - d.dy));
+                setMoved((m) => ({ ...m, [a.index]: { x, y } }));
+                // Se inclina hacia donde va y se endereza al frenar.
+                setTilt(Math.max(-8, Math.min(8, (e.clientX - d.lastX) * 0.8)));
+                d.lastX = e.clientX;
+                if (settle.current) clearTimeout(settle.current);
+                settle.current = setTimeout(() => setTilt(0), 110);
               }}
               onPointerUp={() => {
-                drag.current = null;
+                const d = drag.current;
+                drop();
+                if (d && d.id === a.index && !d.dragged) onZoom(a, shown);
               }}
-              onDoubleClick={() => onZoom(a)}
+              onPointerCancel={drop}
               onKeyDown={(e) => {
-                if (e.key === "Enter") onZoom(a);
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                onZoom(a, shown);
               }}
               tabIndex={0}
               role="button"
-              aria-label={`${a.name}: arrastrá para mover, Enter para verla grande`}
+              aria-label={`${a.name}: Enter para verla grande`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
               <img src={a.url} alt={a.name} draggable={false} />
@@ -1325,32 +1519,6 @@ function WorkTable({ items, ratios, onZoom }: { items: BoardApp[]; ratios: Recor
             </div>
           );
         })}
-      </div>
-      <div className="wt-bar">
-        <button
-          type="button"
-          className="act-btn"
-          onClick={() => {
-            setLifted(null);
-            setPos(ordered(n));
-          }}
-        >
-          <Icon name="grid" size={14} strokeWidth={2} />
-          <span>Ordenar</span>
-        </button>
-        <button
-          type="button"
-          className="act-btn"
-          onClick={() => {
-            const next = seed + 1;
-            setSeed(next);
-            setLifted(null);
-            setPos(scatter(n, next));
-          }}
-        >
-          <Icon name="refresh" size={14} strokeWidth={2} />
-          <span>Desparramar</span>
-        </button>
       </div>
     </div>
   );
@@ -1373,6 +1541,9 @@ function Lightbox({
   const ref = useRef<HTMLDialogElement>(null);
   const thumbs = useRef<HTMLDivElement>(null);
   const swipe = useRef<number | null>(null);
+  // Tamaño real de la imagen abierta: las piezas del PDF suelen ser chicas y se
+  // agrandan hasta un tope (suavizadas), no hasta llenar la pantalla.
+  const [nat, setNat] = useState<{ id: number; w: number; h: number } | null>(null);
   const item = items[index];
   const many = items.length > 1;
   const go = (step: number) => onIndex((index + step + items.length) % items.length);
@@ -1438,7 +1609,18 @@ function Lightbox({
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
-        <img key={item.index} src={item.url} alt={item.name} draggable={false} />
+        <img
+          key={item.index}
+          src={item.url}
+          alt={item.name}
+          draggable={false}
+          className={nat?.id === item.index ? "sized" : undefined}
+          style={nat?.id === item.index ? ({ "--nw": `${nat.w}px`, "--ar": nat.w / nat.h } as CSSProperties) : undefined}
+          onLoad={(e) => {
+            const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+            if (w && h) setNat({ id: item.index, w, h });
+          }}
+        />
         {many && (
           <>
             <button type="button" className="bb-lb-arrow prev" aria-label="Anterior" onClick={() => go(-1)}>

@@ -39,6 +39,9 @@ export type Client = {
   hiddenTabs: HiddenTabs;
   // Carpeta de la solapa Guías, dentro de la de Drive (intranet_clients.guides_folder).
   guidesFolder: string | null;
+  // El panel interno de Qualita (intranet_clients.internal): mismas solapas que un
+  // cliente, pero no figura en las listas de clientes (ver getClients).
+  internal: boolean;
 };
 
 type ClientRow = {
@@ -53,6 +56,7 @@ type ClientRow = {
   intranet_client_assignments: { user_id: string }[];
   hidden_tabs?: unknown;
   guides_folder?: string | null;
+  internal?: boolean | null;
 };
 
 const CLIENT_COLUMNS =
@@ -91,17 +95,19 @@ export const getAllClients = cache(async (): Promise<Client[]> => {
   const supabase = await createClient();
   const read = (columns: string) =>
     supabase.from("intranet_clients").select(columns).order("name", { ascending: true }).returns<ClientRow[]>();
-  const [first, logos] = await Promise.all([read(`${CLIENT_COLUMNS}, hidden_tabs, guides_folder`), getLogoUrls()]);
+  const [first, logos] = await Promise.all([read(`${CLIENT_COLUMNS}, hidden_tabs, guides_folder, internal`), getLogoUrls()]);
   // Columnas que llegan con una migración; si falta alguna (42703), se lee sin ella:
   // hidden_tabs (docs/sql/2026-09-28-solapas-cliente.sql; sin ella, todas visibles) y
-  // guides_folder (docs/sql/2026-10-30-carpeta-guias.sql; sin ella, Guías sin carpeta).
+  // guides_folder (docs/sql/2026-10-30-carpeta-guias.sql; sin ella, Guías sin carpeta)
+  // e internal (docs/sql/2026-11-13-cliente-interno.sql; sin ella, no hay panel de Qualita).
   let result = first;
+  if (result.error?.code === "42703") result = await read(`${CLIENT_COLUMNS}, hidden_tabs, guides_folder`);
   if (result.error?.code === "42703") result = await read(`${CLIENT_COLUMNS}, hidden_tabs`);
   if (result.error?.code === "42703") result = await read(CLIENT_COLUMNS);
   const { data, error } = result;
   if (error) throw error;
 
-  return (data ?? []).map(({ intranet_client_integrations: integrations, intranet_client_assignments: assignments, hidden_tabs, guides_folder, ...row }) => {
+  return (data ?? []).map(({ intranet_client_integrations: integrations, intranet_client_assignments: assignments, hidden_tabs, guides_folder, internal, ...row }) => {
     const state = Object.fromEntries(
       INTEGRATIONS.map(({ value }) => {
         const row = integrations.find((i) => i.provider === value);
@@ -112,12 +118,14 @@ export const getAllClients = cache(async (): Promise<Client[]> => {
       ...row,
       initials: initialsOf(row.name),
       domain: toDomain(row.website),
-      logoUrl: logos.get(row.id) ?? null,
+      // El panel interno usa el isotipo de la intranet mientras no se le suba otro logo.
+      logoUrl: logos.get(row.id) ?? (internal === true ? "/qualita-isotipo.png" : null),
       assigneeIds: assignments.map((a) => a.user_id),
       integrations: state,
       conn: Object.fromEntries(INTEGRATIONS.map(({ value }) => [value, state[value].connected])) as Record<Integration, boolean>,
       hiddenTabs: parseHiddenTabs(hidden_tabs),
       guidesFolder: guides_folder ?? null,
+      internal: internal === true,
     };
   });
 });
@@ -139,7 +147,11 @@ async function readAll<T>(page: (from: number, to: number) => Page<T>): Promise<
   }
 }
 
-export const getClients = cache(async () => (await getAllClients()).filter((c) => c.active));
+// Los clientes de verdad: activos y sin el panel interno de Qualita.
+export const getClients = cache(async () => (await getAllClients()).filter((c) => c.active && !c.internal));
+
+// El panel interno de Qualita, si existe y este usuario lo ve (RLS).
+export const getInternalClient = async () => (await getAllClients()).find((c) => c.internal && c.active) ?? null;
 
 export const getClient = async (slug: string) => (await getAllClients()).find((c) => c.slug === slug) ?? null;
 

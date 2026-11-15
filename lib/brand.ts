@@ -139,9 +139,9 @@ function applicationSources(v: unknown): BrandApplication[] | undefined {
       const [box] = logoSources([s]) ?? [];
       if (!box) return [];
       const path = typeof s.path === "string" && /^[\w-]+\/aplicacion\/[\w.-]+$/.test(s.path) ? s.path : null;
-      return [{ ...box, name: text(s.name, 80) ?? "Aplicación", kind: s.kind === "redes" ? ("redes" as const) : ("aplicacion" as const), path }];
+      return [{ ...box, name: text(s.name, 80) ?? "Aplicación", kind: s.kind === "redes" ? ("redes" as const) : s.kind === "estilo" ? ("estilo" as const) : ("aplicacion" as const), path }];
     })
-    .slice(0, 20);
+    .slice(0, 28);
 }
 
 function applicationPages(v: unknown): ApplicationPage[] | undefined {
@@ -235,15 +235,15 @@ const SOURCES = {
 const APPLICATIONS = {
   type: "array",
   description:
-    "Las aplicaciones reales de la marca que muestra el manual: mockups o fotos de papelería, tarjetas, cartelería, packaging, indumentaria, vehículos, señalética, web, y los ejemplos para redes sociales (posteos, historias, portadas). REDES: una caja por cada posteo o historia individual, aunque en el manual estén juntos en una grilla, en un celular o en una composición: la caja toma solo ese posteo (su cuadrado o rectángulo), sin los vecinos, sin el marco del celular ni la interfaz de Instagram. OTRAS APLICACIONES: una caja por pieza; si varias están en una misma foto, una caja para toda la foto. Solo la imagen, sin títulos ni textos explicativos del manual. Hasta 9 posteos o historias y hasta 8 otras aplicaciones, las más representativas y variadas. Vacío si el manual no tiene aplicaciones.",
+    "Las aplicaciones reales de la marca que muestra el manual: mockups o fotos de papelería, tarjetas, cartelería, packaging, indumentaria, vehículos, señalética, web, y los ejemplos para redes sociales (posteos, historias, portadas). REDES: una caja por cada posteo o historia individual, aunque en el manual estén juntos en una grilla, en un celular o en una composición: la caja toma solo ese posteo (su cuadrado o rectángulo), sin los vecinos, sin el marco del celular ni la interfaz de Instagram. OTRAS APLICACIONES: una caja por pieza; si varias están en una misma foto, una caja para toda la foto. Solo la imagen, sin títulos ni textos explicativos del manual. ESTILO VISUAL (kind \"estilo\"): las muestras con las que el manual explica su estilo: fotos de ejemplo, tratamientos de imagen, set de íconos, recursos gráficos, tramas o patrones, ilustraciones y kit de interfaz (botones, separadores, cards). Una caja por muestra o por grupo que va junto (el set de íconos entero, la fila de botones entera), sin los títulos ni los párrafos del manual; en name va el tema, con las mismas palabras que en imagery (\"Fotografía\", \"Iconografía\", \"Botones\"). No repitas ahí las piezas que ya van como aplicación o redes, ni el logo, la paleta o las tipografías. Hasta 9 posteos o historias, hasta 8 otras aplicaciones y hasta 8 muestras de estilo, las más representativas y variadas. Vacío si el manual no tiene nada de esto.",
   items: {
     type: "object",
     additionalProperties: false,
     required: ["page", "name", "kind", "x", "y", "w", "h"],
     properties: {
       page: { type: "integer", description: "Número de página del PDF, desde 1 (el orden del archivo, no el número impreso)." },
-      name: { type: "string", description: "Qué es, corto: \"Tarjetas personales\", \"Posteo lanzamiento\", \"Historia promo\", \"Bolsa\"…" },
-      kind: { type: "string", enum: ["redes", "aplicacion"], description: "\"redes\" para un posteo o una historia de redes sociales (de a uno); \"aplicacion\" para el resto." },
+      name: { type: "string", description: "Qué es, corto: \"Tarjetas personales\", \"Posteo lanzamiento\", \"Historia promo\", \"Bolsa\"… En una muestra de estilo, el tema: \"Fotografía\", \"Iconografía\"." },
+      kind: { type: "string", enum: ["redes", "aplicacion", "estilo"], description: "\"redes\" para un posteo o una historia de redes sociales (de a uno); \"estilo\" para una muestra del estilo visual; \"aplicacion\" para el resto." },
       x: { type: "number", description: "Borde izquierdo de la caja, en fracción del ancho de la página (0 a 1)." },
       y: { type: "number", description: "Borde de arriba de la caja, en fracción del alto de la página (0 a 1)." },
       w: { type: "number", description: "Ancho de la caja, en fracción del ancho de la página." },
@@ -484,10 +484,13 @@ export async function locateBrandApplications(
   const db = createAdminClient();
   const { data: row } = await db
     .from("intranet_brand_books")
-    .select("pdf_path, pdf_name")
+    .select("pdf_path, pdf_name, data")
     .eq("client_id", clientId)
-    .maybeSingle<{ pdf_path: string | null; pdf_name: string | null }>();
+    .maybeSingle<{ pdf_path: string | null; pdf_name: string | null; data: unknown }>();
   if (!row?.pdf_path) return { ok: false, error: "Primero subí el PDF del manual." };
+  // Los temas de estilo ya cargados ("Fotografía: …"), para que las muestras se
+  // llamen igual y el panel las junte con su pauta.
+  const topics = (row.data ? normalizeBrand(row.data).imagery : []).flatMap((t) => (t.indexOf(":") > 0 && t.indexOf(":") <= 30 ? [t.slice(0, t.indexOf(":"))] : []));
   try {
     const { data: pdf, error } = await bucket().download(row.pdf_path);
     if (error || !pdf) throw new Error("No se encontró el PDF subido.");
@@ -496,7 +499,7 @@ export async function locateBrandApplications(
       row.pdf_name ?? "manual.pdf",
       userId,
       { type: "object", additionalProperties: false, required: ["applications"], properties: { applications: APPLICATIONS } },
-      "Marcá dónde están las aplicaciones reales de la marca y los ejemplos para redes sociales en este manual.",
+      `Marcá dónde están las aplicaciones reales de la marca, los ejemplos para redes sociales y las muestras de estilo visual en este manual.${topics.length ? ` Temas de estilo ya cargados; usalos como name de las muestras que correspondan: ${topics.join(", ")}.` : ""}`,
       "low",
     )) as { applications?: unknown };
     return { ok: true, applications: (applicationSources(raw.applications) ?? []).map((a) => ({ ...a, path: null })) };
