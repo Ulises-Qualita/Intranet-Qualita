@@ -3,7 +3,7 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icons";
 import { type BrandColor, type LogoSource, cmykText, contrast, contrastGrade, isDark, rgbText } from "@/lib/brand-shared";
-import { AssetUploader, CopyText, DeleteApplicationButton, DeleteAssetButton, MainLogoButton, Swatch } from "./brand-ui";
+import { AssetUploader, CopyText, DeleteApplicationButton, DeleteAssetButton, LogoBackgroundPicker, MainLogoButton, Swatch } from "./brand-ui";
 import { useRouter } from "next/navigation";
 import { ApplicationsFromPdf, LogoFromPdf, extractApplications } from "./logo-from-pdf";
 import { type LogoTone, bestBackground, readability, useLogoTones } from "./logo-tone";
@@ -35,6 +35,8 @@ export type BoardFile = {
   download: string | null;
   image: boolean;
   negative: boolean;
+  // Fondo elegido a mano por el equipo (null = automático).
+  background: string | null;
   size: string;
   kind: "logo" | "fuente" | "otro";
 };
@@ -97,10 +99,11 @@ const ICONS: Record<PanelId, IconName> = {
 type Span = { c: number; r: number; m: number; mr: number };
 const spanStyle = (s: Span, i: number) => ({ "--c": s.c, "--r": s.r, "--mc": s.m, "--mr": s.mr, "--i": i }) as CSSProperties;
 
-// El fondo de un logo: el primero donde se lee (blanco, el color principal, los
-// otros de la marca, casi negro) según sus colores reales; mientras no se leyeron,
-// por el nombre del archivo.
+// El fondo de un logo: el elegido a mano (LogoBackgroundPicker) o, si no, el
+// primero donde se lee (blanco, el color principal, los otros de la marca, casi
+// negro) según sus colores reales; mientras no se leyeron, por el nombre.
 function logoBackground(l: BoardFile | undefined, tones: Record<string, LogoTone | null>, colors: BrandColor[], primary: BrandColor | undefined) {
+  if (l?.background) return l.background;
   const t = l?.url ? tones[l.url] : null;
   if (t) return bestBackground(t, [WHITE, ...(primary ? [primary.hex] : []), ...colors.slice(0, 5).map((c) => c.hex), INK]);
   return l?.negative ? (primary?.hex ?? INK) : WHITE;
@@ -885,6 +888,13 @@ function LogoPanel({
                 {internal && (
                   <div className="bb-logo-tools">
                     {i > 0 && <MainLogoButton clientId={clientId} id={l.id} />}
+                    <LogoBackgroundPicker
+                      clientId={clientId}
+                      id={l.id}
+                      current={l.background}
+                      shown={bg}
+                      colors={[WHITE, INK, ...colors.map((c) => c.hex)]}
+                    />
                     <DeleteAssetButton clientId={clientId} id={l.id} name={l.name} />
                   </div>
                 )}

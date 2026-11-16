@@ -156,6 +156,16 @@ function applicationPages(v: unknown): ApplicationPage[] | undefined {
 }
 
 // Lo que venga (de Claude o del editor), limpio: HEX válidos, sin vacíos.
+// Fondos elegidos a mano: id del logo → #RRGGBB (los inválidos se descartan).
+function logoBackgrounds(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const entries = Object.entries(raw as Record<string, unknown>).flatMap(([id, hex]) => {
+    const color = normalizeHex(hex);
+    return id.length <= 60 && color ? [[id, color] as const] : [];
+  });
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 export function normalizeBrand(raw: unknown): BrandData {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const logo = (o.logo ?? {}) as Record<string, unknown>;
@@ -184,7 +194,13 @@ export function normalizeBrand(raw: unknown): BrandData {
     summary: text(o.summary, 1200) ?? "",
     colors: colors.slice(0, 40),
     fonts: fonts.slice(0, 12),
-    logo: { description: text(logo.description, 800), rules: texts(logo.rules), sources: logoSources(logo.sources), main: text(logo.main, 60) },
+    logo: {
+      description: text(logo.description, 800),
+      rules: texts(logo.rules),
+      sources: logoSources(logo.sources),
+      main: text(logo.main, 60),
+      backgrounds: logoBackgrounds(logo.backgrounds),
+    },
     voice: { description: text(voice.description, 800), keywords: texts(voice.keywords, 12), dos: texts(voice.dos), donts: texts(voice.donts) },
     imagery: texts(o.imagery),
     applications: applicationSources(o.applications),
@@ -417,6 +433,9 @@ export async function extractBrandBook(
     if (error || !pdf) throw new Error("No se encontró el PDF subido.");
     const data = await checkGoogleFonts(await extractWithClaude(pdf, row.pdf_name ?? "manual.pdf", userId));
     const before = row.data ? normalizeBrand(row.data) : null;
+    // Lo elegido a mano sobre los logos subidos (principal, fondos) no sale del PDF.
+    data.logo.main = before?.logo.main;
+    data.logo.backgrounds = before?.logo.backgrounds;
     // Las ya recortadas con el criterio actual se conservan; las de uno anterior se rehacen.
     const current = before?.applicationsVersion === APPS_VERSION;
     const cropped = current ? (before?.applications?.filter((a) => a.path) ?? []) : [];

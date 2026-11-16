@@ -56,6 +56,9 @@ export type BrandData = {
     // Id del recurso (intranet_brand_assets) que es el logo principal, elegido por
     // el equipo. Sin elegir: el que se llama "Principal" o el primero subido.
     main?: string | null;
+    // Fondo elegido a mano para cada logo (id del recurso → #RRGGBB). Sin elegir,
+    // el automático (logo-tone.ts).
+    backgrounds?: Record<string, string>;
   };
   voice: { description?: string | null; keywords: string[]; dos: string[]; donts: string[] };
   imagery: string[];

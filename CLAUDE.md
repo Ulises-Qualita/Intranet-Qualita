@@ -93,7 +93,10 @@ No hay framework de tests configurado todavía.
   agente) y `/clientes` y `/equipo` la filtran; se llega por la entrada "Qualita"
   de la zona Qualita de la sidebar (`getInternalClient()`, prop `studio`). Sin logo subido usa el isotipo
   de la intranet (`/qualita-isotipo.png`), también como ícono de esa entrada. La RLS
-  es la de un cliente: admins y miembros asignados. Solapas propias
+  lo deja ver a **todo el equipo** (perfil activo), asignado o no, y nunca a las
+  cuentas de clientes: `intranet_visible_client_ids()` le suma el interno a
+  cualquier perfil activo (`docs/sql/2026-11-16-interno-todo-el-equipo.sql`). Las
+  páginas siguen pidiendo el área `clientes`. Solapas propias
   (`lib/client-nav.ts`, `teamNav`; ahí vive también el catálogo `CLIENT_NAV` del
   panel del equipo): sin Vista general (la entrada redirige a la primera solapa),
   sin META, GADS, CRM, Reuniones, Repositorio, Reportes ni Calendario (`INTERNAL_OFF`;

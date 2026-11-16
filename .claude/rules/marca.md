@@ -66,9 +66,14 @@ paths:
   imagen (canvas, `crossOrigin`; Storage manda CORS) y `bestBackground` elige el
   primero donde se lee (contraste 3+ del 85% del logo) en este orden: blanco, color
   principal, los otros de la marca, casi negro. Una imagen con fondo propio (JPG)
-  va sobre ese color. **No se elige el fondo a mano** (se
-  sacó: el usuario no lo quiere). Los ejemplos aplicados usan el logo que mejor se
-  lee sobre el color principal.
+  va sobre ese color. **El equipo puede elegir el fondo a mano** (2026-11-16,
+  pedido: el automático ponía sobre blanco logos pensados para fondo negro; antes
+  se había sacado). Botón "Fondo" en cada logo del panel (`LogoBackgroundPicker`
+  en brand-ui, popover con blanco, negro, los colores de la marca, otro color y
+  "Automático"); se guarda en `data.logo.backgrounds` (id del recurso → hex,
+  `setLogoBackground`) y gana sobre el automático en `logoBackground`. Volver a
+  leer el manual y el editor conservan `backgrounds` y `main`. Los ejemplos
+  aplicados usan el logo que mejor se lee sobre el color principal.
 - Panel del logo: **mosaico bento asimétrico** (`logoLayout`, tamaños por cantidad):
   principal 7×4, a la derecha 5×2 y debajo 3 + 2, el resto de a dos (6×2). Las
   variantes de una misma familia (primera palabra, p. ej. los dos monocromos) se

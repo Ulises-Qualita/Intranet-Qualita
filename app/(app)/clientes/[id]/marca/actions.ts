@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getAreaSession } from "@/lib/auth";
 import { checkGoogleFonts, normalizeBrand } from "@/lib/brand";
-import { APPS_VERSION, ASSET_MAX, type AssetKind, type BrandApplication, BRAND_BUCKET, BRAND_PDF_MAX, isAssetKind } from "@/lib/brand-shared";
+import { APPS_VERSION, ASSET_MAX, type AssetKind, type BrandApplication, BRAND_BUCKET, BRAND_PDF_MAX, isAssetKind, normalizeHex } from "@/lib/brand-shared";
 import { createAdminClient, createClient, isMissingTable } from "@/lib/supabase/server";
 
 // Manual de marca: solo el equipo con el área Clientes que ve al cliente (la RLS
@@ -181,6 +181,9 @@ export async function saveBrandData(clientId: string, raw: unknown): Promise<Bra
   data.applications = saved?.applications;
   data.applicationPages = saved?.applicationPages;
   data.applicationsVersion = saved?.applicationsVersion;
+  // Ni el principal ni los fondos de los logos se editan ahí.
+  data.logo.main = saved?.logo.main;
+  data.logo.backgrounds = saved?.logo.backgrounds;
   const { error } = await team.supabase.from("intranet_brand_books").upsert({
     client_id: clientId,
     data,
@@ -220,6 +223,41 @@ export async function setMainLogo(clientId: string, assetId: string): Promise<Br
     updated_at: new Date().toISOString(),
   });
   if (error) return fail("logo principal", error, "No se pudo marcar el logo principal.");
+  revalidatePath(`/clientes/${team.slug}/marca`);
+  return { ok: true, error: null };
+}
+
+// Fondo de un logo elegido a mano (#RRGGBB); null vuelve al automático.
+export async function setLogoBackground(clientId: string, assetId: string, color: string | null): Promise<BrandResult> {
+  const team = await teamFor(clientId);
+  if (!team) return NO_ACCESS;
+  const hex = color === null ? null : normalizeHex(color);
+  if (color !== null && !hex) return { ok: false, error: "Color inválido." };
+  const { data: asset } = await team.supabase
+    .from("intranet_brand_assets")
+    .select("id")
+    .eq("id", assetId)
+    .eq("client_id", clientId)
+    .eq("kind", "logo")
+    .maybeSingle<{ id: string }>();
+  if (!asset) return { ok: false, error: "No se encontró el logo." };
+  const { data: row } = await team.supabase
+    .from("intranet_brand_books")
+    .select("data, status")
+    .eq("client_id", clientId)
+    .maybeSingle<{ data: unknown; status: string }>();
+  const data = normalizeBrand(row?.data ?? {});
+  const backgrounds = { ...data.logo.backgrounds };
+  if (hex) backgrounds[assetId] = hex;
+  else delete backgrounds[assetId];
+  const { error } = await team.supabase.from("intranet_brand_books").upsert({
+    client_id: clientId,
+    data: { ...data, logo: { ...data.logo, backgrounds } },
+    status: row?.status ?? "listo",
+    updated_by: team.session.user.id,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) return fail("fondo del logo", error, "No se pudo guardar el fondo.");
   revalidatePath(`/clientes/${team.slug}/marca`);
   return { ok: true, error: null };
 }

@@ -110,6 +110,7 @@ export async function BrandView({ c, internal }: { c: Client; internal: boolean 
     download: a.url ? downloadUrl(a.url, a.fileName) : null,
     image: isImage(a),
     negative: isNegative(a),
+    background: a.kind === "logo" ? (data.logo.backgrounds?.[a.id] ?? null) : null,
     size: fileSize(a.size),
     kind: a.kind,
   });
