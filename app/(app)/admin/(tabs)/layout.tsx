@@ -25,6 +25,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     ...(isAdmin ? [{ href: "/admin/cuentas", label: "Cuentas de clientes" }] : []),
     { href: "/admin/criterio", label: "Criterio de pauta" },
     { href: "/admin/gastos", label: "Gastos" },
+    { href: "/admin/alertas", label: "Alertas" },
   ];
 
   return (

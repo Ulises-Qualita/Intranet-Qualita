@@ -28,3 +28,28 @@ paths:
   `previous_html` para deshacer un nivel (`docs/sql/2026-09-28-reportes-edicion.sql`). La migración de reportes también agrega
   `intranet_leads.stage_changed_at` (Odoo `date_last_stage_update`, para el tiempo de
   respuesta) e `intranet_clarity_daily.sources` (origen del tráfico, de `ReferrerUrl`).
+- Reportes comparativos y cargados a mano (`docs/sql/2026-11-26-reportes-comparativos.sql`:
+  `kind` generado/manual/comparativo, `metrics`, `file_path`, `file_name`,
+  `compared_ids`, `html` opcional y bucket privado `intranet-client-reports`).
+  Cada reporte guarda sus números en `metrics` (`lib/report/metrics.ts`,
+  `fromReportData`): el comparativo compara contra **lo que decía cada reporte
+  guardado**, no recalcula (pedido del usuario), así sirve para meses de más de 90
+  días. Diseño: `docs/Reporte_Bimenstral_Comparativo.pdf` (el mensual con
+  "▲ x% vs Septiembre / vs Agosto" debajo de cada número). En el formulario, modo
+  "Comparativo" propone los reportes de los **dos meses anteriores** (el más nuevo
+  de cada mes, con números) y se pueden cambiar; `POST /api/reportes` recibe
+  `compare` (ids), `generateReport` los carga (`loadPeers`) y `renderReport(data,
+  texts, peers)` agrega las líneas con `makeCompare` (`lines` / `inline`; cada
+  número dice si mejorar es subir, bajar o ninguna; participaciones en p.p.;
+  campañas, canales, vendedores y origen del tráfico se cruzan por nombre). Claude
+  recibe los números anteriores en `comparacion` para los textos. Sin peers, el
+  HTML queda igual que antes. Carga a mano ("Cargar un reporte", `manual-report.tsx`):
+  PDF o HTML hasta 20 MB, del navegador a Storage con URL firmada
+  (`createReportUpload`), `POST /api/reportes/importar` hace que Claude saque los
+  números (`lib/report/import.ts`, structured outputs con `METRICS_SCHEMA`) y el
+  equipo los revisa en `MetricsEditor` antes de guardar (`saveManualReport`); si
+  cancela, el archivo se borra. Una vez guardados, los números no se editan desde
+  el historial (se sacó el botón "Números" a pedido, 2026-11-26): los generados
+  antes de la migración no tienen y no se pueden elegir para comparar; hay que
+  generarlos de nuevo o subirlos como reporte manual. `/api/reportes/[id]` sirve el archivo de un manual (PDF sin
+  CSP sandbox: el visor no abre así). "Modificar" no aplica a los manuales.

@@ -8,6 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { addUsage, emptyTokens, recordUsage } from "../agent/usage";
 import { aiChoice, effortParam } from "../ai-config";
 import type { ReportData } from "./data";
+import type { MetricsPeer } from "./metrics";
 
 export type ReportTexts = {
   reading: string;
@@ -58,6 +59,7 @@ Reglas:
 - Si una sección no tiene datos en el resumen (valor null), devolvé "" en su texto.
 - Si googleAds es "no conectado" o "sin actividad", no lo analices; como mucho mencioná que está pendiente. Si trae datos, la inversión del período es Meta + Google, y los "leads" de Google son las conversiones que define su cuenta (formularios, llamadas): comparables con los leads de Meta, pero no idénticos; pueden tener decimales por la atribución.
 - Los próximos pasos tienen que ser accionables y salir de lo que muestran los datos.
+- Si el resumen trae "comparacion", es un reporte comparativo: cada entrada son los números de un mes anterior, tal como figuraron en su reporte (null = ese reporte no tenía el dato). Contá los cambios más relevantes contra esos meses (con su porcentaje o su valor anterior) en la lectura, el cuello de botella, el canal y los próximos pasos. No compares datos que falten de un lado, y aclarálo si un mes anterior cubre un período distinto (por ejemplo, no es un mes completo).
 
 Ejemplo del estilo esperado (de otro reporte, no copies sus números):
 - Lectura: "En el período se invirtieron **$2.171.390** entre Meta y Google, con **111 leads** a un CPL promedio de **$19.562**. El foco del mes fue acumular volumen de leads con el píxel y el tracking recién montados, sin tocar presupuestos."
@@ -65,9 +67,20 @@ Ejemplo del estilo esperado (de otro reporte, no copies sus números):
 - Próximo paso: { "priority": "Prioridad 3", "title": "Emparejar el avance del equipo", "detail": "Anabella y Camila concentran 119 de 159 leads (75%) con las tasas de confirmación más bajas, mientras Gustavo confirma al 26%. Documentar cómo cotiza y sigue el que más convierte.", "debate": false }`;
 
 // Resumen para el modelo: lo mismo que el reporte, sin las imágenes.
-function summary(data: ReportData) {
+function summary(data: ReportData, peers: MetricsPeer[]) {
   const { meta, crm, clarity } = data;
   return {
+    ...(peers.length
+      ? {
+          comparacion: peers.map((p) => ({
+            mes: p.label,
+            desde: p.since,
+            hasta: p.until,
+            numeros: p.metrics,
+            nota: "ctr, contacted24Pct, scroll, rageShare, mobileShare y share en %; activeTime en segundos; responseMedianHours en horas.",
+          })),
+        }
+      : {}),
     cliente: data.client.name,
     periodo: data.period.range,
     moneda: "ARS",
@@ -156,6 +169,7 @@ export async function writeReportTexts(
   data: ReportData,
   userId: string,
   onThinking?: (text: string) => void,
+  peers: MetricsPeer[] = [],
 ): Promise<ReportTexts> {
   const ai = await aiChoice("reporte");
   const client = new Anthropic();
@@ -168,7 +182,7 @@ export async function writeReportTexts(
     messages: [
       {
         role: "user",
-        content: `Resumen del período (JSON):\n${JSON.stringify(summary(data), null, 2)}\n\nEscribí los textos del reporte.`,
+        content: `Resumen del período (JSON):\n${JSON.stringify(summary(data, peers), null, 2)}\n\nEscribí los textos del reporte.`,
       },
     ],
   });

@@ -5,9 +5,10 @@
 export const BRAND_BUCKET = "intranet-brand";
 
 // El PDF del brandbook. Hasta 24 MB va directo a Claude; más pesado se sube a la
-// Files API de Anthropic. Tope 115 MB (el del bucket; el del proyecto de
-// Supabase, en Settings → Storage, tiene que ser igual o mayor).
-export const BRAND_PDF_MAX = 115 * 1024 * 1024;
+// Files API de Anthropic. Tope 40 MB (2026-11-16: con 115 MB los manuales muy
+// pesados no llegaban a cargarse). El bucket admite más (115 MB) por los recursos.
+export const BRAND_PDF_MAX = 40 * 1024 * 1024;
+export const BRAND_PDF_MAX_LABEL = "40 MB";
 
 export type AssetKind = "logo" | "fuente" | "otro";
 
@@ -71,6 +72,10 @@ export type BrandData = {
   // Con qué criterio se marcaron las aplicaciones (APPS_VERSION). Una lista de un
   // criterio anterior se vuelve a sacar sola.
   applicationsVersion?: number;
+  // Textos de muestra del panel Jerarquía escritos por el equipo: uno por nivel de
+  // título (en orden; "" = el de la marca) y el del texto corrido. Sin cargar, los
+  // arma el tablero (nombre, palabras del tono, resumen).
+  hierarchy?: { titles: string[]; text: string | null };
 };
 
 export type ApplicationPage = { page: number; path: string };

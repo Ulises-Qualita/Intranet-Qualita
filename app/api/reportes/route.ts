@@ -19,7 +19,14 @@ export async function POST(request: NextRequest) {
   const session = await getAreaSession("clientes");
   if (!session) return new Response("Sin acceso", { status: 403 });
 
-  const body = (await request.json().catch(() => null)) as { client?: string; since?: string; until?: string } | null;
+  const body = (await request.json().catch(() => null)) as {
+    client?: string;
+    since?: string;
+    until?: string;
+    // Reporte comparativo: ids de los reportes guardados contra los que compara.
+    compare?: unknown;
+  } | null;
+  const compare = Array.isArray(body?.compare) ? body.compare.filter((v): v is string => typeof v === "string" && !!v) : [];
   const client = body?.client ? await getClient(body.client) : null;
   if (!client) return new Response("Cliente no encontrado", { status: 404 });
 
@@ -31,7 +38,7 @@ export async function POST(request: NextRequest) {
         const result = await generateReport(client, body?.since ?? "", body?.until ?? "", session.user.id, {
           step: (step) => send({ type: "step", step }),
           thinking: (text) => send({ type: "thinking", text }),
-        });
+        }, compare);
         revalidatePath(`/clientes/${client.slug}/reportes`);
         send({ type: "done", ...result });
       } catch (e) {

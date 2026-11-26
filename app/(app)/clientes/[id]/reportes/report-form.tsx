@@ -22,6 +22,34 @@ function previousMonth(today: string) {
   return [start, end] as const;
 }
 
+// Un reporte del historial que puede servir para comparar.
+export type HistoryOption = { id: string; since: string; until: string; hasMetrics: boolean; manual: boolean };
+
+const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+// "YYYY-MM" del mes en el que cae la mayor parte del período.
+function monthOf(since: string, until: string) {
+  const mid = new Date((Date.parse(`${since}T00:00:00Z`) + Date.parse(`${until}T00:00:00Z`)) / 2);
+  return mid.toISOString().slice(0, 7);
+}
+function shiftMonth(ym: string, n: number) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
+}
+const dm = (iso: string) => iso.slice(8, 10) + "/" + iso.slice(5, 7);
+const optionLabel = (h: HistoryOption) => {
+  const ym = monthOf(h.since, h.until);
+  return `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)} · ${dm(h.since)} al ${dm(h.until)}${h.manual ? " · cargado a mano" : ""}${h.hasMetrics ? "" : " · sin números"}`;
+};
+
+// Los dos meses anteriores al del período: el reporte más nuevo de cada uno.
+function defaultPeers(history: HistoryOption[], since: string, until: string): [string, string] {
+  if (!since || !until) return ["", ""];
+  const month = monthOf(since, until);
+  const pick = (n: number) => history.find((h) => h.hasMetrics && monthOf(h.since, h.until) === shiftMonth(month, -n))?.id ?? "";
+  return [pick(1), pick(2)];
+}
+
 const STEPS: { step: ReportStep; label: string }[] = [
   { step: "datos", label: "Leyendo Meta, CRM y Clarity del período" },
   { step: "claude", label: "Claude analiza los números" },
@@ -33,9 +61,24 @@ type Run =
   | { state: "done"; id: string; warning: string | null; thinking: string }
   | { state: "error"; message: string; thinking: string };
 
-export function ReportForm({ clientSlug, today, oldest }: { clientSlug: string; today: string; oldest: string }) {
+export function ReportForm({
+  clientSlug,
+  today,
+  oldest,
+  history,
+}: {
+  clientSlug: string;
+  today: string;
+  oldest: string;
+  history: HistoryOption[];
+}) {
   const [since, setSince] = useState(shift(today, 30));
   const [until, setUntil] = useState(today);
+  const [mode, setMode] = useState<"mensual" | "comparativo">("mensual");
+  // Hasta que se elige a mano, se proponen los reportes de los dos meses anteriores.
+  const [chosen, setChosen] = useState<[string, string] | null>(null);
+  const compare = chosen ?? defaultPeers(history, since, until);
+  const compareIds = mode === "comparativo" ? [...new Set(compare.filter(Boolean))] : [];
   const [run, setRun] = useState<Run | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const thinkingBox = useRef<HTMLDivElement>(null);
@@ -62,7 +105,7 @@ export function ReportForm({ clientSlug, today, oldest }: { clientSlug: string; 
       const res = await fetch("/api/reportes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client: clientSlug, since, until }),
+        body: JSON.stringify({ client: clientSlug, since, until, compare: compareIds }),
       });
       if (!res.ok || !res.body) throw new Error("No se pudo iniciar la generación del reporte.");
 
@@ -103,6 +146,26 @@ export function ReportForm({ clientSlug, today, oldest }: { clientSlug: string; 
   return (
     <>
       <form onSubmit={generate} className="report-form">
+        <div className="report-presets" role="radiogroup" aria-label="Tipo de reporte">
+          {(
+            [
+              ["mensual", "Reporte del período"],
+              ["comparativo", "Comparativo"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={mode === value}
+              className={`chip${mode === value ? " on" : ""}`}
+              onClick={() => setMode(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="report-presets">
           {presets.map((p) => (
             <button
@@ -130,14 +193,41 @@ export function ReportForm({ clientSlug, today, oldest }: { clientSlug: string; 
           </label>
         </div>
 
+        {mode === "comparativo" && (
+          <div className="report-compare">
+            {[0, 1].map((i) => (
+              <label key={i}>
+                <span>{i === 0 ? "Comparar con" : "Y con"}</span>
+                <select
+                  value={compare[i]}
+                  onChange={(e) => {
+                    const next: [string, string] = [...compare];
+                    next[i] = e.target.value;
+                    setChosen(next);
+                  }}
+                >
+                  <option value="">{i === 0 ? "Elegí un reporte" : "Ninguno"}</option>
+                  {history.map((h) => (
+                    <option key={h.id} value={h.id} disabled={!h.hasMetrics}>
+                      {optionLabel(h)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        )}
+
         <p className="report-help">
-          Toma Meta, CRM y Clarity del período y Claude escribe la lectura y los próximos pasos. Tarda alrededor de un minuto.
+          {mode === "comparativo"
+            ? "Toma Meta, CRM y Clarity del período y compara cada número con lo que decían los reportes elegidos (generados o cargados a mano). Se proponen los de los dos meses anteriores. Tarda alrededor de un minuto."
+            : "Toma Meta, CRM y Clarity del período y Claude escribe la lectura y los próximos pasos. Tarda alrededor de un minuto."}
         </p>
 
         <div>
-          <button type="submit" className="connect-btn" disabled={running}>
+          <button type="submit" className="connect-btn" disabled={running || (mode === "comparativo" && !compareIds.length)}>
             <Icon name="sparkles" size={17} />
-            Generar reporte
+            {mode === "comparativo" ? "Generar comparativo" : "Generar reporte"}
           </button>
         </div>
       </form>

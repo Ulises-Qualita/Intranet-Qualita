@@ -12,8 +12,19 @@ const PREVIEW = 4;
 // Anuncios que el CRM atribuye a cada oportunidad. Cada fila abre el anuncio en
 // la vista de META, con su campaña ya desplegada.
 // `query` es el período actual (periodQuery): el anuncio se abre en META con el mismo corte.
+// `showWon` en false saca Ganadas y Facturado (ventas registradas fuera del CRM).
 // `base` es la ruta de las pestañas del cliente (/clientes/[slug] o /mi-empresa).
-export function AdsTable({ ads, base, query }: { ads: AdStats[]; base: string; query: string }) {
+export function AdsTable({
+  ads,
+  base,
+  query,
+  showWon = true,
+}: {
+  ads: AdStats[];
+  base: string;
+  query: string;
+  showWon?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? ads : ads.slice(0, PREVIEW);
   const hidden = ads.length - visible.length;
@@ -26,8 +37,12 @@ export function AdsTable({ ads, base, query }: { ads: AdStats[]; base: string; q
             <tr>
               <th>Anuncio</th>
               <th>Leads</th>
-              <th>Ganadas</th>
-              <th>Facturado</th>
+              {showWon && (
+                <>
+                  <th>Ganadas</th>
+                  <th>Facturado</th>
+                </>
+              )}
               <th />
             </tr>
           </thead>
@@ -42,14 +57,18 @@ export function AdsTable({ ads, base, query }: { ads: AdStats[]; base: string; q
                     </Link>
                   </td>
                   <td className="num">{integer(ad.leads)}</td>
-                  <td className="num">{integer(ad.won)}</td>
-                  <td className="num">
-                    {ad.ticketTotal || ad.usdTotal
-                      ? [ad.ticketTotal ? money(ad.ticketTotal) : null, ad.usdTotal ? dollars(ad.usdTotal) : null]
-                          .filter(Boolean)
-                          .join(" + ")
-                      : "—"}
-                  </td>
+                  {showWon && (
+                    <>
+                      <td className="num">{integer(ad.won)}</td>
+                      <td className="num">
+                        {ad.ticketTotal || ad.usdTotal
+                          ? [ad.ticketTotal ? money(ad.ticketTotal) : null, ad.usdTotal ? dollars(ad.usdTotal) : null]
+                              .filter(Boolean)
+                              .join(" + ")
+                          : "—"}
+                      </td>
+                    </>
+                  )}
                   <td className="go">
                     <Link href={href} aria-label={`Ver ${ad.name} en META`}>
                       <Icon name="chevron" size={18} strokeWidth={2} />

@@ -15,7 +15,7 @@ paths:
   en `lib/client-tabs.ts` (se guarda `hidden_tabs.clientShown` cuando alguien la
   prende en Editar cliente → Solapas; `applyTabChange` arma lo que se guarda).
 - Flujo: el PDF va del navegador al bucket privado `intranet-brand` con URL firmada
-  (`createBrandUpload` → `brandPdfUploaded`, tope 115 MB, igual en el bucket; el límite global de Storage del proyecto tiene
+  (`createBrandUpload` → `brandPdfUploaded`, tope del PDF 40 MB desde 2026-11-16 porque con 115 MB los pesados no cargaban; el bucket admite 115 MB por los recursos; el límite global de Storage del proyecto tiene
   que ser igual o mayor) y enseguida
   `POST /api/marca/extraer` (ruta, no Server Action, por el tiempo; `maxDuration`
   300) corre `extractBrandBook` de `lib/brand.ts`: Claude lee el PDF (hasta 24 MB en
@@ -148,7 +148,11 @@ paths:
   abre un panel propio `estilo` con una tarjeta por pauta, que antes iban
   plegadas en Tono). Cada uno abre **su propio panel** (pedido: Jerarquía abría
   Tipografía sin mostrar la jerarquía): `jerarquia` (`HierarchyPanel`: cada nivel
-  a su tamaño real con textos de la marca, y el uso de cada fuente). Hubo un
+  a su tamaño real con textos de la marca, y el uso de cada fuente; el equipo
+  cambia los textos con "Editar textos", en el lugar y con la misma tipografía,
+  y se guardan en `data.hierarchy` con `saveHierarchyTexts`: uno por nivel, "" o
+  igual al automático = automático; el bloque del tablero usa el primero y el
+  texto; volver a leer y el editor los conservan). Hubo un
   tercer bloque, **No hacer** (prohibiciones cortas, con panel "Sí y no"): el
   usuario pidió quitarlo; las reglas siguen plegadas en Logo y en Tono. Cada bloque aparece solo
   si el manual trae el dato y se reparten el ancho (`extraSpan`).

@@ -3,9 +3,9 @@ import { RangePicker } from "@/components/range-picker";
 import { SyncStatus } from "@/components/sync-status";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, KpiLocked, MissingIntegration, Pill } from "@/components/ui";
-import { getChatEvents, getStageEvents } from "@/lib/crm-chats";
+import { countReached, getChatEvents, getStageEvents, getStageReached } from "@/lib/crm-chats";
 import { crmProviderLabel, noSourceLabel } from "@/lib/crm-shared";
-import { prepareCrmView } from "@/lib/crm-sync";
+import { prepareCrmView, salesOutsideCrm } from "@/lib/crm-sync";
 import {
   type Client,
   crmPeriod,
@@ -68,7 +68,9 @@ export async function CrmView({
   const showVideos = c.conn.meta && seesMeta;
   // Atención por chat: solo el equipo y solo Kommo, que es el que registra los mensajes.
   const kommoUrl = internal && secrets?.provider === "kommo" ? secrets.kommo?.url : undefined;
-  const [snapshot, all, campaigns, chatEvents, allSales, stageEvents, metaDaily, gadsDaily] = await Promise.all([
+  // Ventas fuera del CRM: en lugar de "Ganadas", los que llegaron a una etapa.
+  const milestone = salesOutsideCrm(secrets) ? (secrets?.milestone_stage ?? null) : null;
+  const [snapshot, all, campaigns, chatEvents, allSales, stageEvents, metaDaily, gadsDaily, reached] = await Promise.all([
     getCrmSnapshot(c.id),
     getLeads(c.id),
     showVideos ? getMetaCampaigns(c.id, range) : null,
@@ -81,10 +83,15 @@ export async function CrmView({
     // oportunidades por origen. Si no se pueden leer, queda lo del CRM.
     c.conn.meta && seesMeta ? getMetaDaily(c.id, range).catch(() => null) : null,
     c.conn.google_ads && seesMeta ? getGadsDaily(c.id, range).catch(() => null) : null,
+    milestone ? getStageReached(c.id, milestone).catch(() => null) : null,
   ]);
 
   // Leads sin origen: en Kommo son los que escribieron directo por WhatsApp.
   const noSource = noSourceLabel(secrets?.provider);
+  // Ventas que el cliente registra fuera del CRM (sales_off): se muestran como
+  // pendientes, no como 0.
+  const salesOff = salesOutsideCrm(secrets);
+  const salesOffNote = "Las ventas no se registran en el CRM";
   // Las oportunidades se recortan por fecha de creación y las ventas (ganadas,
   // tickets) por fecha de venta, según el selector del topbar.
   const { leads, won, tickets, ticketAvg, ticketTotal, sellers, sources, wonSources, ads: crmAds } = crmPeriod(all, range, noSource);
@@ -123,10 +130,18 @@ export async function CrmView({
   const leadsChange = before && compare(leads.length, before.leads.length, { better: "up", format: integer, versus: antes });
   const ticketChange = before && compare(ticketAvg, before.ticketAvg, { better: "up", format: (v) => money(v), versus: antes });
   const wonChange = before && compare(won, before.won, { better: "up", format: integer, versus: antes });
+  // Llegaron a la etapa: de las oportunidades creadas en el período. Se compara
+  // solo si el historial de etapas cubre el período anterior entero.
+  const reachedNow = milestone && reached ? countReached(leads, milestone, reached.ids) : null;
+  const reachedChange =
+    milestone && reached && before && reached.since && reached.since <= previous.since
+      ? compare(reachedNow, countReached(before.leads, milestone, reached.ids), { better: "up", format: integer, versus: antes })
+      : null;
   const ticketTotalChange = before && compare(ticketTotal, before.ticketTotal, { better: "up", format: (v) => money(v), versus: antes });
   // Mismo criterio que la solapa META: primero ventas, después CPL. Las ventas
   // entran si el CRM sabe qué leads se ganaron (won no es null).
-  const top = campaigns && topMetaVideos(campaigns, won !== null ? ads : null);
+  const showWon = won !== null && !salesOff;
+  const top = campaigns && topMetaVideos(campaigns, showWon ? ads : null);
 
   // Con planilla de ventas, las ventas y la facturación salen de ahí y se cuentan
   // por fecha de confirmación: eso sí se puede comparar con el período anterior,
@@ -217,7 +232,24 @@ export async function CrmView({
             {snapshot ? (
               <>
                 <Kpi label="Oportunidades" icon="target" value={integer(leads.length)} sub={periodo} hero change={leadsChange} versus={versus} />
-                {won === null ? (
+                {salesOff ? (
+                  <>
+                    {milestone && reachedNow !== null ? (
+                      <Kpi
+                        label={`Llegaron a "${milestone}"`}
+                        icon="check"
+                        value={integer(reachedNow)}
+                        sub={`de ${integer(leads.length)} oportunidades · ${periodo}`}
+                        change={reachedChange}
+                        versus={versus}
+                      />
+                    ) : (
+                      <KpiLocked label="Ganadas" icon="check" note={salesOffNote} />
+                    )}
+                    <KpiLocked label="Total en tickets" icon="money" note={salesOffNote} />
+                    <KpiLocked label="Ticket promedio" icon="money" note={salesOffNote} />
+                  </>
+                ) : won === null ? (
                   <KpiLocked label="Ganadas" icon="check" note={internal ? "Falta correr la migración de estados" : "Sin datos"} />
                 ) : (
                   <Kpi
@@ -229,7 +261,7 @@ export async function CrmView({
                     versus={versus}
                   />
                 )}
-                {ticketAvg === null ? (
+                {salesOff ? null : ticketAvg === null ? (
                   <>
                     <KpiLocked label="Total en tickets" icon="money" note={`Sin tickets cargados ${periodPhrase(range)}`} />
                     <KpiLocked label="Ticket promedio" icon="money" note={`Sin tickets cargados ${periodPhrase(range)}`} />
@@ -319,9 +351,13 @@ export async function CrmView({
                       <tr>
                         <th>Vendedor</th>
                         <th>Oportunidades</th>
-                        <th>Ganadas</th>
-                        <th>Ticket promedio</th>
-                        <th>Facturado</th>
+                        {!salesOff && (
+                          <>
+                            <th>Ganadas</th>
+                            <th>Ticket promedio</th>
+                            <th>Facturado</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -331,9 +367,13 @@ export async function CrmView({
                             <b>{s.name}</b>
                           </td>
                           <td className="num">{integer(s.leads)}</td>
-                          <td className="num">{integer(s.won)}</td>
-                          <td className="num">{s.ticketAvg === null ? "—" : money(s.ticketAvg)}</td>
-                          <td className="num">{s.ticketTotal ? money(s.ticketTotal) : "—"}</td>
+                          {!salesOff && (
+                            <>
+                              <td className="num">{integer(s.won)}</td>
+                              <td className="num">{s.ticketAvg === null ? "—" : money(s.ticketAvg)}</td>
+                              <td className="num">{s.ticketTotal ? money(s.ticketTotal) : "—"}</td>
+                            </>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -349,7 +389,7 @@ export async function CrmView({
               {ads.length === 0 ? (
                 <EmptyState label="Sin datos">Ninguna oportunidad del período tiene el anuncio cargado en el CRM.</EmptyState>
               ) : (
-                <AdsTable ads={ads} base={base} query={periodQuery(range)} />
+                <AdsTable ads={ads} base={base} query={periodQuery(range)} showWon={!salesOff} />
               )}
             </Card>
           </div>
@@ -391,6 +431,8 @@ export async function CrmView({
                     }))}
                   />
                 )
+              ) : salesOff ? (
+                <EmptyState label="Pendiente">{salesOffNote}: se van a conectar desde otra fuente.</EmptyState>
               ) : wonSources === null ? (
                 <EmptyState label="Pendiente">{internal ? "Falta correr la migración de estados." : "Todavía no hay datos de ventas."}</EmptyState>
               ) : wonSources.length === 0 ? (
@@ -454,13 +496,13 @@ export async function CrmView({
         {top && (
           <Card
             title="Videos con mejor rendimiento"
-            hint={`${topVideosHint(top, won !== null)} · ${periodo}`}
+            hint={`${topVideosHint(top, showWon)} · ${periodo}`}
             className="mt-4"
           >
             {top.videos.length ? (
               <TopVideos
                 videos={top.videos}
-                showWon={won !== null}
+                showWon={showWon}
                 clientSlug={c.slug}
                 base={base}
                 query={periodQuery(range)}

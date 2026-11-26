@@ -149,8 +149,10 @@ export async function editReport(
     .from("intranet_client_reports")
     .select("html")
     .eq("id", reportId)
-    .maybeSingle<{ html: string }>();
+    .maybeSingle<{ html: string | null }>();
   if (error || !report) throw new ReportError("No se encontró el reporte.");
+  // Un reporte cargado a mano es un archivo subido, sin HTML que modificar.
+  if (!report.html) throw new ReportError("Un reporte cargado a mano no se puede modificar: corregí sus números o subilo de nuevo.");
 
   const { stripped, images } = stripImages(report.html);
   const messages: Anthropic.MessageParam[] = [

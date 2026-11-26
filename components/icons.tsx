@@ -145,6 +145,29 @@ const PATHS = {
       <path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9" />
     </>
   ),
+  // Áreas de los Cerebros (lib/brains.ts): redes, branding y estrategia.
+  // Cámara cuadrada, como la de los posteos: redes sociales.
+  social: (
+    <>
+      <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" />
+      <circle cx="12" cy="12" r="4.2" />
+      <path d="M17.4 6.6h.01" />
+    </>
+  ),
+  pen: (
+    <>
+      <path d="M15.7 21.3a1 1 0 01-1.4 0l-1.6-1.6a1 1 0 010-1.4l5.6-5.6a1 1 0 011.4 0l1.6 1.6a1 1 0 010 1.4z" />
+      <path d="M18 13l-1.4-6.9a1 1 0 00-.7-.8L3.2 2a1 1 0 00-1.2 1.2l3.3 12.7a1 1 0 00.8.7L13 18" />
+      <path d="M2.3 2.3l7.3 7.3" />
+      <circle cx="11" cy="11" r="2" />
+    </>
+  ),
+  compass: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M16.2 7.8l-1.8 5.4a2 2 0 01-1.3 1.3l-5.3 1.7 1.8-5.4a2 2 0 011.3-1.3z" />
+    </>
+  ),
   briefcase: (
     <>
       <rect x="2" y="7" width="20" height="14" rx="2" />

@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Notas para Claude Code (complementan AGENTS.md)
 
 Las notas de cada integración o solapa (Meta, Clarity, Notion, Agente, Foro, Manual de marca,
-Reuniones, Drive, Reportes, Google Ads, CRM, Portal/Hitos, SEO) están en
+Reuniones, Drive, Reportes, Google Ads, CRM, Portal/Hitos, SEO, Alertas) están en
 `.claude/rules/*.md` y se cargan solas al tocar los archivos de esa función.
 Al documentar algo nuevo de una de ellas, agregarlo ahí y no acá.
 
@@ -101,7 +101,8 @@ No hay framework de tests configurado todavía.
   panel del equipo): sin Vista general (la entrada redirige a la primera solapa),
   sin META, GADS, CRM, Reuniones, Repositorio, Reportes ni Calendario (`INTERNAL_OFF`;
   `TeamTabGate` las redirige si se entra por URL), y con **Redes** y **Cerebros**
-  (`clientes/[id]/redes` y `/cerebros`, solo para el interno), por ahora con el
+  (`clientes/[id]/redes` y `/cerebros`, solo para el interno; Cerebros ya tiene
+  su interfaz, ver `.claude/rules/cerebros.md`). Redes sigue con el
   cartel `WorkInProgress` (`components/work-in-progress.tsx`, una grúa de obra en línea que sube y baja un bloque, y "IT ya está trabajando en esta sección").
   Su solapa Equipo es **la pantalla Equipo del estudio** (`StudioTeam` en
   `app/(app)/equipo/studio-team.tsx`: tarjetas con puesto, en línea, rol y clientes

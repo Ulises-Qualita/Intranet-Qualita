@@ -1,7 +1,7 @@
 import { RangePicker } from "@/components/range-picker";
 import { Topbar } from "@/components/topbar";
 import { Card, EmptyState, Kpi, KpiLocked, MissingIntegration } from "@/components/ui";
-import { getCrmSecrets } from "@/lib/crm-sync";
+import { getCrmSecrets, salesOutsideCrm } from "@/lib/crm-sync";
 import { goalFor } from "@/lib/billing-goals";
 import {
   type Client,
@@ -62,7 +62,9 @@ export async function OverviewView({
   // (sales === null) no hay forma de saber qué se ganó, y la card lo dice en vez de
   // mostrar 0%.
   const crm = crmPeriod(leads, range);
-  const won = crm.won;
+  // Ventas registradas fuera del CRM (sales_off): quedan como "sin dato", no 0.
+  const salesOff = salesOutsideCrm(secrets);
+  const won = salesOff ? null : crm.won;
   const opportunities = crm.leads.length;
   const periodo = range.label;
 
@@ -89,7 +91,11 @@ export async function OverviewView({
   const split: [string, string] | null =
     c.conn.meta && c.conn.google_ads ? [money(metaSpend), `Meta · ${money(gadsSpend)} Google Ads`] : null;
   const adsSource = c.conn.meta && c.conn.google_ads ? "Meta + Google Ads" : c.conn.google_ads ? "Google Ads" : "Meta";
-  const crmMissing = !c.conn.crm ? "CRM no conectado" : "El CRM no informa qué se ganó";
+  const crmMissing = !c.conn.crm
+    ? "CRM no conectado"
+    : salesOff
+      ? "Las ventas no se registran en el CRM"
+      : "El CRM no informa qué se ganó";
   const steps: Step[] = [
     { label: `Inversión en ${adsSource}`, value: hasAds ? money(spend) : null, cost: split, missing: adsMissing },
     {
@@ -251,8 +257,8 @@ export async function OverviewView({
             </>
           ) : sales === null ? (
             <>
-              <KpiLocked label="Conversión general" icon="target" note="El CRM no informa qué se ganó" />
-              <KpiLocked label="Ventas" icon="check" note="El CRM no informa qué se ganó" />
+              <KpiLocked label="Conversión general" icon="target" note={crmMissing} />
+              <KpiLocked label="Ventas" icon="check" note={crmMissing} />
             </>
           ) : (
             <>

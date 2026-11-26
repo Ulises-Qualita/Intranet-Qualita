@@ -4,6 +4,7 @@ import { syncAllClarityClients } from "@/lib/clarity-sync";
 import { syncAllCrmClients } from "@/lib/crm-sync";
 import { syncAllGadsClients } from "@/lib/google-ads-sync";
 import { syncAllMetaClients } from "@/lib/meta-sync";
+import { runAlerts } from "@/lib/alerts/run";
 
 // Sincroniza las métricas de Meta y Google Ads, los CRM y Clarity de todos los
 // clientes conectados. Lo dispara el cron de Vercel (ver vercel.json), que manda
@@ -37,6 +38,16 @@ export async function GET(request: NextRequest) {
   ]);
   revalidatePath("/", "layout");
 
+  // Alertas por Telegram (lib/alerts/), con los datos recién traídos. La corrida
+  // de la mañana suma los chequeos diarios; ?alertas=0 las saltea.
+  const alerts =
+    params.get("alertas") === "0"
+      ? "omitidas"
+      : await runAlerts({ morning: conClarity }).catch((e) => {
+          console.error("[alertas]", e);
+          return { ok: false, error: e instanceof Error ? e.message : "error" };
+        });
+
   const summary = (results: { ok: boolean }[]) => ({
     synced: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok),
@@ -47,6 +58,7 @@ export async function GET(request: NextRequest) {
     meta: summary(meta),
     google_ads: summary(gads),
     crm: summary(crm),
+    alerts,
     clarity: conClarity ? summary(clarity) : "omitido: la foto de Clarity se toma en la corrida de la mañana",
   });
 }

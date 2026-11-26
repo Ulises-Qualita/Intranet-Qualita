@@ -156,6 +156,16 @@ function applicationPages(v: unknown): ApplicationPage[] | undefined {
 }
 
 // Lo que venga (de Claude o del editor), limpio: HEX válidos, sin vacíos.
+// Textos del panel Jerarquía: por posición ("" = el automático de ese nivel).
+export function hierarchyTexts(raw: unknown): BrandData["hierarchy"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const h = raw as { titles?: unknown; text?: unknown };
+  const titles = (Array.isArray(h.titles) ? h.titles : []).slice(0, 6).map((t) => text(t, 160) ?? "");
+  while (titles.length && !titles[titles.length - 1]) titles.pop();
+  const body = text(h.text, 1200);
+  return titles.length || body ? { titles, text: body } : undefined;
+}
+
 // Fondos elegidos a mano: id del logo → #RRGGBB (los inválidos se descartan).
 function logoBackgrounds(raw: unknown): Record<string, string> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
@@ -206,6 +216,7 @@ export function normalizeBrand(raw: unknown): BrandData {
     applications: applicationSources(o.applications),
     applicationPages: applicationPages(o.applicationPages),
     applicationsVersion: typeof o.applicationsVersion === "number" ? o.applicationsVersion : undefined,
+    hierarchy: hierarchyTexts(o.hierarchy),
   };
 }
 
@@ -436,6 +447,7 @@ export async function extractBrandBook(
     // Lo elegido a mano sobre los logos subidos (principal, fondos) no sale del PDF.
     data.logo.main = before?.logo.main;
     data.logo.backgrounds = before?.logo.backgrounds;
+    data.hierarchy = before?.hierarchy;
     // Las ya recortadas con el criterio actual se conservan; las de uno anterior se rehacen.
     const current = before?.applicationsVersion === APPS_VERSION;
     const cropped = current ? (before?.applications?.filter((a) => a.path) ?? []) : [];

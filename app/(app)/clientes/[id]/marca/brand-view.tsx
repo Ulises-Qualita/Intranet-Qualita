@@ -153,6 +153,7 @@ export async function BrandView({ c, internal }: { c: Client; internal: boolean 
           clientSlug={c.slug}
           logoSources={data.logo.sources}
           mainLogo={data.logo.main ?? null}
+          hierarchy={data.hierarchy ?? null}
           applications={media.apps}
           appsSearched={data.applications !== undefined && data.applicationsVersion === APPS_VERSION}
           name={c.name}

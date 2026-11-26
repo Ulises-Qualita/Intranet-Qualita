@@ -9,6 +9,7 @@ import { integer, relativeTime, todayISO } from "@/lib/format";
 import { CrmForm } from "./crm-form";
 import { DisconnectCrmButton } from "./disconnect-button";
 import { LeadBase } from "./lead-base";
+import { SalesOff } from "./sales-off";
 import { SalesSheet } from "./sales-sheet";
 import { WonStages } from "./won-stages";
 
@@ -94,10 +95,24 @@ export default async function ConectarCrmPage({ params }: { params: Promise<{ id
             className="mt-4"
           >
             <p className="modal-lead">
-              El CRM deja de marcar la oportunidad como ganada cuando avanza a una etapa posterior (producción, entrega,
-              post venta). Tildá todas las etapas que ya significan venta cerrada.
+              Si el cliente registra las ventas en otro lado, tildá &quot;Las ventas no se registran en este CRM&quot;: ninguna
+              oportunidad cuenta como ganada, los montos quedan vacíos y las ventas se muestran como pendientes.
             </p>
-            <WonStages clientId={client.id} stages={secrets.stage_order} selected={secrets.won_stages ?? []} />
+            <SalesOff
+              clientId={client.id}
+              current={!!secrets.sales_off}
+              stages={secrets.stage_order}
+              milestone={secrets.milestone_stage ?? ""}
+            />
+            {!secrets.sales_off && (
+              <>
+                <p className="modal-lead mt-4">
+                  El CRM deja de marcar la oportunidad como ganada cuando avanza a una etapa posterior (producción, entrega,
+                  post venta). Tildá todas las etapas que ya significan venta cerrada.
+                </p>
+                <WonStages clientId={client.id} stages={secrets.stage_order} selected={secrets.won_stages ?? []} />
+              </>
+            )}
           </Card>
         ) : null}
 

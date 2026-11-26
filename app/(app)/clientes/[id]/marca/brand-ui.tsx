@@ -9,6 +9,7 @@ import {
   type AssetKind,
   BRAND_BUCKET,
   BRAND_PDF_MAX,
+  BRAND_PDF_MAX_LABEL,
   type BrandApplication,
   type BrandData,
   type BrandStatus,
@@ -154,7 +155,7 @@ export function PdfUploader({ clientId, clientSlug, hero }: { clientId: string; 
   async function pick(file: File) {
     setError(null);
     if (!/\.pdf$/i.test(file.name)) return setError("El manual tiene que ser un PDF.");
-    if (file.size > BRAND_PDF_MAX) return setError("El PDF pasa los 115 MB. Exportalo más liviano (imágenes comprimidas).");
+    if (file.size > BRAND_PDF_MAX) return setError(`El PDF pasa los ${BRAND_PDF_MAX_LABEL}. Exportalo más liviano (imágenes comprimidas).`);
     setStep("subiendo");
     const uploadError = await uploadFile(clientId, "pdf", file);
     if (uploadError) {
@@ -187,7 +188,7 @@ export function PdfUploader({ clientId, clientSlug, hero }: { clientId: string; 
             <Icon name={busy ? "sparkles" : "upload"} size={22} />
           </span>
           <b>{label ?? "Subí el manual de marca"}</b>
-          <span>{busy ? "Puede tardar un par de minutos. No cierres esta pestaña." : "PDF de hasta 115 MB"}</span>
+          <span>{busy ? "Puede tardar un par de minutos. No cierres esta pestaña." : `PDF de hasta ${BRAND_PDF_MAX_LABEL}`}</span>
         </button>
       ) : (
         <ActionButton icon="upload" disabled={busy} onClick={() => input.current?.click()}>

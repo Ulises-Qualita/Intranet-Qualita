@@ -29,7 +29,7 @@ import {
 } from "../data";
 import { chatStats, duration, getChatEvents, getChatStart, getStageEvents, replyTurns, stageEntries, turnStats, WORK_HOURS, type ReplyTurn } from "../crm-chats";
 import { noSourceLabel } from "../crm-shared";
-import { getCrmSecrets } from "../crm-sync";
+import { getCrmSecrets, salesOutsideCrm } from "../crm-sync";
 import { localDate, todayISO } from "../format";
 import { customPeriod, lastDays, monthPeriod, type Period } from "../period";
 import { SHOW_TASKS } from "../tasks";
@@ -366,6 +366,8 @@ const crmResumen: AgentTool = {
 
     const noSource = noSourceLabel(secrets?.provider);
     const period = crmPeriod(leads, range, noSource);
+    // Ventas registradas fuera del CRM (sales_off): no hay dato de ventas, no es 0.
+    const salesOff = salesOutsideCrm(secrets);
     // Con planilla, la venta y la facturación oficiales salen de ahí.
     const allSales = secrets?.sales_sheet ? await getSales(client.id) : null;
     const sheet = allSales && salesPeriod(allSales, leads, range, noSource);
@@ -377,13 +379,16 @@ const crmResumen: AgentTool = {
       cliente: client.name,
       periodo: periodOut(range),
       criterio: CRM_CRITERIO,
+      ...(salesOff
+        ? { aviso_ventas: "Este cliente no registra las ventas en el CRM: no hay datos de ventas, tickets ni facturación (no son 0, faltan)." }
+        : {}),
       totales: {
         oportunidades_creadas: period.leads.length,
-        ganadas: period.won,
-        conversion_pct: period.conversion === null ? null : round(period.conversion, 1),
-        ventas_con_ticket: period.tickets,
-        ticket_promedio: period.ticketAvg === null ? null : round(period.ticketAvg),
-        facturacion: round(period.ticketTotal),
+        ganadas: salesOff ? null : period.won,
+        conversion_pct: salesOff || period.conversion === null ? null : round(period.conversion, 1),
+        ventas_con_ticket: salesOff ? null : period.tickets,
+        ticket_promedio: salesOff || period.ticketAvg === null ? null : round(period.ticketAvg),
+        facturacion: salesOff ? null : round(period.ticketTotal),
         leads_desde_meta: period.fromMeta,
       },
       ventas_planilla: sheet
@@ -422,8 +427,9 @@ const crmResumen: AgentTool = {
         ...(a.usdTotal ? { facturacion_dolares: round(a.usdTotal) } : {}),
       })),
       origenes: period.sources.map((s) => ({ origen: s.name, leads: s.leads, share_pct: round(s.share, 1) })),
-      ventas_por_origen:
-        period.wonSources?.map((s) => ({ origen: s.name, ganadas: s.leads, share_pct: round(s.share, 1), facturacion: round(s.ticketTotal) })) ?? null,
+      ventas_por_origen: salesOff
+        ? null
+        : period.wonSources?.map((s) => ({ origen: s.name, ganadas: s.leads, share_pct: round(s.share, 1), facturacion: round(s.ticketTotal) })) ?? null,
       // Una oportunidad puede tener varias etiquetas: las filas no suman el total.
       etiquetas:
         period.tags?.map((t) => ({ etiqueta: t.name, leads: t.leads, ganadas: t.won, facturacion: round(t.ticketTotal) })) ??

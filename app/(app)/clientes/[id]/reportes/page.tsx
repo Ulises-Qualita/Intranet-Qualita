@@ -5,9 +5,11 @@ import { getAreaSession } from "@/lib/auth";
 import { getClient, getTeam } from "@/lib/data";
 import { longDate, relativeTime, todayISO } from "@/lib/format";
 import { META_HISTORY_DAYS, shiftDate } from "@/lib/period";
+import { parseMetrics } from "@/lib/report/metrics";
 import { createClient, isMissingTable } from "@/lib/supabase/server";
 import { DeleteReportButton } from "./delete-report-button";
 import { EditReportButton } from "./edit-report-button";
+import { ManualReport } from "./manual-report";
 import { ReportForm } from "./report-form";
 
 type ReportRow = {
@@ -17,9 +19,14 @@ type ReportRow = {
   created_at: string;
   created_by: string | null;
   edited_at?: string | null;
+  // Llegan con docs/sql/2026-11-26-reportes-comparativos.sql.
+  kind?: "generado" | "manual" | "comparativo";
+  metrics?: unknown;
+  file_name?: string | null;
 };
 
 const COLUMNS = "id, since, until, created_at, created_by";
+const KIND_LABEL = { manual: "Cargado a mano", comparativo: "Comparativo" } as const;
 
 export default async function ClienteReportesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -43,9 +50,13 @@ export default async function ClienteReportesPage({ params }: { params: Promise<
       .order("created_at", { ascending: false })
       .limit(50)
       .returns<ReportRow[]>();
-  const [first, team] = await Promise.all([read(`${COLUMNS}, edited_at`), getTeam()]);
-  // edited_at llega con docs/sql/2026-09-28-reportes-edicion.sql: sin ella se lista igual.
-  const { data, error } = first.error?.code === "42703" ? await read(COLUMNS) : first;
+  const [first, team] = await Promise.all([read(`${COLUMNS}, edited_at, kind, metrics, file_name`), getTeam()]);
+  // Las columnas nuevas llegan con migraciones (docs/sql/): sin ellas se lista igual.
+  const missingColumn = (e: { code?: string } | null) => e?.code === "42703" || e?.code === "PGRST204";
+  const second = missingColumn(first.error) ? await read(`${COLUMNS}, edited_at`) : first;
+  const { data, error } = missingColumn(second.error) ? await read(COLUMNS) : second;
+  // Sin la migración de comparativos no se pueden cargar reportes ni comparar.
+  const compareReady = !missingColumn(first.error);
   const missingTable = isMissingTable(error);
   // Cualquier otro error se muestra: tragarlo dejaba la lista vacía, como si no
   // hubiera reportes guardados.
@@ -54,6 +65,14 @@ export default async function ClienteReportesPage({ params }: { params: Promise<
   const reports = data ?? [];
   const names = new Map(team.map((m) => [m.id, m.name]));
   const today = todayISO();
+  const withMetrics = reports.map((r) => ({ ...r, parsed: parseMetrics(r.metrics) }));
+  const history = withMetrics.map((r) => ({
+    id: r.id,
+    since: r.since,
+    until: r.until,
+    hasMetrics: !!r.parsed,
+    manual: r.kind === "manual",
+  }));
 
   return (
     <>
@@ -62,9 +81,24 @@ export default async function ClienteReportesPage({ params }: { params: Promise<
           {missingTable ? (
             <EmptyState label="Pendiente">Falta correr docs/sql/2026-09-28-reportes.sql en Supabase.</EmptyState>
           ) : (
-            <ReportForm clientSlug={client.slug} today={today} oldest={shiftDate(today, META_HISTORY_DAYS)} />
+            <ReportForm
+              clientSlug={client.slug}
+              today={today}
+              oldest={shiftDate(today, META_HISTORY_DAYS)}
+              history={compareReady ? history : []}
+            />
           )}
         </Card>
+
+        {!missingTable && (
+          <Card title="Cargar un reporte" hint="Hecho fuera de la intranet, para tenerlo en el historial y compararlo">
+            {compareReady ? (
+              <ManualReport clientSlug={client.slug} />
+            ) : (
+              <EmptyState label="Pendiente">Falta correr docs/sql/2026-11-26-reportes-comparativos.sql en Supabase.</EmptyState>
+            )}
+          </Card>
+        )}
 
         <Card title="Historial" hint={reports.length ? `${reports.length} generados` : undefined}>
           {readError ? (
@@ -73,7 +107,7 @@ export default async function ClienteReportesPage({ params }: { params: Promise<
             <EmptyState label="Sin reportes">Todavía no se generó ningún reporte para este cliente.</EmptyState>
           ) : (
             <ul className="report-list">
-              {reports.map((r) => (
+              {withMetrics.map((r) => (
                 <li key={r.id}>
                   <span className="report-list-ico">
                     <Icon name="doc" size={20} />
@@ -81,11 +115,13 @@ export default async function ClienteReportesPage({ params }: { params: Promise<
                   <div className="report-list-info">
                     <b>
                       {longDate(r.since)} – {longDate(r.until)}
+                      {r.kind && r.kind !== "generado" && <em className={`report-kind ${r.kind}`}>{KIND_LABEL[r.kind]}</em>}
                     </b>
                     <span>
                       <Icon name="clock" size={13} /> {relativeTime(r.created_at)}
                       {r.created_by && names.get(r.created_by) ? ` · ${names.get(r.created_by)}` : ""}
                       {r.edited_at ? ` · editado ${relativeTime(r.edited_at)}` : ""}
+                      {r.file_name ? ` · ${r.file_name}` : ""}
                     </span>
                   </div>
                   <div className="report-list-actions">
@@ -93,11 +129,13 @@ export default async function ClienteReportesPage({ params }: { params: Promise<
                       <Icon name="eye" size={16} />
                       <span>Ver</span>
                     </a>
-                    <a className="report-act" href={`/api/reportes/${r.id}?descargar=1`} title="Descargar HTML">
+                    <a className="report-act" href={`/api/reportes/${r.id}?descargar=1`} title="Descargar">
                       <Icon name="download" size={16} />
                       <span>Descargar</span>
                     </a>
-                    <EditReportButton clientSlug={client.slug} id={r.id} period={`${longDate(r.since)} – ${longDate(r.until)}`} />
+                    {r.kind !== "manual" && (
+                      <EditReportButton clientSlug={client.slug} id={r.id} period={`${longDate(r.since)} – ${longDate(r.until)}`} />
+                    )}
                     <DeleteReportButton clientSlug={client.slug} id={r.id} />
                   </div>
                 </li>

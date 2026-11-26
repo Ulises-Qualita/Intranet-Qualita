@@ -31,6 +31,13 @@ export type CrmSecrets = {
   // seguir después del cierre (producción, entrega), y ahí el CRM ya no marca la
   // oportunidad como ganada.
   won_stages?: string[];
+  // Las ventas no se registran en este CRM (Amarante: las lleva en Notion). Ningún
+  // lead cuenta como ganado ni trae monto, y las vistas muestran las ventas como
+  // pendientes en vez de 0. Con planilla de ventas no aplica: manda la planilla.
+  sales_off?: boolean;
+  // Con sales_off, la etapa que se muestra en lugar de "Ganadas": cuántas
+  // oportunidades llegaron a ella (Amarante: "Lead Calificado"). Ver getStageReached.
+  milestone_stage?: string;
   // Qué leads cuentan como oportunidad nueva (crmExclusions en lib/crm-shared.ts):
   // desde qué día el registro del CRM es completo y qué etapas no se cuentan.
   since?: string;
@@ -253,6 +260,11 @@ function aliasAd(lead: CrmLead, aliases: CrmSecrets["ad_aliases"]) {
   return alias ? alias.to : lead.ad;
 }
 
+// Las ventas de este cliente no salen del CRM ni de una planilla (sales_off).
+export function salesOutsideCrm(secrets: Pick<CrmSecrets, "sales_off" | "sales_sheet"> | null | undefined): boolean {
+  return !!secrets?.sales_off && !secrets.sales_sheet;
+}
+
 export type CrmSyncResult ={ clientId: string; ok: boolean; leads: number; error?: string };
 
 export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
@@ -295,6 +307,9 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
     if (sales) {
       for (const l of leads) statuses.set(l.externalId, sold.has(l.externalId) ? "won" : l.lost ? "lost" : "open");
     }
+    // Sin ventas en el CRM: lo que el CRM marca como ganado queda abierto.
+    const salesOff = salesOutsideCrm(secrets);
+    if (salesOff) for (const [id, status] of statuses) if (status === "won") statuses.set(id, "open");
     // Una venta cuenta siempre como oportunidad del CRM (pedido del usuario): el
     // lead ganado no se excluye aunque sea de un contacto que ya estaba, repetido
     // o anterior al registro completo. Si no, la venta queda sin origen ni anuncio.
@@ -327,7 +342,7 @@ export async function syncCrmClient(clientId: string): Promise<CrmSyncResult> {
         external_id: l.externalId,
         name: l.name,
         source: l.source,
-        amount: sales ? (sold.get(l.externalId)?.ars ?? null) : l.amount,
+        amount: sales ? (sold.get(l.externalId)?.ars ?? null) : salesOff ? null : l.amount,
         stage: l.stage,
         temperature: l.temperature,
         created_at: l.createdAt,

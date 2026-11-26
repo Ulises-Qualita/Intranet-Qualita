@@ -6,6 +6,7 @@
 // Las secciones sin datos se omiten; Google Ads sin conectar figura como pendiente.
 import type { ReportData, ReportKpi } from "./data";
 import type { ReportTexts } from "./ai";
+import { change, findRow, type MetricsPeer, type Num, type ReportMetrics } from "./metrics";
 import { REPORT_CSS } from "./styles";
 
 // Agregados a la referencia, que tenía nombres de creativos cortos: un nombre
@@ -40,9 +41,73 @@ function hbar(nm: string, vv: string, frac: number) {
 
 const maxOf = (values: number[]) => Math.max(1, ...values);
 
+// "01 sep – 30 sep 2026"
+const SHORT_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const rangeText = (since: string, until: string) => {
+  const part = (iso: string, year: boolean) => {
+    const [y, m, d] = iso.split("-");
+    return `${d} ${SHORT_MONTHS[Number(m) - 1]}${year ? ` ${y}` : ""}`;
+  };
+  return `${part(since, false)} – ${part(until, true)}`;
+};
+
+// ---------- Comparación con reportes anteriores ----------
+
+// Qué dirección es buena: "up" (más es mejor), "down" (CPL, CPM, demoras) o
+// "none" (la inversión: ni buena ni mala).
+type Better = "up" | "down" | "none";
+type Getter = (m: ReportMetrics) => Num | undefined;
+
+// "▲ 5% vs Septiembre", una línea por reporte anterior (docs/Reporte_Bimenstral_Comparativo.pdf).
+// `points`: la diferencia va en puntos porcentuales (participaciones: mobile, origen del tráfico).
+// Sin reportes anteriores (el reporte de siempre) devuelve "" y el HTML queda igual.
+export type Compare = {
+  peers: MetricsPeer[];
+  lines: (now: Num | undefined, get: Getter, better: Better, points?: boolean) => string;
+  inline: (now: Num | undefined, get: Getter, better: Better, points?: boolean) => string;
+};
+
+function makeCompare(peers: MetricsPeer[]): Compare {
+  const one = (now: Num | undefined, before: Num | undefined, better: Better, points: boolean) => {
+    if (now === null || now === undefined || before === null || before === undefined) return null;
+    const diff = points ? now - before : change(now, before);
+    if (diff === null) return null;
+    const rounded = Math.round(diff);
+    const arrow = rounded > 0 ? "▲" : rounded < 0 ? "▼" : "•";
+    const tone =
+      rounded === 0 || better === "none" ? "flat" : (rounded > 0) === (better === "up") ? "good" : "bad";
+    return `<b class="${tone}">${arrow} ${Math.abs(rounded)}${points ? " p.p." : "%"}</b>`;
+  };
+  const parts = (now: Num | undefined, get: Getter, better: Better, points = false, short = false) =>
+    peers
+      .map((p) => {
+        const d = one(now, get(p.metrics), better, points);
+        return d ? `${d} vs ${esc(short ? p.short : p.label)}` : null;
+      })
+      .filter(Boolean) as string[];
+  return {
+    peers,
+    lines: (now, get, better, points) => {
+      const list = parts(now, get, better, points);
+      return list.length ? `<div class="cmp">${list.map((l) => `<span>${l}</span>`).join("")}</div>` : "";
+    },
+    inline: (now, get, better, points) => {
+      const list = parts(now, get, better, points, true);
+      return list.length ? `<div class="cmp inline">${list.join(" · ")}</div>` : "";
+    },
+  };
+}
+
+const NO_COMPARE = makeCompare([]);
+
+const CMP_CSS = `.cmp{display:grid;gap:2px;margin-top:8px;font-size:11.5px;color:var(--ink-3);font-weight:400;text-transform:none;letter-spacing:0}
+.cmp.inline{display:block;margin-top:4px}
+.cmp b{font-weight:600}.cmp .good{color:var(--green-ink)}.cmp .bad{color:var(--orange-ink)}.cmp .flat{color:var(--ink-3)}
+td .cmp{font-size:11px}`;
+
 // ---------- Parte 1 · Pauta ----------
 
-function pauta(data: ReportData, texts: ReportTexts | null) {
+function pauta(data: ReportData, texts: ReportTexts | null, C: Compare) {
   const m = data.meta;
   const g = data.googleAds;
   if (!m && !g) return "";
@@ -79,23 +144,26 @@ function pauta(data: ReportData, texts: ReportTexts | null) {
         <div class="lbl">Inversión total</div>
         <div class="val tnum">${money(spend)}</div>
         <div class="sub">${both ? `Meta ${money(mt.spend)} · Google ${money(gt.spend)}` : `CPM ${money(cpm)} · CPC ${money(cpc)}`}</div>
+        ${C.lines(spend, (p) => p.pauta?.spend, "none")}
       </div>
       <div class="kpi hero-kpi">
         <div class="lbl">Leads generados</div>
         <div class="val tnum">${leadsNum(leads)}</div>
         <div class="sub">${campaigns.length} ${campaigns.length === 1 ? "campaña activa" : "campañas activas"}</div>
+        ${C.lines(leads, (p) => p.pauta?.leads, "up")}
       </div>
       <div class="kpi hero-kpi">
         <div class="lbl">CPL · Costo por lead</div>
         <div class="val tnum" style="color:var(--violet)">${leads ? money(cpl) : "—"}</div>
         <div class="sub">Meta ${m ? (mCpl ? money(mCpl) : "—") : "no conectado"} · Google ${g ? (gCpl ? money(gCpl) : "—") : gLabel}</div>
+        ${leads ? C.lines(cpl, (p) => p.pauta?.cpl, "down") : ""}
       </div>
     </div>
     <div class="kpi-sec">
-      <div class="kpi"><div class="lbl">Impresiones</div><div class="val tnum">${int(impressions)}</div></div>
-      <div class="kpi"><div class="lbl">Clics</div><div class="val tnum">${int(clicks)}</div></div>
-      <div class="kpi"><div class="lbl">CTR</div><div class="val tnum">${pct(ctr)}</div></div>
-      <div class="kpi"><div class="lbl">CPM</div><div class="val tnum">${money(cpm)}</div></div>
+      <div class="kpi"><div class="lbl">Impresiones</div><div class="val tnum">${int(impressions)}</div>${C.lines(impressions, (p) => p.pauta?.impressions, "up")}</div>
+      <div class="kpi"><div class="lbl">Clics</div><div class="val tnum">${int(clicks)}</div>${C.lines(clicks, (p) => p.pauta?.clicks, "up")}</div>
+      <div class="kpi"><div class="lbl">CTR</div><div class="val tnum">${pct(ctr)}</div>${impressions ? C.lines(ctr * 100, (p) => p.pauta?.ctr, "up") : ""}</div>
+      <div class="kpi"><div class="lbl">CPM</div><div class="val tnum">${money(cpm)}</div>${impressions ? C.lines(cpm, (p) => p.pauta?.cpm, "down") : ""}</div>
     </div>
   </div>`;
 
@@ -109,12 +177,12 @@ function pauta(data: ReportData, texts: ReportTexts | null) {
     return `<div class="bar">${seg("meta", mv)}${seg("google", gv)}</div>`;
   };
   const maxCpl = Math.max(mCpl ?? 0, gCpl ?? 0) || 1;
-  const cplBar = (name: string, cls: string, value: number | null, missing: string | null) =>
+  const cplBar = (name: string, cls: string, value: number | null, missing: string | null, get: Getter) =>
     `<div class="cplbar"><div class="row"><span class="name"><span class="dot" style="background:var(--${cls})"></span>${name}</span>` +
     (missing
       ? `<span class="amt tnum" style="color:var(--ink-3)">${missing}</span></div><div class="track"></div></div>`
       : `<span class="amt tnum">${value ? money(value) : "—"}</span></div>` +
-        `<div class="track"><div class="fill ${cls}" style="width:${value ? (value / maxCpl) * 100 : 0}%"></div></div></div>`);
+        `<div class="track"><div class="fill ${cls}" style="width:${value ? (value / maxCpl) * 100 : 0}%"></div></div>${C.inline(value, get, "down")}</div>`);
   const cplHint =
     mCpl && gCpl
       ? `<strong style="color:var(--ink)">${mCpl <= gCpl ? "Meta Ads" : "Google Ads"}</strong> trae el lead más barato del período — una diferencia de ${money(Math.abs(mCpl - gCpl))} por lead frente a la otra plataforma. En Google, los leads son las conversiones de la cuenta. Barra más corta = mejor CPL.`
@@ -143,8 +211,8 @@ function pauta(data: ReportData, texts: ReportTexts | null) {
       </div>
       <div class="card">
         <h3>CPL por plataforma</h3>
-        ${cplBar("Meta Ads", "meta", mCpl, m ? null : "No conectado")}
-        ${cplBar("Google Ads", "google", gCpl, g ? null : gLabel.charAt(0).toUpperCase() + gLabel.slice(1))}
+        ${cplBar("Meta Ads", "meta", mCpl, m ? null : "No conectado", (p) => p.pauta?.metaCpl)}
+        ${cplBar("Google Ads", "google", gCpl, g ? null : gLabel.charAt(0).toUpperCase() + gLabel.slice(1), (p) => p.pauta?.gadsCpl)}
         <div class="hint">${cplHint}</div>
       </div>
     </div>
@@ -163,12 +231,14 @@ function pauta(data: ReportData, texts: ReportTexts | null) {
       if (r.leads > 0 && c === minCpl && sorted.length > 1) pill = ' <span class="pill best">mejor CPL</span>';
       else if (r.leads > 0 && c === maxCplRow && sorted.length > 1) pill = ' <span class="pill worst">CPL alto</span>';
       const plat = r.platform === "meta" ? "Meta Ads" : "Google Ads";
+      // La misma campaña en el reporte anterior (por nombre y plataforma).
+      const prev = (p: ReportMetrics) => findRow(p.campaigns.filter((x) => x.platform === r.platform), r.name);
       return (
         "<tr>" +
         `<td class="camp">${esc(r.name)}<div class="plat-tag"><span class="dot" style="background:var(--${r.platform})"></span>${plat}</div></td>` +
         `<td>${money(r.spend)}</td>` +
-        `<td class="leadwrap"><div class="leadcell"><span class="leadbar" style="width:${w}px"></span><span>${leadsNum(r.leads)}</span></div></td>` +
-        `<td>${r.leads ? money(c) : "—"}${pill}</td>` +
+        `<td class="leadwrap"><div class="leadcell"><span class="leadbar" style="width:${w}px"></span><span>${leadsNum(r.leads)}</span></div>${C.inline(r.leads, (p) => prev(p)?.leads, "up")}</td>` +
+        `<td>${r.leads ? money(c) : "—"}${pill}${r.leads ? C.inline(c, (p) => prev(p)?.cpl, "down") : ""}</td>` +
         `<td>${pct(r.impressions ? r.clicks / r.impressions : 0)}</td>` +
         "<td></td>" +
         "</tr>"
@@ -267,15 +337,26 @@ function creativos(data: ReportData) {
 
 // ---------- Parte 2 · Pipeline ----------
 
-function pulseKpi(k: ReportKpi) {
-  const tag = k.up ? `<div class="tag-up">${esc(k.tag!)}</div>` : k.tag ? `<div class="tag-mut">${esc(k.tag)}</div>` : "";
+const PULSE_BETTER = { opportunities: "up", open: "none", lost: "down", won: "up" } as const;
+
+function pulseKpi(k: ReportKpi, C: Compare) {
+  // En un comparativo, el "vs período anterior" calculado se reemplaza por las líneas contra los reportes.
+  const tag =
+    C.peers.length && k.key === "opportunities"
+      ? ""
+      : k.up
+        ? `<div class="tag-up">${esc(k.tag!)}</div>`
+        : k.tag
+          ? `<div class="tag-mut">${esc(k.tag)}</div>`
+          : "";
+  const cmp = k.key ? C.lines(Number(k.value), (p) => p.crm?.[k.key!], PULSE_BETTER[k.key]) : "";
   return (
     `<div class="kpi${k.up ? " hero-kpi" : ""}"><div class="val"${k.up ? ' style="color:var(--violet)"' : ""}>${esc(k.value)}</div>` +
-    `<div class="sub" style="margin-top:10px;font-size:12px">${esc(k.label)}</div>${tag}</div>`
+    `<div class="sub" style="margin-top:10px;font-size:12px">${esc(k.label)}</div>${tag}${cmp}</div>`
   );
 }
 
-function pipeline(data: ReportData, texts: ReportTexts | null) {
+function pipeline(data: ReportData, texts: ReportTexts | null, C: Compare) {
   const c = data.crm;
   if (!c) return "";
   let n = 0;
@@ -293,15 +374,15 @@ function pipeline(data: ReportData, texts: ReportTexts | null) {
   <div class="section">
     <span class="eyebrow">${num()} · El pulso del período</span>
     <h2 class="section-title">Oportunidades captadas</h2>
-    <div class="kpis k5"${c.pulse.length === 5 ? "" : ` style="grid-template-columns:repeat(${c.pulse.length},1fr)"`}>${c.pulse.map(pulseKpi).join("")}</div>
+    <div class="kpis k5"${c.pulse.length === 5 ? "" : ` style="grid-template-columns:repeat(${c.pulse.length},1fr)"`}>${c.pulse.map((k) => pulseKpi(k, C)).join("")}</div>
   </div>`);
 
   if (c.weeks.length) {
     const mw = maxOf(c.weeks.map((w) => w.value));
     const split = c.split
       ? `<div class="card"><h3>Aceleración</h3>` +
-        `<div class="cstat first"><span class="cl">${esc(c.split.firstLabel)}</span><span class="cv">${int(c.split.first)}</span></div>` +
-        `<div class="cstat"><span class="cl">${esc(c.split.lastLabel)}</span><span class="cv" style="color:var(--violet)">${int(c.split.last)}</span></div>` +
+        `<div class="cstat first"><span class="cl">${esc(c.split.firstLabel)}${C.inline(c.split.first, (p) => p.crm?.firstHalf, "up")}</span><span class="cv">${int(c.split.first)}</span></div>` +
+        `<div class="cstat"><span class="cl">${esc(c.split.lastLabel)}${C.inline(c.split.last, (p) => p.crm?.lastHalf, "up")}</span><span class="cv" style="color:var(--violet)">${int(c.split.last)}</span></div>` +
         `<p class="hint">${
           c.split.first
             ? c.split.last >= c.split.first
@@ -327,9 +408,9 @@ function pipeline(data: ReportData, texts: ReportTexts | null) {
     <div style="margin-top:28px">
       <span class="eyebrow" style="display:block;margin-bottom:12px">Tiempo de respuesta · Nuevo → ${esc(c.response.stage)}</span>
       <div class="kpis">
-        <div class="kpi"><div class="val" style="color:var(--violet)">${dec(c.response.medianHours)}h</div><div style="font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);margin-top:8px">Mediana de respuesta</div><div class="tag-mut">tiempo hasta el primer contacto</div></div>
-        <div class="kpi"><div class="val" style="color:var(--violet)">${dec((c.response.within24 / c.response.sample) * 100, 0)}%</div><div style="font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);margin-top:8px">Contactados en 24h</div><div class="tag-mut">${c.response.within24} de ${c.response.sample} leads</div></div>
-        <div class="kpi"><div class="val" style="color:var(--violet)">${int(c.response.over3Days)}</div><div style="font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);margin-top:8px">Tardaron +3 días</div><div class="tag-mut">mayor riesgo de enfriarse</div></div>
+        <div class="kpi"><div class="val" style="color:var(--violet)">${dec(c.response.medianHours)}h</div><div style="font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);margin-top:8px">Mediana de respuesta</div><div class="tag-mut">tiempo hasta el primer contacto</div>${C.lines(c.response.medianHours, (p) => p.crm?.responseMedianHours, "down")}</div>
+        <div class="kpi"><div class="val" style="color:var(--violet)">${dec((c.response.within24 / c.response.sample) * 100, 0)}%</div><div style="font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);margin-top:8px">Contactados en 24h</div><div class="tag-mut">${c.response.within24} de ${c.response.sample} leads</div>${C.lines((c.response.within24 / c.response.sample) * 100, (p) => p.crm?.contacted24Pct, "up")}</div>
+        <div class="kpi"><div class="val" style="color:var(--violet)">${int(c.response.over3Days)}</div><div style="font-family:var(--disp);font-weight:600;font-size:14px;color:var(--ink);margin-top:8px">Tardaron +3 días</div><div class="tag-mut">mayor riesgo de enfriarse</div>${C.lines(c.response.over3Days, (p) => p.crm?.over3Days, "down")}</div>
       </div>
       <div class="hint" style="margin-top:12px">Medido sobre los ${c.response.sample} leads del período que hoy están en ${esc(c.response.stage)}, con la fecha del último cambio de etapa.</div>
     </div>`
@@ -361,7 +442,9 @@ function pipeline(data: ReportData, texts: ReportTexts | null) {
       .map(
         (s) =>
           `<div class="seller"><div class="top"><span class="nm">${esc(s.name)}</span><span class="pct">${dec(s.pct)}%</span></div>` +
-          `<div class="mt">${s.won} de ${s.leads} confirmadas</div><div class="track" style="height:6px"><div class="fillv" style="width:${Math.max(2, (s.pct / mp) * 100)}%"></div></div></div>`,
+          `<div class="mt">${s.won} de ${s.leads} confirmadas${s.billed ? ` · ${money(s.billed)} facturado` : ""}</div>` +
+          (s.billed ? C.inline(s.billed, (p) => findRow(p.crm?.sellers, s.name)?.billed, "up") : "") +
+          `<div class="track" style="height:6px"><div class="fillv" style="width:${Math.max(2, (s.pct / mp) * 100)}%"></div></div></div>`,
       )
       .join("")}</div>
   </div>`);
@@ -373,13 +456,15 @@ function pipeline(data: ReportData, texts: ReportTexts | null) {
   <div class="section">
     <span class="eyebrow">${num()} · De dónde llegan</span>
     <h2 class="section-title">Canal de las oportunidades</h2>
-    <div class="card"><div class="hbars">${c.sources.map((s) => hbar(s.name, int(s.leads), s.leads / mo)).join("")}</div>${
+    <div class="card"><div class="hbars">${c.sources
+      .map((s) => hbar(s.name, int(s.leads), s.leads / mo) + C.inline(s.leads, (p) => findRow(p.crm?.sources, s.name)?.leads, "up"))
+      .join("")}</div>${
       texts?.sources ? `<div class="hint">${rich(texts.sources)}</div>` : ""
     }</div>
   </div>`);
   }
 
-  const clarity = clarityHtml(data, texts, num);
+  const clarity = clarityHtml(data, texts, num, C);
   if (clarity) parts.push(clarity);
 
   if (c.sales) {
@@ -401,19 +486,21 @@ function pipeline(data: ReportData, texts: ReportTexts | null) {
           ? `<div class="card now">
         <div class="who">Ventas confirmadas · planilla de ventas</div>
         <div class="big-fact" style="margin-top:6px">${s.withTicket ? money(s.total) : "—"}</div>
+        ${s.withTicket ? C.lines(s.total, (p) => p.sales?.billed, "up") : ""}
         ${s.usdTotal ? `<div class="big-fact" style="margin-top:2px;font-size:0.6em">+ U$D ${int(s.usdTotal)}</div>` : ""}
         <div style="font-size:13px;color:var(--ink-2);margin:6px 0 10px">Facturación de los proyectos confirmados en el período, en pesos y en dólares por separado</div>
-        <div class="cstat"><span class="cl">Ventas confirmadas</span><span class="cv">${int(s.won)}</span></div>
-        <div class="cstat"><span class="cl">Ticket promedio en pesos</span><span class="cv">${s.average !== null ? money(s.average) : "—"}</span></div>
+        <div class="cstat"><span class="cl">Ventas confirmadas${C.inline(s.won, (p) => p.sales?.won, "up")}</span><span class="cv">${int(s.won)}</span></div>
+        <div class="cstat"><span class="cl">Ticket promedio en pesos${C.inline(s.average, (p) => p.sales?.ticketAvg, "up")}</span><span class="cv">${s.average !== null ? money(s.average) : "—"}</span></div>
         <div class="cstat"><span class="cl">Ticket promedio en dólares</span><span class="cv">${s.usdAverage !== null ? `U$D ${int(s.usdAverage)}` : "—"}</span></div>
       </div>`
           : `<div class="card now">
         <div class="who">Ventas cerradas · CRM</div>
         <div class="big-fact" style="margin-top:6px">${s.withTicket ? money(s.total) : "—"}</div>
+        ${s.withTicket ? C.lines(s.total, (p) => p.sales?.billed, "up") : ""}
         <div style="font-size:13px;color:var(--ink-2);margin:6px 0 10px">Facturación de ventas cerradas en el período</div>
-        <div class="cstat"><span class="cl">Ventas confirmadas</span><span class="cv">${int(s.won)}</span></div>
+        <div class="cstat"><span class="cl">Ventas confirmadas${C.inline(s.won, (p) => p.sales?.won, "up")}</span><span class="cv">${int(s.won)}</span></div>
         <div class="cstat"><span class="cl">Ventas con ticket cargado</span><span class="cv">${int(s.withTicket)}</span></div>
-        <div class="cstat"><span class="cl">Ticket promedio (CRM)</span><span class="cv">${s.average !== null ? money(s.average) : "—"}</span></div>
+        <div class="cstat"><span class="cl">Ticket promedio (CRM)${C.inline(s.average, (p) => p.sales?.ticketAvg, "up")}</span><span class="cv">${s.average !== null ? money(s.average) : "—"}</span></div>
       </div>`
       }
       ${bySource}
@@ -424,28 +511,30 @@ function pipeline(data: ReportData, texts: ReportTexts | null) {
   return parts.join("");
 }
 
-function clarityHtml(data: ReportData, texts: ReportTexts | null, num: () => string) {
+function clarityHtml(data: ReportData, texts: ReportTexts | null, num: () => string, C: Compare) {
   const cl = data.clarity;
   if (!cl) return "";
   const days = Math.round((Date.parse(cl.to) - Date.parse(cl.from)) / 86_400_000) + 1;
   const kpis = [
-    { v: compact(cl.users), l: "Usuarios que ingresaron al sitio (suma diaria)", hi: true },
-    { v: compact(cl.sessions), l: "Sesiones totales", hi: true },
-    ...(cl.topPage ? [{ v: compact(cl.topPage.sessions), l: `Sesiones en ${cl.topPage.url.replace(/^https?:\/\/[^/]+/, "") || "/"}`, hi: false }] : []),
-    { v: dec(cl.sessions / days, 0), l: "Sesiones por día", hi: false },
+    { v: compact(cl.users), l: "Usuarios que ingresaron al sitio (suma diaria)", hi: true, c: C.inline(cl.users, (p) => p.clarity?.users, "up") },
+    { v: compact(cl.sessions), l: "Sesiones totales", hi: true, c: C.inline(cl.sessions, (p) => p.clarity?.sessions, "up") },
+    ...(cl.topPage ? [{ v: compact(cl.topPage.sessions), l: `Sesiones en ${cl.topPage.url.replace(/^https?:\/\/[^/]+/, "") || "/"}`, hi: false, c: "" }] : []),
+    { v: dec(cl.sessions / days, 0), l: "Sesiones por día", hi: false, c: C.inline(cl.sessions / days, (p) => p.clarity?.sessionsPerDay, "up") },
   ];
   const comp = [
-    cl.pagesPerSession !== null && { n: dec(cl.pagesPerSession), l: "páginas por sesión" },
-    cl.activeTime !== null && { n: `${Math.round(cl.activeTime)}s`, l: "tiempo activo por sesión" },
-    cl.scroll !== null && { n: `${Math.round(cl.scroll)}%`, l: "scroll promedio" },
-    cl.rageShare !== null && { n: `${dec(cl.rageShare)}%`, l: "sesiones con clics de frustración" },
-  ].filter((x): x is { n: string; l: string } => !!x);
+    cl.pagesPerSession !== null && { n: dec(cl.pagesPerSession), l: "páginas por sesión", c: C.lines(cl.pagesPerSession, (p) => p.clarity?.pagesPerSession, "up") },
+    cl.activeTime !== null && { n: `${Math.round(cl.activeTime)}s`, l: "tiempo activo por sesión", c: C.lines(cl.activeTime, (p) => p.clarity?.activeTime, "up") },
+    cl.scroll !== null && { n: `${Math.round(cl.scroll)}%`, l: "scroll promedio", c: C.lines(cl.scroll, (p) => p.clarity?.scroll, "up") },
+    cl.rageShare !== null && { n: `${dec(cl.rageShare)}%`, l: "sesiones con clics de frustración", c: C.lines(cl.rageShare, (p) => p.clarity?.rageShare, "down", true) },
+  ].filter((x): x is { n: string; l: string; c: string } => !!x);
 
   const mt = maxOf(cl.sources.map((s) => s.share));
   const trafico = cl.sources.length
     ? `<div class="card">
         <h3>De dónde viene el tráfico</h3>
-        <div class="hbars">${cl.sources.map((s) => hbar(s.name, `${Math.round(s.share)}%`, s.share / mt)).join("")}</div>
+        <div class="hbars">${cl.sources
+          .map((s) => hbar(s.name, `${Math.round(s.share)}%`, s.share / mt) + C.inline(s.share, (p) => findRow(p.clarity?.sources, s.name)?.share, "none", true))
+          .join("")}</div>
         ${texts?.traffic ? `<div class="hint">${rich(texts.traffic)}</div>` : ""}
       </div>`
     : "";
@@ -454,6 +543,7 @@ function clarityHtml(data: ReportData, texts: ReportTexts | null, num: () => str
       ? `<div style="margin-top:16px">
           <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-2);margin-bottom:7px"><span>Mobile <strong style="color:var(--ink)">${Math.round(cl.mobileShare)}%</strong></span><span>Desktop <strong style="color:var(--ink)">${100 - Math.round(cl.mobileShare)}%</strong></span></div>
           <div class="bar"><div class="seg meta" style="width:${cl.mobileShare}%">${cl.mobileShare >= 14 ? "Mobile" : ""}</div><div class="seg" style="width:${100 - cl.mobileShare}%;background:var(--border-2)"></div></div>
+          ${C.inline(cl.mobileShare, (p) => p.clarity?.mobileShare, "none", true)}
         </div>`
       : "";
   const coverage =
@@ -470,7 +560,7 @@ function clarityHtml(data: ReportData, texts: ReportTexts | null, num: () => str
       .map(
         (k) =>
           `<div class="kpi"><div class="val"${k.hi ? ' style="color:var(--violet)"' : ""}>${k.v}</div>` +
-          `<div class="lbl" style="margin-top:8px;font-size:12px">${esc(k.l)}</div></div>`,
+          `<div class="lbl" style="margin-top:8px;font-size:12px">${esc(k.l)}</div>${k.c}</div>`,
       )
       .join("")}</div>
     <div class="grid2" style="margin-top:16px${trafico ? "" : ";grid-template-columns:1fr"}">
@@ -482,7 +572,7 @@ function clarityHtml(data: ReportData, texts: ReportTexts | null, num: () => str
             (x) =>
               '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:13px 14px">' +
               `<div style="font-family:var(--disp);font-weight:700;font-size:21px;color:var(--ink)">${x.n}</div>` +
-              `<div style="font-size:11.5px;color:var(--ink-3);margin-top:3px;line-height:1.3">${x.l}</div></div>`,
+              `<div style="font-size:11.5px;color:var(--ink-3);margin-top:3px;line-height:1.3">${x.l}</div>${x.c}</div>`,
           )
           .join("")}</div>
         ${mobile}
@@ -516,7 +606,11 @@ function conclusiones(texts: ReportTexts | null, crm: boolean) {
 
 // ---------- Documento ----------
 
-export function renderReport(data: ReportData, texts: ReportTexts | null) {
+// `peers`: los reportes anteriores contra los que compara (reporte comparativo).
+// Sin ellos sale el reporte de siempre.
+export function renderReport(data: ReportData, texts: ReportTexts | null, peers: MetricsPeer[] = []) {
+  const C = peers.length ? makeCompare(peers) : NO_COMPARE;
+  const versus = peers.map((p) => `${esc(p.label)} (${esc(rangeText(p.since, p.until))})`).join(" · ");
   const sources = [
     data.meta || data.googleAds
       ? `Pauta (${[data.meta ? "Meta" : null, data.googleAds ? "Google" : data.googleAdsConnected ? null : "Google pendiente"].filter(Boolean).join(" · ")})`
@@ -538,13 +632,14 @@ export function renderReport(data: ReportData, texts: ReportTexts | null) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Reporte ${esc(data.client.name)} · ${esc(data.period.month)}</title>
+<title>Reporte ${peers.length ? "comparativo " : ""}${esc(data.client.name)} · ${esc(data.period.month)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
 ${REPORT_CSS}
 ${EXTRA_CSS}
+${CMP_CSS}
 </style>
 </head>
 <body>
@@ -555,7 +650,7 @@ ${EXTRA_CSS}
       <div class="logo"><span>Q</span></div>
       <div>
         <div class="eyebrow">Qualita Studio · Motor de Demanda</div>
-        <div style="font-size:12px;color:var(--ink-3);margin-top:2px">Reporte de performance</div>
+        <div style="font-size:12px;color:var(--ink-3);margin-top:2px">Reporte de performance${peers.length ? " · comparativo" : ""}</div>
       </div>
     </div>
     <div class="controls">
@@ -569,16 +664,17 @@ ${EXTRA_CSS}
         <div class="eyebrow">Cliente</div>
         <h1>${esc(data.client.name)}</h1>
         <div class="meta">Período <strong>${esc(data.period.range)}</strong>${sources.length ? ` · ${sources.join(" + ")}` : ""}</div>
+        ${peers.length ? `<div class="meta" style="margin-top:6px">Comparado con <strong>${versus}</strong>, según los reportes de esos meses</div>` : ""}
       </div>
     </div>
   </div>
-${pauta(data, texts)}
-${pipeline(data, texts)}
+${pauta(data, texts, C)}
+${pipeline(data, texts, C)}
 ${conclusiones(texts, !!data.crm)}
 
   <div class="foot">
     <span class="sig">Preparado por Qualita Studio · Pilar 3 — Motor de Demanda · ${esc(data.client.name)} · ${esc(data.period.month)}</span>
-    <span>Fuente: ${fuente || "—"} · Leads = plataforma-reported · Moneda: ARS</span>
+    <span>Fuente: ${fuente || "—"} · Leads = plataforma-reported · Moneda: ARS${peers.length ? ` · Comparación: ${versus}` : ""}</span>
   </div>
 
 </div>

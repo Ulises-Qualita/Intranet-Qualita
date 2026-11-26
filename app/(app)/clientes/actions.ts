@@ -633,6 +633,30 @@ export async function setCrmWonStages(clientId: string, stages: string[]): Promi
   return { ok: true, error: null };
 }
 
+// Las ventas del cliente no se registran en el CRM (sales_off): nada cuenta como
+// ganado ni trae monto, y las vistas muestran las ventas como pendientes.
+// `milestone`: etapa que reemplaza a "Ganadas" (cuántas oportunidades llegaron a ella).
+export async function setCrmSalesOff(clientId: string, off: boolean, milestone = ""): Promise<FormState> {
+  if (!(await canManageClient(clientId))) return NO_ACCESS;
+
+  const secrets = await getCrmSecrets(clientId);
+  if (!secrets) return { ok: false, error: "El cliente no tiene un CRM conectado." };
+
+  const known = new Set(secrets.stage_order ?? []);
+  await saveCrmSecrets(clientId, {
+    ...secrets,
+    sales_off: off || undefined,
+    milestone_stage: off && known.has(milestone) ? milestone : undefined,
+  });
+
+  // Cambia el estado y el monto de cada oportunidad: hay que releer.
+  const result = await syncCrmClient(clientId);
+  if (!result.ok) return { ok: false, error: result.error ?? "No se pudo releer el CRM." };
+
+  revalidatePath("/", "layout");
+  return { ok: true, error: null };
+}
+
 // Qué leads del CRM cuentan como oportunidad nueva: desde qué día el registro es
 // completo y qué etapas quedan afuera (pruebas internas). Los contactos que ya
 // estaban y los duplicados se detectan solos (crmExclusions en lib/crm-shared.ts).

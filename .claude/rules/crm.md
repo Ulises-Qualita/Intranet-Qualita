@@ -128,3 +128,19 @@ paths:
   entonces) y desde ahí los clicks de WEB02 llegan a la web con `ad_name` = "AD 1 -
   Testimonio Depto PH" (WEB02 trajo 83 leads según Meta y ninguno con su nombre en
   el CRM). Puede pasar lo mismo con `..._WEB09` (duplicado de `..._WEB08`).
+- Ventas fuera del CRM: `sales_off` en los secrets del CRM (`salesOutsideCrm()` de
+  `lib/crm-sync.ts`; sin efecto si hay `sales_sheet`). Se activa en
+  `/clientes/[slug]/crm/conectar` → "Qué cuenta como venta ganada" → "Las ventas no
+  se registran en este CRM" (`setCrmSalesOff`). El sync guarda como `open` lo que el
+  CRM marca ganado y sin monto; la solapa CRM muestra Ganadas / tickets / ventas por
+  origen como pendientes y saca esas columnas de vendedores y anuncios; Vista
+  general, agente y reportes lo toman como "sin dato" (no 0). Amarante (desde
+  2026-11-26): Kommo con "Logrado con éxito" usado sin ventas reales; las ventas
+  están en Notion, falta conectarlas.
+  Con `sales_off`, `milestone_stage` (mismo formulario) reemplaza el KPI "Ganadas"
+  de la solapa CRM por "Llegaron a "<etapa>"": oportunidades creadas en el período
+  que están en esa etapa o pasaron por ella según `intranet_crm_stage_events`
+  (`getStageReached` / `countReached` de `lib/crm-chats.ts`, con service_role
+  porque la cuenta del cliente no lee el historial por RLS). Se compara con el
+  período anterior solo si el historial lo cubre entero. Amarante: "Lead
+  Calificado" (historial desde 2026-10-28).

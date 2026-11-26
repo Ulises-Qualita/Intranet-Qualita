@@ -15,7 +15,7 @@
 import type { Lead } from "./data";
 import { localDate } from "./format";
 import type { Period } from "./period";
-import { createClient, isMissingTable } from "./supabase/server";
+import { createAdminClient, createClient, isMissingTable } from "./supabase/server";
 
 export type ChatEvent = {
   talk_id: number;
@@ -342,6 +342,49 @@ export async function getStageEvents(clientId: string): Promise<StageEvent[] | n
     rows.push(...(data ?? []));
     if ((data?.length ?? 0) < PAGE_SIZE) return rows;
   }
+}
+
+// Leads (external_id) que pasaron alguna vez por una etapa, según el historial,
+// más los que están hoy en ella, y desde cuándo hay historial (antes de eso no se
+// puede saber). Reemplaza a "Ganadas" en los clientes que registran las ventas
+// fuera del CRM (milestone_stage en los secrets). Con service_role: la cuenta del
+// cliente no lee el historial por RLS, así que llamarla solo con el acceso ya
+// validado. null = la tabla todavía no existe.
+export async function getStageReached(
+  clientId: string,
+  stage: string,
+): Promise<{ ids: Set<string>; since: string | null } | null> {
+  const db = createAdminClient();
+  const ids = new Set<string>();
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const { data, error } = await db
+      .from("intranet_crm_stage_events")
+      .select("lead_id")
+      .eq("client_id", clientId)
+      .eq("to_stage", stage)
+      .order("event_id")
+      .range(start, start + PAGE_SIZE - 1)
+      .returns<{ lead_id: string }[]>();
+    if (error) {
+      if (isMissingTable(error)) return null;
+      throw error;
+    }
+    for (const row of data ?? []) ids.add(row.lead_id);
+    if ((data?.length ?? 0) < PAGE_SIZE) break;
+  }
+  const { data: first } = await db
+    .from("intranet_crm_stage_events")
+    .select("at")
+    .eq("client_id", clientId)
+    .order("at")
+    .limit(1)
+    .returns<{ at: string }[]>();
+  return { ids, since: first?.[0] ? localDate(first[0].at) : null };
+}
+
+// Cuántos de estos leads llegaron a la etapa: con historial o porque están en ella.
+export function countReached(leads: Pick<Lead, "external_id" | "stage">[], stage: string, ids: Set<string>): number {
+  return leads.filter((l) => l.stage === stage || (l.external_id !== null && ids.has(l.external_id))).length;
 }
 
 // Una vuelta de la conversación: el cliente escribe (el primer entrante después

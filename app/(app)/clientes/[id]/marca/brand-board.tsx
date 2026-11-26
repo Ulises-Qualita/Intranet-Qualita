@@ -5,6 +5,8 @@ import { Icon, type IconName } from "@/components/icons";
 import { type BrandColor, type LogoSource, cmykText, contrast, contrastGrade, isDark, rgbText } from "@/lib/brand-shared";
 import { AssetUploader, CopyText, DeleteApplicationButton, DeleteAssetButton, LogoBackgroundPicker, MainLogoButton, Swatch } from "./brand-ui";
 import { useRouter } from "next/navigation";
+import { ActionButton } from "@/components/actions";
+import { saveHierarchyTexts } from "./actions";
 import { ApplicationsFromPdf, LogoFromPdf, extractApplications } from "./logo-from-pdf";
 import { type LogoTone, bestBackground, readability, useLogoTones } from "./logo-tone";
 
@@ -66,6 +68,8 @@ export type BoardProps = {
   voice: { description: string | null; keywords: string[]; dos: string[]; donts: string[] };
   imagery: string[];
   pdf: { view: string; download: string | null; size: string } | null;
+  // Textos del panel Jerarquía escritos por el equipo (data.hierarchy).
+  hierarchy: { titles: string[]; text: string | null } | null;
 };
 
 type PanelId = "logo" | "colores" | "tipografia" | "jerarquia" | "tono" | "estilo" | "ejemplos" | "recursos";
@@ -185,7 +189,7 @@ export function BrandBoard(props: BoardProps) {
   // Color de acento para el bloque de estilo (si es casi blanco, queda neutro).
   const accent = p.colors.find((c) => c !== primary && /acent|accent|secundar/i.test(c.role ?? "")) ?? p.colors.find((c) => c !== primary);
   const accentHex = accent && contrast(accent.hex, WHITE) > 1.25 ? accent.hex : undefined;
-  const extras = [!!display && !!lead && "jerarquia", heads.length >= 2 && "estilo"].filter(Boolean) as string[];
+  const extras = [!!display && !!(p.hierarchy?.text || lead) && "jerarquia", heads.length >= 2 && "estilo"].filter(Boolean) as string[];
   // Aplicada: las piezas reales del PDF; sin ellas, piezas de muestra (con color principal).
   // Las muestras de estilo (kind "estilo") van al panel Estilo visual, no a la mesa.
   const realApps = p.applications.filter((a) => a.kind !== "estilo");
@@ -369,10 +373,10 @@ export function BrandBoard(props: BoardProps) {
         {extras.includes("jerarquia") && (
           <button type="button" className="bb-tile bb-spec" style={spanStyle(extraSpan("jerarquia"), order++)} onClick={() => open("jerarquia")}>
             <span className="bb-spec-h" style={{ fontFamily: displayCss }}>
-              {p.name}
+              {p.hierarchy?.titles[0] || p.name}
             </span>
             <span className="bb-spec-p" style={{ fontFamily: body?.css }}>
-              {lead}
+              {p.hierarchy?.text || lead}
             </span>
             <span className="bb-spec-tags">{(sizes.length ? sizes : [display?.family, body !== display ? body?.family : null]).filter(Boolean).join("  ·  ")}</span>
             <TileLabel icon="list">Jerarquía</TileLabel>
@@ -482,7 +486,19 @@ export function BrandBoard(props: BoardProps) {
           {panel === "tipografia" && <TypePanel key={fontIndex} fonts={p.fonts} initial={fontIndex} />}
           {panel === "logo" && <LogoPanel {...p} primary={primary} displayCss={displayCss} tones={tones} />}
           {panel === "tono" && <TonePanel voice={p.voice} summary={p.summary} displayCss={displayCss} />}
-          {panel === "jerarquia" && display && <HierarchyPanel name={p.name} display={display} body={body ?? display} sizes={sizes} keywords={p.voice.keywords} lead={lead} />}
+          {panel === "jerarquia" && display && (
+            <HierarchyPanel
+              name={p.name}
+              display={display}
+              body={body ?? display}
+              sizes={sizes}
+              keywords={p.voice.keywords}
+              lead={lead}
+              saved={p.hierarchy}
+              internal={p.internal}
+              clientId={p.clientId}
+            />
+          )}
           {panel === "estilo" && (
             <StylePanel
               notes={notes}
@@ -991,7 +1007,9 @@ function TonePanel({
 
 // La escala tipográfica a tamaño real: los títulos que nombra el manual (H1 32 px…)
 // en la tipografía de títulos y el texto en la de cuerpo, con textos de la marca.
-// Si el manual no da tamaños, una escala de referencia sin medidas.
+// Si el manual no da tamaños, una escala de referencia sin medidas. El equipo
+// puede reemplazar los textos (pedido del usuario): se editan en el lugar, con la
+// misma tipografía y tamaño, y se guardan en data.hierarchy.
 function HierarchyPanel({
   name,
   display,
@@ -999,6 +1017,9 @@ function HierarchyPanel({
   sizes,
   keywords,
   lead,
+  saved,
+  internal,
+  clientId,
 }: {
   name: string;
   display: BoardFont;
@@ -1006,8 +1027,16 @@ function HierarchyPanel({
   sizes: string[];
   keywords: string[];
   lead: string;
+  saved: { titles: string[]; text: string | null } | null;
+  internal: boolean;
+  clientId: string;
 }) {
-  const samples = [name, keywords.length ? capital(keywords.slice(0, 3).join(", ")) : name, keywords.length > 3 ? capital(keywords.slice(3, 6).join(", ")) : name, name];
+  const router = useRouter();
+  const auto = [name, keywords.length ? capital(keywords.slice(0, 3).join(", ")) : name, keywords.length > 3 ? capital(keywords.slice(3, 6).join(", ")) : name, name];
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<{ titles: string[]; text: string }>({ titles: [], text: "" });
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const steps: { tag: string; px: number; exact: boolean }[] = sizes.length
     ? sizes.map((x) => ({ tag: x.split(" ")[0], px: Number(x.split(" ")[1]), exact: true }))
     : [
@@ -1015,8 +1044,58 @@ function HierarchyPanel({
         { tag: "Subtítulo", px: 26, exact: false },
         { tag: "Destacado", px: 19, exact: false },
       ];
+  const titleAt = (i: number) => saved?.titles[i] || auto[Math.min(i, auto.length - 1)];
+  const bodyText = saved?.text || lead;
+
+  function startEditing() {
+    setDraft({ titles: steps.map((_, i) => titleAt(i)), text: bodyText });
+    setError(null);
+    setEditing(true);
+  }
+
+  async function save(value: { titles: string[]; text: string | null } | null) {
+    setPending(true);
+    setError(null);
+    // Un texto igual al automático no se guarda: si cambia la marca, sigue al día.
+    const payload = value && {
+      titles: value.titles.map((t, i) => (t.trim() === auto[Math.min(i, auto.length - 1)] ? "" : t.trim())),
+      text: value.text?.trim() && value.text.trim() !== lead ? value.text.trim() : null,
+    };
+    const result = await saveHierarchyTexts(clientId, payload);
+    setPending(false);
+    if (!result.ok) return setError(result.error);
+    setEditing(false);
+    router.refresh();
+  }
+
   return (
     <>
+      {internal && (
+        <div className="bb-scale-tools">
+          {editing ? (
+            <>
+              <ActionButton icon="check" disabled={pending} onClick={() => save(draft)}>
+                {pending ? "Guardando…" : "Guardar textos"}
+              </ActionButton>
+              <ActionButton icon="close" disabled={pending} onClick={() => setEditing(false)}>
+                Cancelar
+              </ActionButton>
+            </>
+          ) : (
+            <>
+              <ActionButton icon="pencil" onClick={startEditing}>
+                Editar textos
+              </ActionButton>
+              {saved && (
+                <ActionButton icon="refresh" disabled={pending} onClick={() => save(null)}>
+                  Volver a los automáticos
+                </ActionButton>
+              )}
+            </>
+          )}
+          {error && <p className="form-error">{error}</p>}
+        </div>
+      )}
       <div className="bb-scale">
         {steps.map((x, i) => (
           <div key={x.tag} className="bb-scale-row">
@@ -1025,9 +1104,22 @@ function HierarchyPanel({
               {x.exact && <span>{x.px} px</span>}
               <span>{display.family}</span>
             </span>
-            <span className="bb-scale-sample" style={{ fontFamily: display.css, fontSize: x.px, fontWeight: 700 }}>
-              {samples[Math.min(i, samples.length - 1)]}
-            </span>
+            {editing ? (
+              <textarea
+                className="bb-scale-sample bb-scale-input"
+                style={{ fontFamily: display.css, fontSize: x.px, fontWeight: 700 }}
+                value={draft.titles[i] ?? ""}
+                rows={1}
+                maxLength={160}
+                aria-label={`Texto de ${x.tag}`}
+                disabled={pending}
+                onChange={(e) => setDraft((d) => ({ ...d, titles: d.titles.map((t, j) => (j === i ? e.target.value : t)) }))}
+              />
+            ) : (
+              <span className="bb-scale-sample" style={{ fontFamily: display.css, fontSize: x.px, fontWeight: 700 }}>
+                {titleAt(i)}
+              </span>
+            )}
           </div>
         ))}
         <div className="bb-scale-row">
@@ -1035,9 +1127,22 @@ function HierarchyPanel({
             <b>Texto</b>
             <span>{body.family}</span>
           </span>
-          <span className="bb-scale-sample text" style={{ fontFamily: body.css }}>
-            {lead}
-          </span>
+          {editing ? (
+            <textarea
+              className="bb-scale-sample text bb-scale-input"
+              style={{ fontFamily: body.css }}
+              value={draft.text}
+              rows={3}
+              maxLength={1200}
+              aria-label="Texto corrido"
+              disabled={pending}
+              onChange={(e) => setDraft((d) => ({ ...d, text: e.target.value }))}
+            />
+          ) : (
+            <span className="bb-scale-sample text" style={{ fontFamily: body.css }}>
+              {bodyText}
+            </span>
+          )}
         </div>
       </div>
       {(display.usage || body.usage) && (

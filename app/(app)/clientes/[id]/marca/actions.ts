@@ -3,8 +3,8 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getAreaSession } from "@/lib/auth";
-import { checkGoogleFonts, normalizeBrand } from "@/lib/brand";
-import { APPS_VERSION, ASSET_MAX, type AssetKind, type BrandApplication, BRAND_BUCKET, BRAND_PDF_MAX, isAssetKind, normalizeHex } from "@/lib/brand-shared";
+import { checkGoogleFonts, hierarchyTexts, normalizeBrand } from "@/lib/brand";
+import { APPS_VERSION, ASSET_MAX, type AssetKind, type BrandApplication, BRAND_BUCKET, BRAND_PDF_MAX, BRAND_PDF_MAX_LABEL, isAssetKind, normalizeHex } from "@/lib/brand-shared";
 import { createAdminClient, createClient, isMissingTable } from "@/lib/supabase/server";
 
 // Manual de marca: solo el equipo con el área Clientes que ve al cliente (la RLS
@@ -56,7 +56,7 @@ export async function createBrandUpload(
   if (!(await teamFor(clientId))) return NO_ACCESS as { ok: false; error: string };
   if (target === "pdf") {
     if (!/\.pdf$/i.test(file.name)) return { ok: false, error: "El manual tiene que ser un PDF." };
-    if (file.size > BRAND_PDF_MAX) return { ok: false, error: "El PDF pasa los 115 MB. Exportalo más liviano (imágenes comprimidas)." };
+    if (file.size > BRAND_PDF_MAX) return { ok: false, error: `El PDF pasa los ${BRAND_PDF_MAX_LABEL}. Exportalo más liviano (imágenes comprimidas).` };
   } else if (target === "aplicacion") {
     if (!/.(jpe?g|png|webp)$/i.test(file.name) || file.size > 20 * 1024 * 1024) return { ok: false, error: "Imagen inválida." };
   } else {
@@ -184,6 +184,7 @@ export async function saveBrandData(clientId: string, raw: unknown): Promise<Bra
   // Ni el principal ni los fondos de los logos se editan ahí.
   data.logo.main = saved?.logo.main;
   data.logo.backgrounds = saved?.logo.backgrounds;
+  data.hierarchy = saved?.hierarchy;
   const { error } = await team.supabase.from("intranet_brand_books").upsert({
     client_id: clientId,
     data,
@@ -223,6 +224,30 @@ export async function setMainLogo(clientId: string, assetId: string): Promise<Br
     updated_at: new Date().toISOString(),
   });
   if (error) return fail("logo principal", error, "No se pudo marcar el logo principal.");
+  revalidatePath(`/clientes/${team.slug}/marca`);
+  return { ok: true, error: null };
+}
+
+// Textos de muestra del panel Jerarquía (null = volver a los automáticos).
+export async function saveHierarchyTexts(clientId: string, raw: { titles: string[]; text: string | null } | null): Promise<BrandResult> {
+  const team = await teamFor(clientId);
+  if (!team) return NO_ACCESS;
+  const { data: row } = await team.supabase
+    .from("intranet_brand_books")
+    .select("data, status")
+    .eq("client_id", clientId)
+    .maybeSingle<{ data: unknown; status: string }>();
+  if (!row) return { ok: false, error: "Todavía no hay manual cargado." };
+  const data = normalizeBrand(row.data ?? {});
+  const { error } = await team.supabase
+    .from("intranet_brand_books")
+    .update({
+      data: { ...data, hierarchy: raw ? hierarchyTexts(raw) : undefined },
+      updated_by: team.session.user.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("client_id", clientId);
+  if (error) return fail("textos de jerarquía", error, "No se pudieron guardar los textos.");
   revalidatePath(`/clientes/${team.slug}/marca`);
   return { ok: true, error: null };
 }

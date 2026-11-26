@@ -4,7 +4,7 @@
 // (docs/DML_reporte_mensual_5.html) y que la intranet tiene de verdad: pauta de
 // Meta y Google Ads, pipeline del CRM y Clarity. Cada parte es null si no hay
 // integración o datos; el HTML omite la sección en vez de inventar valores.
-import { getCrmSecrets } from "../crm-sync";
+import { getCrmSecrets, salesOutsideCrm } from "../crm-sync";
 import { noSourceLabel } from "../crm-shared";
 import {
   type Client,
@@ -58,7 +58,14 @@ export type ReportGads = {
   campaigns: (ReportCampaign & { channel: string | null })[];
 };
 
-export type ReportKpi = { value: string; label: string; tag?: string; up?: boolean };
+// key: qué número es, para compararlo en un reporte comparativo (MetricsCrm).
+export type ReportKpi = {
+  value: string;
+  label: string;
+  tag?: string;
+  up?: boolean;
+  key?: "opportunities" | "open" | "lost" | "won";
+};
 
 export type ReportCrm = {
   total: number;
@@ -68,7 +75,11 @@ export type ReportCrm = {
   bottleneck: { stage: string; count: number; share: number }[];
   bottleneckShare: number;
   response: { stage: string; medianHours: number; within24: number; over3Days: number; sample: number } | null;
-  sellers: { name: string; pct: number; won: number; leads: number }[] | null;
+  // billed / ticketAvg: facturación de las ventas con ticket del vendedor (CRM).
+  sellers: { name: string; pct: number; won: number; leads: number; billed: number; ticketAvg: number | null }[] | null;
+  // Estado de las oportunidades del período y ventas por fecha de venta. null
+  // sin estado en el CRM o con las ventas fuera del CRM.
+  counts: { open: number; lost: number; won: number } | null;
   sources: { name: string; leads: number }[];
   sourcesKnown: number;
   // fromSheet: las ventas salen de la planilla del cliente, por fecha de
@@ -262,6 +273,8 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
 
   const order = secrets?.stage_order ?? [];
   const hasStatus = leads.some((l) => l.status);
+  // Ventas registradas fuera del CRM (sales_off): el reporte no habla de ventas.
+  const salesOff = salesOutsideCrm(secrets);
   const total = inPeriod.length;
   const days = Math.round((Date.parse(until) - Date.parse(since)) / DAY_MS) + 1;
 
@@ -272,7 +285,7 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
   // Solo si el período anterior entra entero en lo que guarda el sync.
   const prevAvailable = prevSince >= shiftDate(todayISO(), HISTORY_DAYS);
   const prev = prevAvailable ? leads.filter((l) => inRange(l, prevSince, prevUntil)).length : 0;
-  const captured: ReportKpi = { value: String(total), label: "Oportunidades captadas en el período" };
+  const captured: ReportKpi = { value: String(total), label: "Oportunidades captadas en el período", key: "opportunities" };
   if (prevAvailable && prev > 0) {
     const change = pctChange(total, prev);
     captured.tag = `${signed(change)}% vs período anterior (${prev})`;
@@ -292,14 +305,15 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
     pulse.push(kpi);
   }
 
-  if (hasStatus) {
+  if (hasStatus && !salesOff) {
     const open = inPeriod.filter((l) => l.status === "open").length;
     const lost = inPeriod.filter((l) => l.status === "lost").length;
     // Ventas por fecha de venta (pueden ser de leads creados antes del período).
     const won = current.sold.length;
-    pulse.push({ value: String(open), label: "Abiertas en el pipeline", tag: "a seguir" });
-    pulse.push({ value: String(lost), label: "Perdidas / descartadas" });
+    pulse.push({ value: String(open), label: "Abiertas en el pipeline", tag: "a seguir", key: "open" });
+    pulse.push({ value: String(lost), label: "Perdidas / descartadas", key: "lost" });
     pulse.push({
+      key: "won",
       value: String(won),
       label: "Ventas confirmadas",
       // La tasa sí es de las creadas en el período: qué parte de ellas ya se ganó.
@@ -334,10 +348,17 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
     .map(([stage, count]) => ({ stage, count, share: (count / total) * 100 }));
 
   // ----- Equipo -----
-  const sellers = hasStatus
+  const sellers = hasStatus && !salesOff
     ? current.sellers
         .filter((s) => s.leads > 0)
-        .map((s) => ({ name: s.name, won: s.won, leads: s.leads, pct: (s.won / s.leads) * 100 }))
+        .map((s) => ({
+          name: s.name,
+          won: s.won,
+          leads: s.leads,
+          pct: (s.won / s.leads) * 100,
+          billed: s.ticketTotal,
+          ticketAvg: s.ticketAvg,
+        }))
         .sort((a, b) => b.pct - a.pct || b.leads - a.leads)
     : null;
 
@@ -359,7 +380,7 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
         usdAverage: sheet.usd.avg,
         bySource: sheet.sources.map((s) => ({ name: s.name, leads: s.sales })),
       }
-    : hasStatus
+    : hasStatus && !salesOff
       ? {
           fromSheet: false,
           won: wonLeads.length,
@@ -384,6 +405,14 @@ async function readCrm(client: Client, period: Period): Promise<ReportCrm | null
     sellers,
     sources: current.sources.map((s) => ({ name: s.name, leads: s.leads })),
     sourcesKnown: current.withSource,
+    counts:
+      hasStatus && !salesOff
+        ? {
+            open: inPeriod.filter((l) => l.status === "open").length,
+            lost: inPeriod.filter((l) => l.status === "lost").length,
+            won: current.sold.length,
+          }
+        : null,
     sales,
   };
 }
