@@ -53,7 +53,10 @@ export async function createTelegramLink(profileId: string): Promise<LinkResult>
 }
 
 // Busca el "/start <código>" que mandó Telegram y guarda el chat.
-export async function verifyTelegramLink(profileId: string): Promise<AlertsResult> {
+// pending: todavía no llegó el /start (la pantalla sigue esperando).
+export type VerifyResult = AlertsResult | { ok: false; error: string; pending: true };
+
+export async function verifyTelegramLink(profileId: string): Promise<VerifyResult> {
   if (!(await requireAdmin())) return NO_ADMIN;
   if (!telegramConfigured()) return NO_BOT;
   const db = createAdminClient();
@@ -71,7 +74,7 @@ export async function verifyTelegramLink(profileId: string): Promise<AlertsResul
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "No se pudo consultar Telegram." };
   }
-  if (!found) return { ok: false, error: "Todavía no llegó el mensaje: abrí el link en Telegram y tocá «Iniciar»." };
+  if (!found) return { ok: false, error: "Todavía no llegó el mensaje: abrí el link en Telegram y tocá «Iniciar».", pending: true };
 
   const { error: saveError } = await db
     .from("intranet_telegram_links")

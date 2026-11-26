@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { ActionButton, ConfirmDialog } from "@/components/actions";
 import { Icon } from "@/components/icons";
 import {
@@ -15,13 +16,56 @@ import {
 type Member = { id: string; name: string; email: string; role: string; chat: string | null; pending: boolean };
 
 // El chat de Telegram de cada persona. "Vincular" arma un link al bot: se abre
-// (o se le manda a la persona), se toca «Iniciar» y después «Verificar».
+// (o se le manda a la persona) y se toca «Iniciar». Mientras el link está a la
+// vista, la pantalla consulta sola cada pocos segundos si ya llegó.
+const POLL_MS = 4000;
+const POLL_FOR_MS = 5 * 60_000;
 export function TelegramLinks({ members, canEdit }: { members: Member[]; canEdit: boolean }) {
   const [links, setLinks] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState<Member | null>(null);
   const [, startTransition] = useTransition();
+  const router = useRouter();
+  // Cuándo se generó cada link: se deja de consultar a los 5 minutos.
+  const [since, setSince] = useState<Record<string, number>>({});
+
+  const dropLink = (id: string) =>
+    setLinks((l) => {
+      const next = { ...l };
+      delete next[id];
+      return next;
+    });
+
+  useEffect(() => {
+    const waiting = Object.keys(links);
+    if (!waiting.length) return;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      for (const id of waiting) {
+        if (stopped) return;
+        if (Date.now() - (since[id] ?? 0) > POLL_FOR_MS) {
+          dropLink(id);
+          setNotice({ id, ok: false, text: "No llegó el «Iniciar» de Telegram. Volvé a tocar «Vincular» para probar de nuevo." });
+          continue;
+        }
+        const result = await verifyTelegramLink(id);
+        if (stopped) return;
+        if (result.ok) {
+          dropLink(id);
+          setNotice({ id, ok: true, text: "Vinculado. Te llegó un mensaje de confirmación en Telegram." });
+          router.refresh();
+        } else if (!("pending" in result)) {
+          dropLink(id);
+          setNotice({ id, ok: false, text: result.error });
+        }
+      }
+    }, POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [links, since, router]);
 
   const run = (id: string, action: () => Promise<AlertsResult>, okText: string) =>
     startTransition(async () => {
@@ -29,12 +73,6 @@ export function TelegramLinks({ members, canEdit }: { members: Member[]; canEdit
       const result = await action();
       setBusy(null);
       setNotice({ id, ok: result.ok, text: result.ok ? okText : result.error });
-      if (result.ok)
-        setLinks((l) => {
-          const next = { ...l };
-          delete next[id];
-          return next;
-        });
     });
 
   const makeLink = (id: string) =>
@@ -44,6 +82,7 @@ export function TelegramLinks({ members, canEdit }: { members: Member[]; canEdit
       setBusy(null);
       if (!result.ok) return setNotice({ id, ok: false, text: result.error });
       setNotice(null);
+      setSince((s) => ({ ...s, [id]: Date.now() }));
       setLinks((l) => ({ ...l, [id]: result.url }));
     });
 
@@ -75,13 +114,11 @@ export function TelegramLinks({ members, canEdit }: { members: Member[]; canEdit
                   )}
                   {links[m.id] && (
                     <div className="alerts-linkbox">
-                      <span>
-                        Abrí este link en Telegram (o mandáselo a {m.name.split(" ")[0]}), tocá <b>Iniciar</b> y después
-                        «Verificar»:
-                      </span>
+                      <span>Usá este link en tu Telegram para conectarte a la intranet:</span>
                       <a href={links[m.id]} target="_blank" rel="noopener noreferrer">
                         {links[m.id]}
                       </a>
+                      <span className="alerts-waiting">Esperando que toques «Iniciar» en Telegram…</span>
                     </div>
                   )}
                   {notice?.id === m.id && <div className={notice.ok ? "form-ok" : "form-error"}>{notice.text}</div>}
@@ -90,12 +127,8 @@ export function TelegramLinks({ members, canEdit }: { members: Member[]; canEdit
                   {canEdit && (
                     <div className="alerts-actions">
                       {links[m.id] ? (
-                        <ActionButton
-                          icon="check"
-                          disabled={busy === m.id}
-                          onClick={() => run(m.id, () => verifyTelegramLink(m.id), "Vinculado. Le llegó un mensaje de confirmación.")}
-                        >
-                          {busy === m.id ? "Verificando…" : "Verificar"}
+                        <ActionButton icon="close" onClick={() => dropLink(m.id)}>
+                          Cancelar
                         </ActionButton>
                       ) : (
                         <ActionButton icon="send" disabled={busy === m.id} onClick={() => makeLink(m.id)}>

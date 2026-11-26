@@ -2358,6 +2358,8 @@ body {
   .alerts-linked { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--ok); }
   .alerts-linkbox { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; max-width: 420px; font-size: 12.5px; color: var(--muted); }
   .alerts-linkbox a { color: var(--magenta); font-weight: 600; overflow-wrap: anywhere; }
+  .alerts-waiting { display: inline-flex; align-items: center; gap: 7px; color: var(--muted-2); }
+  .alerts-waiting::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--grad); animation: agent-pulse 1.1s ease-in-out infinite; }
   .alerts-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
   .alerts-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
   .alerts-type { margin: 0; min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
