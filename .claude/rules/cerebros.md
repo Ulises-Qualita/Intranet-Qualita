@@ -15,10 +15,50 @@ paths:
   notas) y, más adelante, de grabaciones de reuniones (sin definir: grabaciones de
   Workspace / Meet o una herramienta como Read.ai). Con ese contexto y criterio se
   van a generar **skills** de cada área.
-- Estado: **solo interfaz** (pedido: "empecemos por la interfaz, no hace falta que
-  funcione"). No hay tablas ni bucket: los contadores muestran 0 reales y la carga
-  deja lo elegido en pantalla como "Sin guardar", con el aviso de que no está
-  conectada. No inventar fuentes ni datos de muestra.
+- Estado: **las reuniones ya se guardan** (Etapa 1, 2026-11-26, ver abajo).
+  Documentos y notas siguen siendo **solo interfaz**: la carga deja lo elegido en
+  pantalla como "Sin guardar", con el aviso de que no está conectada. No inventar
+  fuentes ni datos de muestra.
+- Reuniones (Etapa 1, carga manual por área; pedido: "en un futuro que se carguen
+  solas dependiendo la nomenclatura de la reunión o quién participe" = Etapa 2,
+  pendiente, con sugerencias para aceptar antes de cargar solas). Tabla
+  `intranet_brain_meetings` (`docs/sql/2026-11-26-cerebros-reuniones.sql`, RLS sin
+  políticas, service_role después de validar equipo con área `clientes`). En
+  "Cargar información" → **Reunión** (`meeting-loader.tsx`), tres formas:
+  archivo (el usuario exporta Claude meetings en **.md**, la recomendada; también
+  .txt, .vtt/.srt, .docx con mammoth y .pdf con pdf.js; el texto se saca **en el
+  navegador**, `extract-text.ts`, y al server viaja solo el texto), texto pegado, o
+  **De mi calendario**: `getRecordedMeetings` lee los últimos 60 días del calendario
+  de quien carga y muestra los eventos con Google Docs adjuntos (lo que deja Meet:
+  transcripción y notas de Gemini; el usuario usa las dos); `readMeetingDocs` los
+  exporta como texto desde Drive **como quien carga** (scope `drive`, el que ya
+  tiene la delegación). `POST /api/cerebros/interpretar` → `interpretMeeting`
+  (`lib/brain-meetings.ts`, structured outputs, tarea de IA `cerebro`, consumo
+  `kind = 'cerebro'`): **solo criterios y aprendizajes del área** (pedido: "lo que
+  quiero extraer son los criterios y aprendizajes, sobre todo del área del
+  cerebro; el resto no es necesario": se sacaron resumen, decisiones, problemas,
+  pendientes y frases), escritos como criterio reutilizable y autocontenido, más
+  relevancia para el área y título / fecha / participantes para reconocerla. El
+  export de Claude meetings (ejemplo en `docs/Meeting Notes - Nov 20.md`) es un
+  resumen con "Action items", "Summary" y "Claude's notes", sin año ni
+  participantes: la fecha sin año se toma como la más reciente pasada y los
+  participantes salen de los @. Se guarda como `borrador` con el texto completo y
+  `MeetingReview` la revisa (título, fecha, editar / sacar / agregar criterios);
+  "Sumar al cerebro" la pasa a
+  `guardada` y cerrar sin guardar borra el borrador. "Lo que sabe"
+  (tarjeta **"Criterios y aprendizajes"**, `brain-knowledge.tsx`; pedido: "más
+  lindos, no todo texto, tipo bullets") muestra en "Criterios" los de todas las
+  reuniones del área como bullets: cada criterio es `{ title, detail }` (título de
+  3–7 palabras + la regla en una oración, con el porqué), con la reunión y fecha de
+  origen; en "Reuniones", de dónde salieron, con Borrar (ConfirmDialog). Para que
+  no quede "larguísima" (pedido): cada lista tiene alto fijo (420 px) con scroll
+  propio (clase `q-scroll`, barra de Qualita), **solo se ven los títulos** (elegido
+  entre opciones: solo títulos / por tema / chips / principios destilados; las
+  otras quedan como idea) y al tocar uno se abre la regla con su origen, y la grilla va con
+  `align-items: start` para no estirar la de criterios; la de **Cargar información sí se estira** al alto de la fila (`.brain-upload` con `align-self: stretch`, pedido: "que tenga el mismo alto que los criterios") y su contenido crece (zona de arrastre centrada, el texto pegado más alto). Las
+  primeras reuniones guardaron cada criterio como texto suelto: `parseInsights`
+  los lee como `detail` sin título.
+  `drive_ids` marca en el calendario las "Ya cargadas".
 - Áreas: `BRAIN_AREAS` en `lib/brains.ts` (clave, nombre, descripción, ícono,
   qué material le sirve). Sumar un área = una entrada ahí; el mapa reparte las
   tarjetas en dos columnas para cualquier cantidad.
@@ -65,8 +105,10 @@ paths:
   `react-dom/server` a un HTML con `globals.css` y sacarle captura con Chrome
   headless (así se ajustó).
 - Pantalla de un área (`cerebros/[area]/page.tsx`): volver + saltar a otra área,
-  encabezado con fuentes / reuniones / skills, "Lo que sabe" (vacío por ahora),
-  "Cargar información" (`brain-uploader.tsx`: archivos o nota) y dos tarjetas de lo
-  que viene: Reuniones (por definir) y Skills (próximamente).
+  encabezado con fuentes (reuniones + archivos) / reuniones / archivos (pedido;
+  antes era skills; archivos cuenta 0 hasta que se guarden),
+  "Lo que sabe", "Cargar información" (`brain-uploader.tsx`: reunión, archivos o
+  nota) y abajo dos tarjetas: Reuniones automáticas (próximamente) y la **Skill**.
+- **Skill descargable** (2026-11-26, pedido: "armar la parte de generar el skill descargable"): `BrainSkillCard` (`[area]/brain-skill.tsx`) → `POST /api/cerebros/skill` → `generateBrainSkill` (`lib/brain-skills.ts`, tarea de IA `cerebro`, consumo `cerebro`): Claude escribe un **SKILL.md** (formato Agent Skills: frontmatter `name` = `qualita-<área>` y `description` con cuándo usarla; cuerpo en rioplatense con "Cómo trabajamos" por tema, "Antes de entregar" en checklist y "Cuando hay dudas") **solo con los criterios guardados** del área (con su fecha: si se contradicen, gana el más reciente; sin nombres de personas, clientes ni reuniones). Hacen falta al menos `MIN_SKILL_CRITERIA` (3). Cada generación es una versión nueva en `intranet_brain_skills` (`docs/sql/2026-11-26-cerebros-skills.sql`, RLS sin políticas) con cuántos criterios y reuniones usó; la tarjeta muestra la última (vN, fecha) y, comparando `criteria_keys` (huella de cada criterio, `criterionKey`) con los de hoy, avisa "Desde esta versión: N criterios nuevos y M borrados" (editar uno cuenta como los dos). Una sola skill por área: generar de nuevo la reescribe entera con todos los criterios vigentes; lo instalado en Claude no se actualiza solo. Descargas en el navegador (pedido: el botón principal baja el **.md**): "Descargar .md" baja `SKILL.md`; "Ver" abre el SKILL.md en un modal con cómo instalarlo y "Descargar .zip" (`qualita-<área>/SKILL.md`, `lib/zip.ts`, zip sin comprimir hecho a mano, probado con Expand-Archive), que es lo que pide Claude (Configuración → Capacidades → Skills).
 - Estilos: bloque "Cerebros internos de Qualita" al final de `app/globals.css`
   (clases `brain-*` / `brains-*`).

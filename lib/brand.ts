@@ -15,7 +15,9 @@ import {
   type ApplicationPage,
   type BrandApplication,
   type LogoSource,
+  type VoiceExample,
   googleFontCss,
+  isResourceCategory,
   normalizeHex,
 } from "./brand-shared";
 import { createAdminClient, createClient, isMissingTable } from "./supabase/server";
@@ -139,9 +141,19 @@ function applicationSources(v: unknown): BrandApplication[] | undefined {
       const [box] = logoSources([s]) ?? [];
       if (!box) return [];
       const path = typeof s.path === "string" && /^[\w-]+\/aplicacion\/[\w.-]+$/.test(s.path) ? s.path : null;
-      return [{ ...box, name: text(s.name, 80) ?? "Aplicación", kind: s.kind === "redes" ? ("redes" as const) : s.kind === "estilo" ? ("estilo" as const) : ("aplicacion" as const), path }];
+      const kind: BrandApplication["kind"] = s.kind === "redes" || s.kind === "estilo" || s.kind === "recurso" ? s.kind : "aplicacion";
+      const category = kind === "recurso" ? (isResourceCategory(s.category) ? s.category : "graficos") : null;
+      return [{ ...box, name: text(s.name, 80) ?? "Aplicación", kind, path, category }];
     })
-    .slice(0, 28);
+    // Los sets de recursos se guardan separados en cada elemento: pueden ser muchos.
+    .slice(0, 200);
+}
+
+function applicationsDraft(v: unknown): BrandData["applicationsDraft"] {
+  if (!v || typeof v !== "object") return undefined;
+  const d = v as { version?: unknown; items?: unknown };
+  const items = applicationSources(d.items);
+  return typeof d.version === "number" && items?.length ? { version: d.version, items: items.map((a) => ({ ...a, path: null })) } : undefined;
 }
 
 function applicationPages(v: unknown): ApplicationPage[] | undefined {
@@ -166,14 +178,34 @@ export function hierarchyTexts(raw: unknown): BrandData["hierarchy"] {
   return titles.length || body ? { titles, text: body } : undefined;
 }
 
-// Fondos elegidos a mano: id del logo → #RRGGBB (los inválidos se descartan).
-function logoBackgrounds(raw: unknown): Record<string, string> | undefined {
+// Fondos permitidos por el manual: id del logo → lista de #RRGGBB (los inválidos se descartan).
+function logoAllowed(raw: unknown): Record<string, string[]> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const entries = Object.entries(raw as Record<string, unknown>).flatMap(([id, hex]) => {
-    const color = normalizeHex(hex);
-    return id.length <= 60 && color ? [[id, color] as const] : [];
-  });
+  const entries = Object.entries(raw as Record<string, unknown>).flatMap(([id, list]) =>
+    id.length <= 60 && Array.isArray(list)
+      ? [[id, [...new Set(list.map((h) => normalizeHex(h)).filter((h): h is string => !!h))].slice(0, 8)] as const]
+      : [],
+  );
   return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+// Categorías elegidas a mano: id del recurso → categoría válida.
+function resourceCategories(raw: unknown): BrandData["resources"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const entries = Object.entries(raw as Record<string, unknown>).filter(([id, c]) => id.length <= 60 && isResourceCategory(c));
+  return entries.length ? (Object.fromEntries(entries) as BrandData["resources"]) : undefined;
+}
+
+// Ejemplos de tono, limpios (undefined si nunca se buscaron).
+function voiceExamples(raw: unknown): VoiceExample[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .flatMap((e: Record<string, unknown>) => {
+      const context = text(e?.context, 60);
+      const good = text(e?.good, 400);
+      return context && good ? [{ context, good, bad: text(e.bad, 400), manual: e.manual === true }] : [];
+    })
+    .slice(0, 8);
 }
 
 export function normalizeBrand(raw: unknown): BrandData {
@@ -209,13 +241,22 @@ export function normalizeBrand(raw: unknown): BrandData {
       rules: texts(logo.rules),
       sources: logoSources(logo.sources),
       main: text(logo.main, 60),
-      backgrounds: logoBackgrounds(logo.backgrounds),
+      allowed: logoAllowed(logo.allowed),
     },
-    voice: { description: text(voice.description, 800), keywords: texts(voice.keywords, 12), dos: texts(voice.dos), donts: texts(voice.donts) },
+    voice: {
+      description: text(voice.description, 800),
+      keywords: texts(voice.keywords, 12),
+      dos: texts(voice.dos),
+      donts: texts(voice.donts),
+      examples: voiceExamples(voice.examples),
+    },
     imagery: texts(o.imagery),
     applications: applicationSources(o.applications),
     applicationPages: applicationPages(o.applicationPages),
+    applicationsDraft: applicationsDraft(o.applicationsDraft),
     applicationsVersion: typeof o.applicationsVersion === "number" ? o.applicationsVersion : undefined,
+    applicationsCrop: typeof o.applicationsCrop === "number" ? o.applicationsCrop : undefined,
+    resources: resourceCategories(o.resources),
     hierarchy: hierarchyTexts(o.hierarchy),
   };
 }
@@ -262,19 +303,48 @@ const SOURCES = {
 const APPLICATIONS = {
   type: "array",
   description:
-    "Las aplicaciones reales de la marca que muestra el manual: mockups o fotos de papelería, tarjetas, cartelería, packaging, indumentaria, vehículos, señalética, web, y los ejemplos para redes sociales (posteos, historias, portadas). REDES: una caja por cada posteo o historia individual, aunque en el manual estén juntos en una grilla, en un celular o en una composición: la caja toma solo ese posteo (su cuadrado o rectángulo), sin los vecinos, sin el marco del celular ni la interfaz de Instagram. OTRAS APLICACIONES: una caja por pieza; si varias están en una misma foto, una caja para toda la foto. Solo la imagen, sin títulos ni textos explicativos del manual. ESTILO VISUAL (kind \"estilo\"): las muestras con las que el manual explica su estilo: fotos de ejemplo, tratamientos de imagen, set de íconos, recursos gráficos, tramas o patrones, ilustraciones y kit de interfaz (botones, separadores, cards). Una caja por muestra o por grupo que va junto (el set de íconos entero, la fila de botones entera), sin los títulos ni los párrafos del manual; en name va el tema, con las mismas palabras que en imagery (\"Fotografía\", \"Iconografía\", \"Botones\"). No repitas ahí las piezas que ya van como aplicación o redes, ni el logo, la paleta o las tipografías. Hasta 9 posteos o historias, hasta 8 otras aplicaciones y hasta 8 muestras de estilo, las más representativas y variadas. Vacío si el manual no tiene nada de esto.",
+    "Las aplicaciones reales de la marca que muestra el manual: mockups o fotos de papelería, tarjetas, cartelería, packaging, indumentaria, vehículos, señalética, web, y los ejemplos para redes sociales (posteos, historias, portadas). REDES: una caja por cada posteo o historia individual, aunque en el manual estén juntos en una grilla, en un celular o en una composición: la caja toma solo ese posteo (su cuadrado o rectángulo), sin los vecinos, sin el marco del celular ni la interfaz de Instagram. OTRAS APLICACIONES: una caja por pieza; si varias están en una misma foto, una caja para toda la foto. Solo la imagen, sin títulos ni textos explicativos del manual. ESTILO VISUAL (kind \"estilo\"): las muestras con las que el manual explica su estilo: fotos de ejemplo, tratamientos de imagen, set de íconos, recursos gráficos, tramas o patrones, ilustraciones y kit de interfaz (botones, separadores, cards). Una caja por muestra o por grupo que va junto (la fila de botones entera), sin los títulos ni los párrafos del manual; en name va el tema, con las mismas palabras que en imagery (\"Fotografía\", \"Tratamientos de imagen\", \"Botones\"). RECURSOS (kind \"recurso\"): los elementos gráficos sueltos que el equipo usa como archivo, no como ejemplo: el set de íconos, el recurso gráfico propio (una forma, una huella, un isotipo usado como patrón), tramas o patrones, ilustraciones, stickers, emojis o tags propios. Van acá y no como \"estilo\". Una caja por elemento o por set (todos los íconos juntos), ajustada al elemento, sin textos del manual; en name va el tema con las mismas palabras que en imagery (\"Iconografía\", \"Huella\", \"Tramas\") y en category su categoría. No repitas ahí las piezas que ya van como aplicación o redes, ni el logo, la paleta o las tipografías. Hasta 9 posteos o historias, hasta 8 otras aplicaciones, hasta 8 muestras de estilo y hasta 8 recursos, los más representativos y variados. Vacío si el manual no tiene nada de esto.",
   items: {
     type: "object",
     additionalProperties: false,
-    required: ["page", "name", "kind", "x", "y", "w", "h"],
+    required: ["page", "name", "kind", "category", "x", "y", "w", "h"],
     properties: {
       page: { type: "integer", description: "Número de página del PDF, desde 1 (el orden del archivo, no el número impreso)." },
       name: { type: "string", description: "Qué es, corto: \"Tarjetas personales\", \"Posteo lanzamiento\", \"Historia promo\", \"Bolsa\"… En una muestra de estilo, el tema: \"Fotografía\", \"Iconografía\"." },
-      kind: { type: "string", enum: ["redes", "aplicacion", "estilo"], description: "\"redes\" para un posteo o una historia de redes sociales (de a uno); \"estilo\" para una muestra del estilo visual; \"aplicacion\" para el resto." },
+      kind: {
+        type: "string",
+        enum: ["redes", "aplicacion", "estilo", "recurso"],
+        description:
+          "\"redes\" para un posteo o una historia de redes sociales (de a uno); \"estilo\" para una muestra del estilo visual; \"recurso\" para un elemento gráfico suelto (íconos, recurso gráfico, trama, ilustración); \"aplicacion\" para el resto.",
+      },
+      category: {
+        type: "string",
+        enum: ["iconos", "tramas", "graficos", "ilustraciones", "ninguna"],
+        description: "Solo en un recurso: iconos (set de íconos), tramas (tramas, patrones, texturas), graficos (recurso gráfico, formas, stickers, emojis, tags), ilustraciones. \"ninguna\" en el resto.",
+      },
       x: { type: "number", description: "Borde izquierdo de la caja, en fracción del ancho de la página (0 a 1)." },
       y: { type: "number", description: "Borde de arriba de la caja, en fracción del alto de la página (0 a 1)." },
       w: { type: "number", description: "Ancho de la caja, en fracción del ancho de la página." },
       h: { type: "number", description: "Alto de la caja, en fracción del alto de la página." },
+    },
+  },
+} as const;
+
+// Ejemplos de cómo habla la marca. A diferencia del resto, acá Claude puede
+// escribir: si el manual no trae frases, las escribe siguiendo su tono.
+const VOICE_EXAMPLES = {
+  type: "array",
+  description:
+    "De 3 a 5 ejemplos de cómo habla la marca, en situaciones distintas y concretas para su rubro (posteo en redes, respuesta a un cliente por WhatsApp, titular de la web, mail institucional…). Si el manual trae frases de ejemplo, usalas tal cual (manual: true). Completá con frases escritas por vos que sigan el tono, el público y las reglas del manual (manual: false). Frases cortas y reales, listas para usar.",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    required: ["context", "good", "bad", "manual"],
+    properties: {
+      context: { type: "string", description: "La situación, en 2 a 4 palabras: \"Posteo en Instagram\", \"Respuesta a una consulta\"." },
+      good: { type: "string", description: "La frase como la diría la marca. Máximo 2 oraciones." },
+      bad: { ...nullableString, description: "La misma idea dicha como NO va (el error típico que el manual pide evitar), corta. null si no aporta." },
+      manual: { type: "boolean", description: "true si la frase sale del manual; false si la escribiste vos." },
     },
   },
 } as const;
@@ -331,8 +401,9 @@ const SCHEMA = {
     voice: {
       type: "object",
       additionalProperties: false,
-      required: ["description", "keywords", "dos", "donts"],
+      required: ["description", "keywords", "dos", "donts", "examples"],
       properties: {
+        examples: VOICE_EXAMPLES,
         description: { ...nullableString, description: "Tono y personalidad de la marca." },
         keywords: { ...stringList, description: "Hasta 8 palabras que definen la personalidad." },
         dos: { ...stringList, description: "Qué hacer al comunicar." },
@@ -346,7 +417,7 @@ const SCHEMA = {
 
 const SYSTEM = `Leés el manual de marca (brandbook) de un cliente de Qualita Studio, una agencia de branding de Argentina, y lo pasás a datos para que el equipo lo use todos los días: copiar colores, saber qué tipografía va en cada lugar, respetar el logo y el tono.
 
-- Copiá lo que dice el manual; no inventes colores, códigos ni reglas. Si un dato no está, dejalo en null o en una lista vacía.
+- Copiá lo que dice el manual; no inventes colores, códigos ni reglas. Si un dato no está, dejalo en null o en una lista vacía. La única excepción son los ejemplos de tono: ahí podés escribir frases nuevas que sigan el tono del manual, marcadas como tuyas.
 - Los códigos de color salen tal cual del manual. El HEX es obligatorio: si el manual solo da RGB, convertilo; si solo da CMYK o Pantone, usá la mejor aproximación.
 - Las cajas de las aplicaciones se recortan como imagen: que tomen la pieza o la foto entera, sin los títulos ni los textos del manual. En redes, cada posteo o historia es una caja aparte, ajustada a su borde.
 - Las cajas del logo se usan para recortarlo de la página: que lo contengan entero con un margen chico, sin textos, flechas de medidas ni otros elementos. Preferí páginas donde el logo está grande y solo.
@@ -444,10 +515,11 @@ export async function extractBrandBook(
     if (error || !pdf) throw new Error("No se encontró el PDF subido.");
     const data = await checkGoogleFonts(await extractWithClaude(pdf, row.pdf_name ?? "manual.pdf", userId));
     const before = row.data ? normalizeBrand(row.data) : null;
-    // Lo elegido a mano sobre los logos subidos (principal, fondos) no sale del PDF.
+    // Lo que es de los logos subidos (el principal, sus fondos) no sale de esta lectura.
     data.logo.main = before?.logo.main;
-    data.logo.backgrounds = before?.logo.backgrounds;
+    data.logo.allowed = before?.logo.allowed;
     data.hierarchy = before?.hierarchy;
+    data.resources = before?.resources;
     // Las ya recortadas con el criterio actual se conservan; las de uno anterior se rehacen.
     const current = before?.applicationsVersion === APPS_VERSION;
     const cropped = current ? (before?.applications?.filter((a) => a.path) ?? []) : [];
@@ -455,6 +527,7 @@ export async function extractBrandBook(
       data.applications = cropped;
       data.applicationPages = before?.applicationPages;
       data.applicationsVersion = APPS_VERSION;
+      data.applicationsCrop = before?.applicationsCrop;
     }
     await save({ data, status: "listo", error: null, extracted_at: new Date().toISOString() });
     return { ok: true, error: null, sources: data.logo.sources ?? [], applications: cropped.length ? [] : (data.applications ?? []) };
@@ -505,12 +578,124 @@ export async function locateBrandLogos(
   }
 }
 
+// Los fondos que el manual permite para cada logo subido (pedido del usuario: no
+// se eligen a mano, el manual ya los establece). Claude recibe los logos por id y
+// nombre y devuelve sus fondos en HEX; un logo que el manual no nombra queda con
+// [] (va el automático) para no volver a preguntar. Se suma a data.logo.allowed.
+export async function locateLogoBackgrounds(clientId: string, userId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const db = createAdminClient();
+  const [{ data: row }, { data: logos }] = await Promise.all([
+    db
+      .from("intranet_brand_books")
+      .select("pdf_path, pdf_name, data")
+      .eq("client_id", clientId)
+      .maybeSingle<{ pdf_path: string | null; pdf_name: string | null; data: unknown }>(),
+    db.from("intranet_brand_assets").select("id, name, file_name").eq("client_id", clientId).eq("kind", "logo").returns<{ id: string; name: string; file_name: string }[]>(),
+  ]);
+  if (!row?.pdf_path) return { ok: false, error: "Primero subí el PDF del manual." };
+  const before = row.data ? normalizeBrand(row.data) : EMPTY_BRAND;
+  const asked = (logos ?? []).filter((l) => !before.logo.allowed?.[l.id]);
+  if (!asked.length) return { ok: true };
+  try {
+    const { data: pdf, error } = await bucket().download(row.pdf_path);
+    if (error || !pdf) throw new Error("No se encontró el PDF subido.");
+    const raw = (await askClaude(
+      pdf,
+      row.pdf_name ?? "manual.pdf",
+      userId,
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["logos"],
+        properties: {
+          logos: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "backgrounds"],
+              properties: {
+                id: { type: "string", description: "El id del logo, tal cual se te pasó." },
+                backgrounds: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "HEX (#RRGGBB) de los fondos sobre los que el manual permite usar esta versión, el principal primero. Salen de la sección de fondos permitidos o de cómo el manual muestra esa versión. Vacío si el manual no lo define.",
+                },
+              },
+            },
+          },
+        },
+      },
+      `Estos son los logos subidos de la marca (id: nombre del archivo):\n${asked.map((l) => `- ${l.id}: ${l.name} (${l.file_name})`).join("\n")}\n\nPara cada uno, decí sobre qué fondos lo permite usar el manual. Uní cada archivo con la versión del logo del manual que corresponde por su nombre (principal, negativo, monocromo, isotipo…). No inventes fondos: si el manual no lo dice para esa versión, dejalo vacío.`,
+      "low",
+    )) as { logos?: { id?: unknown; backgrounds?: unknown }[] };
+    const found = new Map((Array.isArray(raw.logos) ? raw.logos : []).map((l) => [String(l?.id), l?.backgrounds]));
+    const added = logoAllowed(Object.fromEntries(asked.map((l) => [l.id, Array.isArray(found.get(l.id)) ? found.get(l.id) : []]))) ?? {};
+    // Se vuelve a leer por si cambió algo mientras Claude leía (otro logo, el principal).
+    const { data: now } = await db.from("intranet_brand_books").select("data").eq("client_id", clientId).maybeSingle<{ data: unknown }>();
+    const current = now?.data ? normalizeBrand(now.data) : before;
+    await db
+      .from("intranet_brand_books")
+      .update({
+        data: { ...current, logo: { ...current.logo, allowed: { ...current.logo.allowed, ...added } } },
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("client_id", clientId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[marca] fondos de logos", clientId, e);
+    return { ok: false, error: friendly(e) };
+  }
+}
+
+// Solo los ejemplos de tono, para manuales leídos antes de que existieran (sin
+// volver a leer todo, que pisaría las correcciones a mano). Guarda
+// data.voice.examples ([] si no salió ninguno, para no volver a buscar).
+export async function locateVoiceExamples(clientId: string, userId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const db = createAdminClient();
+  const { data: row } = await db
+    .from("intranet_brand_books")
+    .select("pdf_path, pdf_name, data")
+    .eq("client_id", clientId)
+    .maybeSingle<{ pdf_path: string | null; pdf_name: string | null; data: unknown }>();
+  if (!row?.pdf_path) return { ok: false, error: "Primero subí el PDF del manual." };
+  try {
+    const { data: pdf, error } = await bucket().download(row.pdf_path);
+    if (error || !pdf) throw new Error("No se encontró el PDF subido.");
+    const raw = (await askClaude(
+      pdf,
+      row.pdf_name ?? "manual.pdf",
+      userId,
+      { type: "object", additionalProperties: false, required: ["examples"], properties: { examples: VOICE_EXAMPLES } },
+      "Armá los ejemplos de cómo habla esta marca, según el tono de su manual.",
+      "low",
+    )) as { examples?: unknown };
+    const examples = voiceExamples(raw.examples) ?? [];
+    // Se vuelve a leer por si cambió algo mientras Claude leía.
+    const { data: now } = await db.from("intranet_brand_books").select("data").eq("client_id", clientId).maybeSingle<{ data: unknown }>();
+    const current = now?.data ? normalizeBrand(now.data) : EMPTY_BRAND;
+    await db
+      .from("intranet_brand_books")
+      .update({ data: { ...current, voice: { ...current.voice, examples } }, updated_by: userId, updated_at: new Date().toISOString() })
+      .eq("client_id", clientId);
+    return { ok: true };
+  } catch (e) {
+    console.error("[marca] ejemplos de tono", clientId, e);
+    return { ok: false, error: friendly(e) };
+  }
+}
+
 // Solo busca las aplicaciones y los ejemplos para redes (manuales leídos antes, o
 // para volver a sacarlas). Reemplaza la lista; las imágenes viejas las borra
 // saveBrandApplications al guardar las nuevas.
+// fresh: pedirle a Claude de nuevo aunque haya un borrador sin recortar (el botón
+// "Volver a sacar del PDF"); el tablero, al buscarlas solo, retoma el borrador.
 export async function locateBrandApplications(
   clientId: string,
   userId: string,
+  fresh = false,
 ): Promise<{ ok: true; applications: BrandApplication[] } | { ok: false; error: string }> {
   const db = createAdminClient();
   const { data: row } = await db
@@ -519,9 +704,12 @@ export async function locateBrandApplications(
     .eq("client_id", clientId)
     .maybeSingle<{ pdf_path: string | null; pdf_name: string | null; data: unknown }>();
   if (!row?.pdf_path) return { ok: false, error: "Primero subí el PDF del manual." };
+  const before = row.data ? normalizeBrand(row.data) : null;
+  const draft = before?.applicationsDraft;
+  if (!fresh && draft?.version === APPS_VERSION) return { ok: true, applications: draft.items };
   // Los temas de estilo ya cargados ("Fotografía: …"), para que las muestras se
   // llamen igual y el panel las junte con su pauta.
-  const topics = (row.data ? normalizeBrand(row.data).imagery : []).flatMap((t) => (t.indexOf(":") > 0 && t.indexOf(":") <= 30 ? [t.slice(0, t.indexOf(":"))] : []));
+  const topics = (before?.imagery ?? []).flatMap((t) => (t.indexOf(":") > 0 && t.indexOf(":") <= 30 ? [t.slice(0, t.indexOf(":"))] : []));
   try {
     const { data: pdf, error } = await bucket().download(row.pdf_path);
     if (error || !pdf) throw new Error("No se encontró el PDF subido.");
@@ -530,10 +718,20 @@ export async function locateBrandApplications(
       row.pdf_name ?? "manual.pdf",
       userId,
       { type: "object", additionalProperties: false, required: ["applications"], properties: { applications: APPLICATIONS } },
-      `Marcá dónde están las aplicaciones reales de la marca, los ejemplos para redes sociales y las muestras de estilo visual en este manual.${topics.length ? ` Temas de estilo ya cargados; usalos como name de las muestras que correspondan: ${topics.join(", ")}.` : ""}`,
+      `Marcá dónde están las aplicaciones reales de la marca, los ejemplos para redes sociales, las muestras de estilo visual y los recursos gráficos sueltos (íconos, recurso gráfico, tramas, ilustraciones) en este manual.${topics.length ? ` Temas de estilo ya cargados; usalos como name de las muestras y los recursos que correspondan: ${topics.join(", ")}.` : ""}`,
       "low",
     )) as { applications?: unknown };
-    return { ok: true, applications: (applicationSources(raw.applications) ?? []).map((a) => ({ ...a, path: null })) };
+    const applications = (applicationSources(raw.applications) ?? []).map((a) => ({ ...a, path: null }));
+    // Borrador: si se corta el recorte en el navegador, no se vuelve a pagar la lectura.
+    if (applications.length) {
+      const { data: now } = await db.from("intranet_brand_books").select("data").eq("client_id", clientId).maybeSingle<{ data: unknown }>();
+      const current = now?.data ? normalizeBrand(now.data) : EMPTY_BRAND;
+      await db
+        .from("intranet_brand_books")
+        .update({ data: { ...current, applicationsDraft: { version: APPS_VERSION, items: applications } } })
+        .eq("client_id", clientId);
+    }
+    return { ok: true, applications };
   } catch (e) {
     console.error("[marca] aplicaciones", clientId, e);
     return { ok: false, error: friendly(e) };
@@ -542,7 +740,7 @@ export async function locateBrandApplications(
 
 // Las aplicaciones ya recortadas, con su URL firmada (2 horas, como los recursos).
 export type ApplicationMedia = {
-  apps: { index: number; name: string; kind: BrandApplication["kind"]; url: string; page: number; x: number; y: number; w: number; h: number }[];
+  apps: { index: number; name: string; kind: BrandApplication["kind"]; category: BrandApplication["category"]; url: string; path: string; page: number; x: number; y: number; w: number; h: number }[];
 };
 
 export async function brandApplicationMedia(data: BrandData): Promise<ApplicationMedia> {
@@ -556,7 +754,7 @@ export async function brandApplicationMedia(data: BrandData): Promise<Applicatio
   return {
     apps: list.flatMap((a) => {
       const url = urlOf.get(a.path!);
-      return url ? [{ index: a.index, name: a.name, kind: a.kind, url, page: a.page, x: a.x, y: a.y, w: a.w, h: a.h }] : [];
+      return url ? [{ index: a.index, name: a.name, kind: a.kind, category: a.category ?? null, url, path: a.path!, page: a.page, x: a.x, y: a.y, w: a.w, h: a.h }] : [];
     }),
   };
 }

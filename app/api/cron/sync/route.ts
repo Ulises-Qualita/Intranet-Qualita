@@ -26,8 +26,9 @@ export async function GET(request: NextRequest) {
   }
 
   const params = request.nextUrl.searchParams;
-  // La corrida de las 9 UTC (ver vercel.json) es la que toma la foto diaria.
-  const conClarity = params.get("clarity") === "1" || new Date().getUTCHours() < 12;
+  // La corrida de las 13 UTC (10 hs AR, ver vercel.json) es la que toma la foto
+  // diaria; la de las 19 UTC (16 hs) es la de la tarde.
+  const conClarity = params.get("clarity") === "1" || new Date().getUTCHours() < 16;
 
   const full = params.get("full") === "1";
   const [meta, gads, crm, clarity] = await Promise.all([

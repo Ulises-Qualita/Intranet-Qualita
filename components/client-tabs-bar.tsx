@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
+import { TAB_GROUPS } from "@/lib/client-nav";
 import { monthShortcuts, readPeriod } from "@/lib/period";
 import { CustomRange, MonthLabel } from "./custom-range";
 import { Icon } from "./icons";
@@ -33,28 +34,82 @@ function useCurrentTab(base: string, tabs: ClientTab[]) {
   return { pathname, current: tabs.find((t) => isActive(t.suffix)) };
 }
 
+// Una entrada de la barra: una solapa suelta o un padre con sus hijas (TAB_GROUPS).
+type BarEntry = { kind: "tab"; tab: ClientTab } | { kind: "group"; key: string; label: string; tabs: ClientTab[] };
+
+function barEntries(tabs: ClientTab[]): BarEntry[] {
+  const out: BarEntry[] = [];
+  const done = new Set<string>();
+  for (const t of tabs) {
+    const group = TAB_GROUPS.find((g) => g.suffixes.includes(t.suffix));
+    if (!group) {
+      out.push({ kind: "tab", tab: t });
+      continue;
+    }
+    if (done.has(group.key)) continue;
+    done.add(group.key);
+    const children = group.suffixes.flatMap((s) => tabs.filter((x) => x.suffix === s));
+    // Con una sola hija visible no hace falta el padre.
+    out.push(children.length > 1 ? { kind: "group", key: group.key, label: group.label, tabs: children } : { kind: "tab", tab: t });
+  }
+  return out;
+}
+
 // Solapas de un cliente en el panel del equipo, arriba del contenido. Va en el
 // layout del cliente, así que no se desmonta al navegar: solo cambia lo de abajo.
+// Las solapas se agrupan en padres (Tracking, Web, Archivos, Proyecto): el padre
+// lleva a su primera hija y, estando en una, abajo aparece una segunda fila con
+// las hermanas.
 export function ClientTabsBar({ base, tabs }: { base: string; tabs: ClientTab[] }) {
   const query = usePeriodQuery();
   const qs = query.toString() ? `?${query}` : "";
   const { current } = useCurrentTab(base, tabs);
+  const entries = barEntries(tabs);
+  const open = entries.find((e): e is Extract<BarEntry, { kind: "group" }> => e.kind === "group" && !!current && e.tabs.includes(current));
 
   return (
     <div className="client-tabbar">
       <nav className="client-tabs" aria-label="Solapas del cliente">
-        {tabs.map((t) => (
-          <NavLink
-            key={t.suffix}
-            href={base + t.suffix + qs}
-            className={`client-tab${t === current ? " on" : ""}`}
-            aria-current={t === current ? "page" : undefined}
-          >
-            {t.label}
-            {!!t.badge && <span className="tab-badge">{t.badge}</span>}
-          </NavLink>
-        ))}
+        {entries.map((e) => {
+          if (e.kind === "tab") {
+            const t = e.tab;
+            return (
+              <NavLink
+                key={t.suffix}
+                href={base + t.suffix + qs}
+                className={`client-tab${t === current ? " on" : ""}`}
+                aria-current={t === current ? "page" : undefined}
+              >
+                {t.label}
+                {!!t.badge && <span className="tab-badge">{t.badge}</span>}
+              </NavLink>
+            );
+          }
+          const on = e === open;
+          const badge = e.tabs.reduce((sum, t) => sum + (t.badge ?? 0), 0);
+          return (
+            <NavLink key={e.key} href={base + e.tabs[0].suffix + qs} className={`client-tab group${on ? " on" : ""}`}>
+              {e.label}
+              {!!badge && <span className="tab-badge">{badge}</span>}
+            </NavLink>
+          );
+        })}
       </nav>
+      {open && (
+        <nav className="client-subtabs" aria-label={open.label}>
+          {open.tabs.map((t) => (
+            <NavLink
+              key={t.suffix}
+              href={base + t.suffix + qs}
+              className={`client-subtab${t === current ? " on" : ""}`}
+              aria-current={t === current ? "page" : undefined}
+            >
+              {t.label}
+              {!!t.badge && <span className="tab-badge">{t.badge}</span>}
+            </NavLink>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }

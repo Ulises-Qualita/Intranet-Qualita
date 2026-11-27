@@ -23,7 +23,7 @@ paths:
   (`{ recipients: { tipo: [profile ids] } }`); un tipo sin entrada va a los admins
   con Telegram vinculado.
 - Corre al final de `app/api/cron/sync` (`runAlerts`, `?alertas=0` lo saltea): la
-  corrida de la mañana (9 UTC = 6 AR) hace todo, la de la tarde solo integraciones.
+  corrida de la mañana (13 UTC = 10 AR; la de la tarde, 19 UTC = 16 AR) hace todo, la de la tarde solo integraciones.
   Estado por cosa vigilada en `intranet_alerts.key`: se avisa al pasar a mal (o una
   vez por día si `repeatDaily`), se cierra al volver a bien (con aviso solo si el
   chequeo trae `resolved`). Si no se le pudo mandar a nadie, no se marca enviada.

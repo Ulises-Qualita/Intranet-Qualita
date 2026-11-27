@@ -3,10 +3,11 @@
 import { useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 import { BRAIN_ACCEPT } from "@/lib/brains";
+import { MeetingLoader } from "./meeting-loader";
 
-// Carga manual de información a un cerebro (archivos o una nota escrita).
-// Solo interfaz: lo elegido queda en la pantalla como "Sin guardar" y no se sube
-// a ningún lado hasta que exista la tabla y el bucket de los cerebros.
+// Carga manual de información a un cerebro: reuniones (meeting-loader.tsx, ya
+// se guardan), archivos o una nota escrita. Archivos y notas siguen siendo solo
+// interfaz: lo elegido queda en la pantalla como "Sin guardar".
 
 type Pending = { id: number; name: string; size: string; kind: "archivo" | "nota" };
 
@@ -15,10 +16,10 @@ const sizeText = (bytes: number) =>
 
 let nextId = 1;
 
-export function BrainUploader({ areaName }: { areaName: string }) {
+export function BrainUploader({ area, areaName }: { area: string; areaName: string }) {
   const input = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
-  const [mode, setMode] = useState<"archivos" | "nota">("archivos");
+  const [mode, setMode] = useState<"reunion" | "archivos" | "nota">("reunion");
   const [note, setNote] = useState({ title: "", body: "" });
   const [pending, setPending] = useState<Pending[]>([]);
 
@@ -38,6 +39,9 @@ export function BrainUploader({ areaName }: { areaName: string }) {
       <div className="brain-upload-head">
         <h3>Cargar información</h3>
         <div className="brain-seg" role="tablist" aria-label="Qué cargar">
+          <button type="button" role="tab" aria-selected={mode === "reunion"} className={mode === "reunion" ? "on" : ""} onClick={() => setMode("reunion")}>
+            Reunión
+          </button>
           <button type="button" role="tab" aria-selected={mode === "archivos"} className={mode === "archivos" ? "on" : ""} onClick={() => setMode("archivos")}>
             Archivos
           </button>
@@ -47,7 +51,9 @@ export function BrainUploader({ areaName }: { areaName: string }) {
         </div>
       </div>
 
-      {mode === "archivos" ? (
+      {mode === "reunion" ? (
+        <MeetingLoader area={area} areaName={areaName} />
+      ) : mode === "archivos" ? (
         <button
           type="button"
           className={`brain-drop${drag ? " drag" : ""}`}
@@ -92,7 +98,7 @@ export function BrainUploader({ areaName }: { areaName: string }) {
         </div>
       )}
 
-      {pending.length > 0 && (
+      {mode !== "reunion" && pending.length > 0 && (
         <ul className="brain-pending">
           {pending.map((p) => (
             <li key={p.id}>
@@ -108,10 +114,12 @@ export function BrainUploader({ areaName }: { areaName: string }) {
         </ul>
       )}
 
-      <p className="brain-upload-foot">
-        <Icon name="clock" size={14} />
-        La carga todavía no está conectada: lo que agregues acá no se guarda.
-      </p>
+      {mode !== "reunion" && (
+        <p className="brain-upload-foot">
+          <Icon name="clock" size={14} />
+          La carga de archivos y notas todavía no está conectada: lo que agregues acá no se guarda.
+        </p>
+      )}
     </div>
   );
 }

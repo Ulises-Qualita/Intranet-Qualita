@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getAreaSession } from "@/lib/auth";
 import { checkGoogleFonts, hierarchyTexts, normalizeBrand } from "@/lib/brand";
-import { APPS_VERSION, ASSET_MAX, type AssetKind, type BrandApplication, BRAND_BUCKET, BRAND_PDF_MAX, BRAND_PDF_MAX_LABEL, isAssetKind, normalizeHex } from "@/lib/brand-shared";
+import { APPS_VERSION, ASSET_MAX, CROP_VERSION, type AssetKind, type BrandApplication, BRAND_BUCKET, BRAND_PDF_MAX, BRAND_PDF_MAX_LABEL, isAssetKind, isResourceCategory } from "@/lib/brand-shared";
 import { createAdminClient, createClient, isMissingTable } from "@/lib/supabase/server";
 
 // Manual de marca: solo el equipo con el área Clientes que ve al cliente (la RLS
@@ -83,11 +83,16 @@ export async function brandPdfUploaded(clientId: string, path: string, fileName:
 
   const { data: previous } = await team.supabase
     .from("intranet_brand_books")
-    .select("pdf_path")
+    .select("pdf_path, data")
     .eq("client_id", clientId)
-    .maybeSingle<{ pdf_path: string | null }>();
+    .maybeSingle<{ pdf_path: string | null; data: unknown }>();
+  // Con un PDF nuevo (p. ej. el mismo manual exportado en alta), las imágenes ya
+  // recortadas se vuelven a recortar solas de él con las mismas cajas
+  // (useAutoRecrop en brand-board): se borra la marca de recorte.
+  const kept = previous?.data ? normalizeBrand(previous.data) : null;
   const { error } = await team.supabase.from("intranet_brand_books").upsert({
     client_id: clientId,
+    ...(kept ? { data: { ...kept, applicationsCrop: undefined } } : {}),
     pdf_path: path,
     pdf_name: fileName.slice(0, 200),
     pdf_size: size,
@@ -181,10 +186,14 @@ export async function saveBrandData(clientId: string, raw: unknown): Promise<Bra
   data.applications = saved?.applications;
   data.applicationPages = saved?.applicationPages;
   data.applicationsVersion = saved?.applicationsVersion;
+  data.applicationsCrop = saved?.applicationsCrop;
   // Ni el principal ni los fondos de los logos se editan ahí.
   data.logo.main = saved?.logo.main;
-  data.logo.backgrounds = saved?.logo.backgrounds;
+  data.logo.allowed = saved?.logo.allowed;
+  // Los ejemplos de tono tampoco (el editor no los muestra).
+  data.voice.examples = saved?.voice.examples;
   data.hierarchy = saved?.hierarchy;
+  data.resources = saved?.resources;
   const { error } = await team.supabase.from("intranet_brand_books").upsert({
     client_id: clientId,
     data,
@@ -228,6 +237,32 @@ export async function setMainLogo(clientId: string, assetId: string): Promise<Br
   return { ok: true, error: null };
 }
 
+// Categoría de un recurso (iconografía, tramas…) elegida por el equipo.
+export async function setResourceCategory(clientId: string, assetId: string, category: string): Promise<BrandResult> {
+  const team = await teamFor(clientId);
+  if (!team) return NO_ACCESS;
+  if (!isResourceCategory(category)) return { ok: false, error: "Categoría inválida." };
+  const { data: asset } = await team.supabase
+    .from("intranet_brand_assets")
+    .select("id")
+    .eq("id", assetId)
+    .eq("client_id", clientId)
+    .neq("kind", "logo")
+    .maybeSingle<{ id: string }>();
+  if (!asset) return { ok: false, error: "No se encontró el recurso." };
+  const { data, status } = await currentData(team, clientId);
+  const { error } = await team.supabase.from("intranet_brand_books").upsert({
+    client_id: clientId,
+    data: { ...data, resources: { ...data.resources, [assetId]: category } },
+    status,
+    updated_by: team.session.user.id,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) return fail("categoría del recurso", error, "No se pudo cambiar la categoría.");
+  revalidatePath(`/clientes/${team.slug}/marca`);
+  return { ok: true, error: null };
+}
+
 // Textos de muestra del panel Jerarquía (null = volver a los automáticos).
 export async function saveHierarchyTexts(clientId: string, raw: { titles: string[]; text: string | null } | null): Promise<BrandResult> {
   const team = await teamFor(clientId);
@@ -252,41 +287,6 @@ export async function saveHierarchyTexts(clientId: string, raw: { titles: string
   return { ok: true, error: null };
 }
 
-// Fondo de un logo elegido a mano (#RRGGBB); null vuelve al automático.
-export async function setLogoBackground(clientId: string, assetId: string, color: string | null): Promise<BrandResult> {
-  const team = await teamFor(clientId);
-  if (!team) return NO_ACCESS;
-  const hex = color === null ? null : normalizeHex(color);
-  if (color !== null && !hex) return { ok: false, error: "Color inválido." };
-  const { data: asset } = await team.supabase
-    .from("intranet_brand_assets")
-    .select("id")
-    .eq("id", assetId)
-    .eq("client_id", clientId)
-    .eq("kind", "logo")
-    .maybeSingle<{ id: string }>();
-  if (!asset) return { ok: false, error: "No se encontró el logo." };
-  const { data: row } = await team.supabase
-    .from("intranet_brand_books")
-    .select("data, status")
-    .eq("client_id", clientId)
-    .maybeSingle<{ data: unknown; status: string }>();
-  const data = normalizeBrand(row?.data ?? {});
-  const backgrounds = { ...data.logo.backgrounds };
-  if (hex) backgrounds[assetId] = hex;
-  else delete backgrounds[assetId];
-  const { error } = await team.supabase.from("intranet_brand_books").upsert({
-    client_id: clientId,
-    data: { ...data, logo: { ...data.logo, backgrounds } },
-    status: row?.status ?? "listo",
-    updated_by: team.session.user.id,
-    updated_at: new Date().toISOString(),
-  });
-  if (error) return fail("fondo del logo", error, "No se pudo guardar el fondo.");
-  revalidatePath(`/clientes/${team.slug}/marca`);
-  return { ok: true, error: null };
-}
-
 // ---------- Aplicaciones (imágenes recortadas del PDF) ----------
 
 async function currentData(team: NonNullable<Awaited<ReturnType<typeof teamFor>>>, clientId: string) {
@@ -301,7 +301,8 @@ async function currentData(team: NonNullable<Awaited<ReturnType<typeof teamFor>>
 // Guarda la lista de aplicaciones ya recortadas (cada una con su imagen en
 // `{clientId}/aplicacion/`). Reemplaza la anterior y borra las imágenes viejas
 // (también las de páginas que guardaba una versión anterior).
-export async function saveBrandApplications(clientId: string, items: BrandApplication[]): Promise<BrandResult> {
+// keepVersion: volver a recortar las mismas cajas (no cambia el criterio con que se marcaron).
+export async function saveBrandApplications(clientId: string, items: BrandApplication[], keepVersion = false): Promise<BrandResult> {
   const team = await teamFor(clientId);
   if (!team) return NO_ACCESS;
   const prefix = `${clientId}/aplicacion/`;
@@ -316,7 +317,14 @@ export async function saveBrandApplications(clientId: string, items: BrandApplic
   );
   const { error } = await team.supabase.from("intranet_brand_books").upsert({
     client_id: clientId,
-    data: { ...data, applications: checked, applicationPages: undefined, applicationsVersion: APPS_VERSION },
+    data: {
+      ...data,
+      applications: checked,
+      applicationPages: undefined,
+      applicationsVersion: keepVersion ? data.applicationsVersion : APPS_VERSION,
+      applicationsCrop: CROP_VERSION,
+      applicationsDraft: undefined,
+    },
     status,
     updated_by: team.session.user.id,
     updated_at: new Date().toISOString(),

@@ -12,11 +12,11 @@ export const maxDuration = 300;
 export async function POST(request: NextRequest) {
   const session = await getAreaSession("clientes");
   if (!session) return Response.json({ ok: false, error: "Sin acceso." }, { status: 403 });
-  const body = (await request.json().catch(() => null)) as { client?: string } | null;
+  const body = (await request.json().catch(() => null)) as { client?: string; fresh?: boolean } | null;
   const client = body?.client ? await getClient(body.client) : null;
   if (!client) return Response.json({ ok: false, error: "Cliente no encontrado." }, { status: 404 });
 
-  const result = await locateBrandApplications(client.id, session.user.id);
+  const result = await locateBrandApplications(client.id, session.user.id, body?.fresh === true);
   if (!result.ok) return Response.json(result, { status: 422 });
   const pdfUrl = await brandPdfUrl(client.id, false);
   if (!pdfUrl) return Response.json({ ok: false, error: "No se encontró el PDF." }, { status: 422 });

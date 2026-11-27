@@ -2,7 +2,7 @@
 
 import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
+import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { ActionButton } from "@/components/actions";
 import { Icon } from "@/components/icons";
 import { BRAND_BUCKET, type BrandApplication, type LogoSource } from "@/lib/brand-shared";
@@ -31,10 +31,43 @@ function loadPdfjs() {
   return pdfjs;
 }
 
+// pdf.js dibuja las fotos sin suavizar cuando las agranda más de 1,33 veces la
+// densidad de la pantalla (getImageSmoothingEnabled): a la resolución de un
+// recorte nítido salían pixeladas, y por eso antes se recortaba a la resolución
+// de la foto, con textos y vectores borrosos (pedido: "se ven en muy mala
+// calidad"). Mientras se recorta, el canvas ignora ese "sin suavizar" y agranda
+// con interpolación de calidad alta: textos y vectores quedan nítidos y las
+// fotos, suaves.
+let smoothing = 0;
+let smoothingDesc: PropertyDescriptor | undefined;
+async function withSmoothing<T>(fn: () => Promise<T>): Promise<T> {
+  const proto = CanvasRenderingContext2D.prototype;
+  if (!smoothing) {
+    smoothingDesc = Object.getOwnPropertyDescriptor(proto, "imageSmoothingEnabled");
+    const set = smoothingDesc?.set;
+    if (set)
+      Object.defineProperty(proto, "imageSmoothingEnabled", {
+        ...smoothingDesc,
+        set(this: CanvasRenderingContext2D) {
+          set.call(this, true);
+          this.imageSmoothingQuality = "high";
+        },
+      });
+  }
+  smoothing++;
+  try {
+    return await fn();
+  } finally {
+    smoothing--;
+    if (!smoothing && smoothingDesc) Object.defineProperty(proto, "imageSmoothingEnabled", smoothingDesc);
+  }
+}
+
 // ---------- Recorte ----------
 
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
-const LONG_SIDE = 2000; // px del lado largo de la zona recortada
+const LONG_SIDE = 2000; // px del lado largo de la zona recortada (logos)
+const APP_LONG_SIDE = 2400; // ídem, aplicaciones y muestras de estilo
 
 // Color del fondo si las cuatro esquinas coinciden (fondo liso); si no, null.
 function flatBackground(d: Uint8ClampedArray, w: number, h: number): [number, number, number] | null {
@@ -64,7 +97,7 @@ async function cropLogo(doc: PDFDocumentProxy, item: Item): Promise<Crop> {
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  await page.render({ canvas, viewport: vp, transform: [1, 0, 0, 1, -x0 * vp.width, -y0 * vp.height] }).promise;
+  await withSmoothing(() => page.render({ canvas, viewport: vp, transform: [1, 0, 0, 1, -x0 * vp.width, -y0 * vp.height] }).promise);
 
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   const img = ctx.getImageData(0, 0, w, h);
@@ -113,6 +146,157 @@ async function cropLogo(doc: PDFDocumentProxy, item: Item): Promise<Crop> {
   return { url: URL.createObjectURL(blob), blob, flat: !!bg };
 }
 
+// ---------- Recursos: separar un set en elementos ----------
+
+// Un recurso del manual suele venir como un set (todos los íconos juntos, una
+// grilla de emojis, varios tags), y en Recursos se quieren por separado (pedido
+// del usuario). Se dibuja la zona y se corta por las franjas vacías (filas o
+// columnas de un solo color) en cruz, recursivamente: primero filas, después
+// columnas. Una franja tiene que ser ancha (minGap) para cortar: los huecos
+// chicos de un mismo ícono (los dedos de la huella) no lo parten. Los textos
+// debajo de cada ícono ("GARANTÍA") se descartan. Cada elemento queda en PNG,
+// ajustado y con su fondo transparente.
+type Rect = { x0: number; y0: number; x1: number; y1: number };
+export type ResourcePiece = { blob: Blob; box: { x: number; y: number; w: number; h: number } };
+
+function splitPieces(d: Uint8ClampedArray, w: number, h: number): Rect[] {
+  const minGap = Math.max(12, Math.round(Math.min(w, h) * 0.025));
+  const near = (i: number, j: number) =>
+    Math.abs(d[i] - d[j]) <= 24 && Math.abs(d[i + 1] - d[j + 1]) <= 24 && Math.abs(d[i + 2] - d[j + 2]) <= 24 && Math.abs(d[i + 3] - d[j + 3]) <= 24;
+  const rowEmpty = (y: number, r: Rect) => {
+    const ref = (y * w + r.x0) * 4;
+    for (let x = r.x0 + 1; x < r.x1; x++) if (!near((y * w + x) * 4, ref)) return false;
+    return true;
+  };
+  const colEmpty = (x: number, r: Rect) => {
+    const ref = (r.y0 * w + x) * 4;
+    for (let y = r.y0 + 1; y < r.y1; y++) if (!near((y * w + x) * 4, ref)) return false;
+    return true;
+  };
+  // Tramos con algo, a lo largo de un eje; dos tramos separados por menos de
+  // `gap` se juntan.
+  const runs = (r: Rect, axis: "y" | "x", gap: number): [number, number][] => {
+    const [from, to] = axis === "y" ? [r.y0, r.y1] : [r.x0, r.x1];
+    const out: [number, number][] = [];
+    let start = -1;
+    for (let i = from; i < to; i++) {
+      const empty = axis === "y" ? rowEmpty(i, r) : colEmpty(i, r);
+      if (!empty && start < 0) start = i;
+      if (empty && start >= 0) {
+        out.push([start, i]);
+        start = -1;
+      }
+    }
+    if (start >= 0) out.push([start, to]);
+    const merged: [number, number][] = [];
+    for (const run of out) {
+      const last = merged[merged.length - 1];
+      if (last && run[0] - last[1] < gap) last[1] = run[1];
+      else merged.push([...run]);
+    }
+    return merged;
+  };
+  const cut = (r: Rect, depth: number): Rect[] => {
+    const rows = runs(r, "y", minGap);
+    if (!rows.length) return [];
+    if (rows.length > 1 && depth < 10) return rows.flatMap(([a, b]) => cut({ ...r, y0: a, y1: b }, depth + 1));
+    const r2 = { ...r, y0: rows[0][0], y1: rows[0][1] };
+    const cols = runs(r2, "x", minGap);
+    if (!cols.length) return [];
+    if (cols.length > 1 && depth < 10) return cols.flatMap(([a, b]) => cut({ ...r2, x0: a, x1: b }, depth + 1));
+    return [{ ...r2, x0: cols[0][0], x1: cols[0][1] }];
+  };
+  // El texto que va pegado debajo de un ícono (con un hueco chico): se saca.
+  const dropLabel = (r: Rect): Rect => {
+    const rows = runs(r, "y", 4);
+    const last = rows[rows.length - 1];
+    if (rows.length < 2 || !last || last[1] - last[0] > (r.y1 - r.y0) * 0.3) return r;
+    return { ...r, y1: rows[rows.length - 2][1] };
+  };
+
+  const leaves = cut({ x0: 0, y0: 0, x1: w, y1: h }, 0).map(dropLabel);
+  if (leaves.length < 2) return leaves;
+  // Fuera los textos sueltos (bajos y anchos) y las migas.
+  const heights = leaves.map((r) => r.y1 - r.y0).sort((a, b) => a - b);
+  const areas = leaves.map((r) => (r.x1 - r.x0) * (r.y1 - r.y0)).sort((a, b) => a - b);
+  const medH = heights[Math.floor(heights.length / 2)];
+  const medA = areas[Math.floor(areas.length / 2)];
+  const kept = leaves.filter((r) => {
+    const [rw, rh] = [r.x1 - r.x0, r.y1 - r.y0];
+    if (rw * rh < medA * 0.06) return false;
+    return !(rh < medH * 0.5 && rw / rh > 2.2);
+  });
+  // Solo es un set si son 4 o más elementos de tamaño parecido (íconos, emojis).
+  // Una lámina mezclada (tarjetas de ejemplo con títulos) se parte mal: va entera.
+  if (kept.length < 4) return [];
+  const sizes = kept.map((r) => (r.x1 - r.x0) * (r.y1 - r.y0)).sort((a, b) => a - b);
+  const med = sizes[Math.floor(sizes.length / 2)];
+  const similar = sizes.filter((s) => s >= med * 0.35 && s <= med * 2.8).length;
+  return similar / kept.length >= 0.8 ? kept : [];
+}
+
+// El elemento de `canvas` en `r`, con un margen, en PNG; si su fondo es liso,
+// transparente (como el logo).
+async function pieceBlob(canvas: HTMLCanvasElement, r: Rect): Promise<Blob> {
+  const m = Math.round(Math.max(r.x1 - r.x0, r.y1 - r.y0) * 0.05) + 2;
+  const ox = Math.max(0, r.x0 - m);
+  const oy = Math.max(0, r.y0 - m);
+  const ow = Math.min(canvas.width, r.x1 + m) - ox;
+  const oh = Math.min(canvas.height, r.y1 + m) - oy;
+  const out = document.createElement("canvas");
+  out.width = ow;
+  out.height = oh;
+  const ctx = out.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(canvas, ox, oy, ow, oh, 0, 0, ow, oh);
+  const img = ctx.getImageData(0, 0, ow, oh);
+  const d = img.data;
+  const bg = flatBackground(d, ow, oh);
+  if (bg) {
+    for (let i = 0; i < d.length; i += 4) {
+      const diff = Math.max(Math.abs(d[i] - bg[0]), Math.abs(d[i + 1] - bg[1]), Math.abs(d[i + 2] - bg[2]));
+      const a = Math.min(1, Math.max(0, (diff - 6) / 70));
+      if (a === 0) d[i + 3] = 0;
+      else if (a < 1) {
+        for (let k = 0; k < 3; k++) d[i + k] = Math.min(255, Math.max(0, Math.round((d[i + k] - bg[k] * (1 - a)) / a)));
+        d[i + 3] = Math.round(a * 255);
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  return new Promise<Blob>((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error("png"))), "image/png"));
+}
+
+// Recorta un recurso y, si es un set, lo separa: devuelve cada elemento con su
+// caja en la página (fracciones), así volver a recortarlo da ese elemento solo.
+async function cropResourcePieces(doc: PDFDocumentProxy, a: BrandApplication): Promise<ResourcePiece[]> {
+  const page = await doc.getPage(a.page);
+  const base = page.getViewport({ scale: 1 });
+  const [x0, y0] = [clamp(a.x), clamp(a.y)];
+  const [x1, y1] = [clamp(a.x + a.w), clamp(a.y + a.h)];
+  const scale = Math.min(14, APP_LONG_SIDE / Math.max((x1 - x0) * base.width, (y1 - y0) * base.height, 1));
+  const vp = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(2, Math.round((x1 - x0) * vp.width));
+  canvas.height = Math.max(2, Math.round((y1 - y0) * vp.height));
+  await withSmoothing(() => page.render({ canvas, viewport: vp, transform: [1, 0, 0, 1, -x0 * vp.width, -y0 * vp.height] }).promise);
+  const { width: w, height: h } = canvas;
+  const d = canvas.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, w, h).data;
+  const rects = splitPieces(d, w, h);
+  const list = rects.length ? rects : [{ x0: 0, y0: 0, x1: w, y1: h }];
+  const out: ResourcePiece[] = [];
+  for (const r of list.slice(0, 60)) {
+    // La caja guardada lleva un poco de aire, así al recortarla de nuevo el
+    // fondo se reconoce y queda transparente.
+    const m = Math.round(Math.max(r.x1 - r.x0, r.y1 - r.y0) * 0.05) + 2;
+    const e = { x0: Math.max(0, r.x0 - m), y0: Math.max(0, r.y0 - m), x1: Math.min(w, r.x1 + m), y1: Math.min(h, r.y1 + m) };
+    out.push({
+      blob: await pieceBlob(canvas, r),
+      box: { x: x0 + (e.x0 / w) * (x1 - x0), y: y0 + (e.y0 / h) * (y1 - y0), w: ((e.x1 - e.x0) / w) * (x1 - x0), h: ((e.y1 - e.y0) / h) * (y1 - y0) },
+    });
+  }
+  return out;
+}
+
 const fileName = (name: string) =>
   `${
     name
@@ -155,69 +339,15 @@ export async function saveLogosFromPdf(clientId: string, pdfUrl: string, sources
 
 // ---------- Aplicaciones ----------
 
-type Matrix = [number, number, number, number, number, number];
-const mul = (m: Matrix, n: Matrix): Matrix => [
-  m[0] * n[0] + m[2] * n[1],
-  m[1] * n[0] + m[3] * n[1],
-  m[0] * n[2] + m[2] * n[3],
-  m[1] * n[2] + m[3] * n[3],
-  m[0] * n[4] + m[2] * n[5] + m[4],
-  m[1] * n[4] + m[3] * n[5] + m[5],
-];
-
-// Píxeles por punto de las fotos del PDF que caen en esa zona de la página (la de
-// más resolución entre las que cubren al menos un 15%), o null si ahí no hay
-// fotos (texto y vectores). Recorre los operadores de la página siguiendo la
-// matriz de cada imagen. Hace falta porque pdf.js agranda las fotos sin
-// suavizar: pasadas a 1800 px salían pixeladas (un posteo de 211 px, casi 7 veces).
-async function imageDensity(lib: typeof import("pdfjs-dist"), page: PDFPageProxy, x0: number, y0: number, x1: number, y1: number): Promise<number | null> {
-  const { OPS } = lib;
-  const [vx0, vy0, vx1, vy1] = page.view;
-  const list = await page.getOperatorList();
-  let ctm: Matrix = [1, 0, 0, 1, 0, 0];
-  const stack: Matrix[] = [];
-  const area = Math.max((x1 - x0) * (y1 - y0), 1e-6);
-  let best: number | null = null;
-  for (let i = 0; i < list.fnArray.length; i++) {
-    const fn = list.fnArray[i];
-    const args = list.argsArray[i] as unknown[];
-    if (fn === OPS.save) stack.push(ctm);
-    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
-    else if (fn === OPS.transform) ctm = mul(ctm, args as Matrix);
-    else if (fn === OPS.paintFormXObjectBegin) {
-      stack.push(ctm);
-      if (Array.isArray(args[0])) ctm = mul(ctm, args[0] as Matrix);
-    } else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() ?? ctm;
-    else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject) {
-      const inline = args[0] as { width?: number; height?: number } | null;
-      const w = Number(fn === OPS.paintImageXObject ? args[1] : inline?.width);
-      const h = Number(fn === OPS.paintImageXObject ? args[2] : inline?.height);
-      const [wPt, hPt] = [Math.hypot(ctm[0], ctm[1]), Math.hypot(ctm[2], ctm[3])];
-      if (!(w > 0 && h > 0 && wPt > 0 && hPt > 0)) continue;
-      // Caja de la imagen en fracciones de la página (el PDF mide desde abajo).
-      const xs = [ctm[4], ctm[4] + ctm[0], ctm[4] + ctm[2], ctm[4] + ctm[0] + ctm[2]].map((v) => (v - vx0) / (vx1 - vx0));
-      const ys = [ctm[5], ctm[5] + ctm[1], ctm[5] + ctm[3], ctm[5] + ctm[1] + ctm[3]].map((v) => 1 - (v - vy0) / (vy1 - vy0));
-      const ox = Math.min(x1, Math.max(...xs)) - Math.max(x0, Math.min(...xs));
-      const oy = Math.min(y1, Math.max(...ys)) - Math.max(y0, Math.min(...ys));
-      if (ox <= 0 || oy <= 0 || (ox * oy) / area < 0.15) continue;
-      const density = Math.max(w / wPt, h / hPt);
-      if (best === null || density > best) best = density;
-    }
-  }
-  return best;
-}
-
 // Recorta una aplicación tal cual está en la página (sin quitar el fondo), como
-// JPG. Si es una foto, a su resolución real (la vista grande la agranda
-// suavizada); si es texto o vectores, a 1800 px de lado largo.
-async function cropApplication(lib: typeof import("pdfjs-dist"), doc: PDFDocumentProxy, a: BrandApplication): Promise<Blob> {
+// JPG de 2400 px de lado largo (hasta 8 veces el tamaño en la página), con las
+// fotos agrandadas suavizadas (withSmoothing).
+async function cropApplication(doc: PDFDocumentProxy, a: BrandApplication): Promise<Blob> {
   const page = await doc.getPage(a.page);
   const base = page.getViewport({ scale: 1 });
   const [x0, y0] = [clamp(a.x), clamp(a.y)];
   const [x1, y1] = [clamp(a.x + a.w), clamp(a.y + a.h)];
-  const full = Math.min(8, 1800 / Math.max((x1 - x0) * base.width, (y1 - y0) * base.height, 1));
-  const density = await imageDensity(lib, page, x0, y0, x1, y1).catch(() => null);
-  const scale = density ? Math.min(full, Math.max(density, 0.5)) : full;
+  const scale = Math.min(8, APP_LONG_SIDE / Math.max((x1 - x0) * base.width, (y1 - y0) * base.height, 1));
   const vp = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(2, Math.round((x1 - x0) * vp.width));
@@ -225,9 +355,9 @@ async function cropApplication(lib: typeof import("pdfjs-dist"), doc: PDFDocumen
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvas, viewport: vp, transform: [1, 0, 0, 1, -x0 * vp.width, -y0 * vp.height] }).promise;
+  await withSmoothing(() => page.render({ canvas, viewport: vp, transform: [1, 0, 0, 1, -x0 * vp.width, -y0 * vp.height] }).promise);
   const out = trimToContent(canvas);
-  return new Promise<Blob>((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error("jpg"))), "image/jpeg", 0.92));
+  return new Promise<Blob>((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error("jpg"))), "image/jpeg", 0.93));
 }
 
 // Si la zona tiene fondo liso (la página del manual alrededor de la pieza), la
@@ -266,13 +396,15 @@ function trimToContent(canvas: HTMLCanvasElement): HTMLCanvasElement {
 async function uploadImage(clientId: string, blob: Blob, name: string): Promise<string | null> {
   const signed = await createBrandUpload(clientId, "aplicacion", { name, size: blob.size });
   if (!signed.ok) return null;
-  const { error } = await createClient().storage.from(BRAND_BUCKET).uploadToSignedUrl(signed.path, signed.token, blob, { contentType: "image/jpeg" });
+  const { error } = await createClient().storage.from(BRAND_BUCKET).uploadToSignedUrl(signed.path, signed.token, blob, { contentType: blob.type || "image/jpeg" });
   return error ? null : signed.path;
 }
 
 // Recorta cada aplicación que marcó Claude, la sube al bucket y guarda la lista
 // (reemplaza la anterior). Devuelve un error para mostrar, o null.
-export async function saveApplicationsFromPdf(clientId: string, pdfUrl: string, apps: BrandApplication[]): Promise<string | null> {
+// recrop: las mismas cajas ya guardadas, recortadas de nuevo con más calidad; si
+// una falla queda la imagen anterior.
+export async function saveApplicationsFromPdf(clientId: string, pdfUrl: string, apps: BrandApplication[], recrop = false): Promise<string | null> {
   if (!apps.length) {
     // Buscadas y sin piezas: queda guardado, así no se vuelven a buscar.
     const result = await saveBrandApplications(clientId, []);
@@ -285,15 +417,38 @@ export async function saveApplicationsFromPdf(clientId: string, pdfUrl: string, 
     const saved: BrandApplication[] = [];
     for (const [i, a] of apps.entries()) {
       try {
-        const path = await uploadImage(clientId, await cropApplication(lib, doc, a), `${i + 1}-${fileName(a.name).replace(/\.png$/, ".jpg")}`);
+        // Un recurso (íconos, trama, recurso gráfico) va en PNG transparente y,
+        // si es un set, separado en cada elemento (cropResourcePieces), cada
+        // uno con su caja. El resto, JPG tal cual.
+        if (a.kind === "recurso") {
+          const pieces = await cropResourcePieces(doc, a);
+          const many = pieces.length > 1;
+          let ok = 0;
+          for (const [n, piece] of pieces.entries()) {
+            const pieceName = many ? `${a.name} ${n + 1}` : a.name;
+            const path = await uploadImage(clientId, piece.blob, `${i + 1}-${n + 1}-${fileName(pieceName)}`);
+            if (path) {
+              saved.push({ ...a, ...(many ? { ...piece.box, name: pieceName } : {}), path });
+              ok++;
+            }
+          }
+          if (!ok && recrop) saved.push(a);
+          continue;
+        }
+        const blob = await cropApplication(doc, a);
+        const path = await uploadImage(clientId, blob, `${i + 1}-${fileName(a.name).replace(/\.png$/, ".jpg")}`);
         if (path) saved.push({ ...a, path });
+        else if (recrop) saved.push(a);
       } catch {
         // Una que no se pudo recortar no frena al resto.
+        if (recrop) saved.push(a);
       }
     }
-    const result = await saveBrandApplications(clientId, saved);
+    const result = await saveBrandApplications(clientId, saved, recrop);
     if (!result.ok) return result.error;
-    const failed = apps.length - saved.length;
+    // Un set separado guarda varias piezas: se cuentan las originales que no dejaron ninguna.
+    const done = new Set(saved.map((x) => `${x.page}:${x.kind}:${x.name.replace(/ \d+$/, "")}`));
+    const failed = apps.filter((x) => !done.has(`${x.page}:${x.kind}:${x.name.replace(/ \d+$/, "")}`)).length;
     return failed ? `No se pudieron sacar ${failed === 1 ? "una aplicación" : `${failed} aplicaciones`} del PDF.` : null;
   } catch {
     return "No se pudo abrir el PDF para sacar las aplicaciones.";
@@ -305,11 +460,12 @@ export async function saveApplicationsFromPdf(clientId: string, pdfUrl: string, 
 // Aplicaciones de un manual ya leído: Claude marca las piezas
 // (/api/marca/aplicaciones) y se recortan acá. Lo corre solo el tablero cuando
 // todavía no se buscaron, y el botón "Volver a sacar del PDF". Devuelve un error o null.
-export async function extractApplications(clientSlug: string, onCropping?: () => void): Promise<string | null> {
+// fresh: volver a pedírselas a Claude (el botón); si no, se retoma el borrador.
+export async function extractApplications(clientSlug: string, onCropping?: () => void, fresh = false): Promise<string | null> {
   const res = await fetch("/api/marca/aplicaciones", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client: clientSlug }),
+    body: JSON.stringify({ client: clientSlug, fresh }),
   }).catch(() => null);
   const json = (await res?.json().catch(() => null)) as
     | { ok: true; clientId: string; pdfUrl: string; applications: BrandApplication[] }
@@ -327,7 +483,7 @@ export function ApplicationsFromPdf({ clientSlug, label }: { clientSlug: string;
   async function run() {
     setError(null);
     setBusy("buscando");
-    const failed = await extractApplications(clientSlug, () => setBusy("recortando"));
+    const failed = await extractApplications(clientSlug, () => setBusy("recortando"), true);
     setBusy(null);
     if (failed) setError(failed);
     router.refresh();

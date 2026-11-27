@@ -22,6 +22,39 @@ export const ASSET_MAX = 115 * 1024 * 1024;
 
 export const isAssetKind = (v: unknown): v is AssetKind => ASSET_KINDS.some((k) => k.id === v);
 
+// Categorías de los recursos (pedido: filtrar por iconografía, tramas, etc.).
+// Sin elegir, sale del nombre del archivo (guessCategory); el equipo la cambia
+// en cada recurso y se guarda en data.resources.
+export const RESOURCE_CATEGORIES = [
+  { id: "iconos", label: "Iconografía" },
+  { id: "tramas", label: "Tramas y texturas" },
+  { id: "graficos", label: "Recursos gráficos" },
+  { id: "ilustraciones", label: "Ilustraciones" },
+  { id: "fotos", label: "Fotografía" },
+  { id: "mockups", label: "Mockups" },
+  { id: "plantillas", label: "Plantillas" },
+  { id: "tipografias", label: "Tipografías" },
+  { id: "otros", label: "Otros" },
+] as const;
+export type ResourceCategory = (typeof RESOURCE_CATEGORIES)[number]["id"];
+export const isResourceCategory = (v: unknown): v is ResourceCategory => RESOURCE_CATEGORIES.some((c) => c.id === v);
+
+const GUESSES: [RegExp, ResourceCategory][] = [
+  [/[ií]cono|icon/i, "iconos"],
+  [/trama|pattern|patr[oó]n|textur/i, "tramas"],
+  [/ilustr|illustr/i, "ilustraciones"],
+  [/mock ?up/i, "mockups"],
+  [/plantilla|template|modelo|firma|membrete|presentaci/i, "plantillas"],
+  [/foto|photo|imagen|\bimg|\bdsc/i, "fotos"],
+  [/recurso|gr[aá]fic|elemento|forma|shape|sticker|vector|degrad|gradient/i, "graficos"],
+  [/\.(psd|indd|idml|pptx?|key|docx?|fig|sketch|xd)$/i, "plantillas"],
+];
+
+export function guessCategory(fileName: string, kind: AssetKind): ResourceCategory {
+  if (kind === "fuente") return "tipografias";
+  return GUESSES.find(([re]) => re.test(fileName))?.[1] ?? "otros";
+}
+
 export type BrandColor = {
   name: string;
   hex: string;
@@ -57,11 +90,21 @@ export type BrandData = {
     // Id del recurso (intranet_brand_assets) que es el logo principal, elegido por
     // el equipo. Sin elegir: el que se llama "Principal" o el primero subido.
     main?: string | null;
-    // Fondo elegido a mano para cada logo (id del recurso → #RRGGBB). Sin elegir,
-    // el automático (logo-tone.ts).
-    backgrounds?: Record<string, string>;
+    // Fondos que el manual permite para cada logo (id del recurso → #RRGGBB, en el
+    // orden del manual). Los lee Claude (locateLogoBackgrounds); no se eligen a mano.
+    // [] = el manual no los define (va el automático, logo-tone.ts); sin entrada =
+    // todavía no se buscó.
+    allowed?: Record<string, string[]>;
   };
-  voice: { description?: string | null; keywords: string[]; dos: string[]; donts: string[] };
+  voice: {
+    description?: string | null;
+    keywords: string[];
+    dos: string[];
+    donts: string[];
+    // Cómo habla la marca en situaciones concretas (posteo, respuesta, web…).
+    // undefined = todavía no se buscaron (manual leído antes; se buscan solos).
+    examples?: VoiceExample[];
+  };
   imagery: string[];
   // Aplicaciones reales y ejemplos para redes que muestra el PDF (los marca Claude
   // y el navegador los recorta). undefined = todavía no se buscaron.
@@ -69,9 +112,18 @@ export type BrandData = {
   // Imagen de cada página del PDF que tiene aplicaciones, para verlas como en el
   // manual (con las piezas marcadas encima). undefined = todavía no se dibujaron.
   applicationPages?: ApplicationPage[];
+  // Lo que devolvió Claude y todavía no se terminó de recortar (version =
+  // APPS_VERSION). Si se recarga la página a mitad del recorte, se retoma de acá
+  // sin volver a llamarlo; saveBrandApplications lo borra al guardar.
+  applicationsDraft?: { version: number; items: BrandApplication[] };
   // Con qué criterio se marcaron las aplicaciones (APPS_VERSION). Una lista de un
   // criterio anterior se vuelve a sacar sola.
   applicationsVersion?: number;
+  // Con qué recorte se sacaron las imágenes (CROP_VERSION). Uno anterior hace que
+  // el tablero del equipo las vuelva a recortar solo, con las mismas cajas.
+  applicationsCrop?: number;
+  // Categoría elegida a mano para cada recurso (id del recurso → categoría).
+  resources?: Record<string, ResourceCategory>;
   // Textos de muestra del panel Jerarquía escritos por el equipo: uno por nivel de
   // título (en orden; "" = el de la marca) y el del texto corrido. Sin cargar, los
   // arma el tablero (nombre, palabras del tono, resumen).
@@ -86,15 +138,32 @@ export type ApplicationPage = { page: number; path: string };
 // salían pixeladas); se vuelven a sacar para recortarlas de nuevo.
 // 4: además de las piezas, las muestras de estilo visual (fotos de ejemplo,
 // íconos, kit de interfaz), con kind "estilo", para el panel Estilo visual.
-export const APPS_VERSION = 4;
+// 5: los elementos gráficos sueltos (íconos, recurso gráfico, tramas, emojis…)
+// salen aparte, con kind "recurso" y su categoría, para el panel Recursos (pedido:
+// "en estilo visual hay muchas cosas que deberían estar en recursos").
+export const APPS_VERSION = 5;
+// 2: recorte a 2400 px con las fotos suavizadas (antes, a la resolución de la foto).
+// 3: los recursos que son un set (íconos, emojis) se separan en cada elemento.
+export const CROP_VERSION = 3;
 
 // Pieza del manual: dónde está en el PDF y, ya recortada, la imagen en el bucket
 // (`{clientId}/aplicacion/…`; null mientras no se recortó).
 // kind "estilo": no es una pieza sino una muestra del estilo visual (su `name` es
 // el tema: "Fotografía", "Iconografía"…); va al panel Estilo visual, no a la mesa.
-export type BrandApplication = LogoSource & { kind: "redes" | "aplicacion" | "estilo"; path?: string | null };
+// kind "recurso": un elemento gráfico suelto (set de íconos, trama, recurso
+// gráfico); va al panel Recursos, en su categoría, como PNG transparente.
+export type BrandApplication = LogoSource & {
+  kind: "redes" | "aplicacion" | "estilo" | "recurso";
+  path?: string | null;
+  category?: ResourceCategory | null;
+};
 
 // Página (desde 1) y caja en fracciones de la página (0 a 1, desde arriba a la izquierda).
+// Un ejemplo de tono: la situación, la frase como la diría la marca y, si
+// sirve, cómo no decirla. manual = la frase sale del manual; si no, la escribió
+// Claude siguiendo el tono del manual (se rotula "Sugerido").
+export type VoiceExample = { context: string; good: string; bad: string | null; manual: boolean };
+
 export type LogoSource = { page: number; name: string; x: number; y: number; w: number; h: number };
 
 export const EMPTY_BRAND: BrandData = {

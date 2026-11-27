@@ -34,6 +34,11 @@ export const AI_TASKS = [
     label: "Manual de marca",
     detail: "La lectura del brandbook en PDF: colores, tipografías, logo y tono. Sin esfuerzo elegido usa Medio.",
   },
+  {
+    key: "cerebro",
+    label: "Cerebros",
+    detail: "La interpretación de una reunión cargada a un cerebro de área.",
+  },
 ] as const;
 
 export type AiTask = (typeof AI_TASKS)[number]["key"];

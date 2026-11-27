@@ -1,13 +1,13 @@
 "use client";
 
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icons";
-import { type BrandColor, type LogoSource, cmykText, contrast, contrastGrade, isDark, rgbText } from "@/lib/brand-shared";
-import { AssetUploader, CopyText, DeleteApplicationButton, DeleteAssetButton, LogoBackgroundPicker, MainLogoButton, Swatch } from "./brand-ui";
+import { RESOURCE_CATEGORIES, type ResourceCategory, type BrandColor, type LogoSource, type VoiceExample, cmykText, contrast, contrastGrade, isDark, rgbText } from "@/lib/brand-shared";
+import { AssetUploader, CopyText, DeleteApplicationButton, DeleteAssetButton, MainLogoButton, Swatch } from "./brand-ui";
 import { useRouter } from "next/navigation";
 import { ActionButton } from "@/components/actions";
-import { saveHierarchyTexts } from "./actions";
-import { ApplicationsFromPdf, LogoFromPdf, extractApplications } from "./logo-from-pdf";
+import { saveHierarchyTexts, setResourceCategory } from "./actions";
+import { ApplicationsFromPdf, LogoFromPdf, extractApplications, saveApplicationsFromPdf } from "./logo-from-pdf";
 import { type LogoTone, bestBackground, readability, useLogoTones } from "./logo-tone";
 
 // Manual de marca como tablero (bento). Pedido del usuario: "más UX/UI, más
@@ -37,15 +37,24 @@ export type BoardFile = {
   download: string | null;
   image: boolean;
   negative: boolean;
-  // Fondo elegido a mano por el equipo (null = automático).
-  background: string | null;
+  // Fondos que permite el manual para este logo, en su orden (data.logo.allowed;
+  // vacío = el manual no los define o todavía no se buscaron: va el automático).
+  backgrounds: string[];
   size: string;
   kind: "logo" | "fuente" | "otro";
+  // Iconografía, tramas… (la elegida por el equipo o la que sale del nombre).
+  category: ResourceCategory;
 };
 
 // Aplicación real o ejemplo para redes recortado del PDF (index: su lugar en
 // data.applications, para quitarla).
-export type BoardApp = { index: number; name: string; kind: "redes" | "aplicacion" | "estilo"; url: string; page: number; x: number; y: number; w: number; h: number };
+export type BoardApp = {
+  index: number;
+  name: string;
+  kind: "redes" | "aplicacion" | "estilo" | "recurso";
+  category: ResourceCategory | null | undefined;
+  url: string;
+  path: string; page: number; x: number; y: number; w: number; h: number };
 
 export type BoardProps = {
   clientId: string;
@@ -59,13 +68,17 @@ export type BoardProps = {
   applications: BoardApp[];
   // false: todavía no se buscaron en el PDF (manual leído antes); se buscan solas.
   appsSearched: boolean;
+  // Hay logos a los que todavía no se les buscaron los fondos en el manual; se buscan solos.
+  backgroundsPending: boolean;
+  // Las aplicaciones se recortaron con un criterio de calidad anterior; se rehacen solas.
+  recropPending: boolean;
   summary: string;
   colors: BrandColor[];
   fonts: BoardFont[];
   logos: BoardFile[];
   files: BoardFile[];
   logoNotes: { description: string | null; rules: string[] };
-  voice: { description: string | null; keywords: string[]; dos: string[]; donts: string[] };
+  voice: { description: string | null; keywords: string[]; dos: string[]; donts: string[]; examples?: VoiceExample[] };
   imagery: string[];
   pdf: { view: string; download: string | null; size: string } | null;
   // Textos del panel Jerarquía escritos por el equipo (data.hierarchy).
@@ -103,12 +116,13 @@ const ICONS: Record<PanelId, IconName> = {
 type Span = { c: number; r: number; m: number; mr: number };
 const spanStyle = (s: Span, i: number) => ({ "--c": s.c, "--r": s.r, "--mc": s.m, "--mr": s.mr, "--i": i }) as CSSProperties;
 
-// El fondo de un logo: el elegido a mano (LogoBackgroundPicker) o, si no, el
-// primero donde se lee (blanco, el color principal, los otros de la marca, casi
-// negro) según sus colores reales; mientras no se leyeron, por el nombre.
+// El fondo de un logo: el que permite el manual (no se elige a mano, pedido del
+// usuario); si permite varios, el primero donde se lee. Si el manual no lo
+// define, el primero donde se lee entre blanco, el color principal, los otros de
+// la marca y casi negro, según sus colores reales; mientras no se leyeron, por el nombre.
 function logoBackground(l: BoardFile | undefined, tones: Record<string, LogoTone | null>, colors: BrandColor[], primary: BrandColor | undefined) {
-  if (l?.background) return l.background;
   const t = l?.url ? tones[l.url] : null;
+  if (l?.backgrounds.length) return t && l.backgrounds.length > 1 ? bestBackground(t, l.backgrounds) : l.backgrounds[0];
   if (t) return bestBackground(t, [WHITE, ...(primary ? [primary.hex] : []), ...colors.slice(0, 5).map((c) => c.hex), INK]);
   return l?.negative ? (primary?.hex ?? INK) : WHITE;
 }
@@ -171,29 +185,45 @@ export function BrandBoard(props: BoardProps) {
   // Los ejemplos aplicados ponen el logo sobre el color principal: el que mejor se
   // lee ahí. El bloque del tablero muestra siempre el principal, sobre su fondo.
   const images = p.logos.filter((l) => l.image && l.url);
-  const scored = primary ? images.filter((l) => tones[l.url!] && !tones[l.url!]!.ownBackground) : [];
+  // Solo los que el manual permite sobre el color principal (o que no tienen fondos definidos).
+  const allowedOnPrimary = (l: BoardFile) => !l.backgrounds.length || l.backgrounds.some((b) => contrast(b, primary!.hex) < 1.15);
+  const scored = primary ? images.filter((l) => tones[l.url!] && !tones[l.url!]!.ownBackground && allowedOnPrimary(l)) : [];
   const examplesLogo = scored.length
     ? scored.reduce((best, l) => (readability(tones[l.url!]!, primary!.hex) > readability(tones[best.url!]!, primary!.hex) ? l : best))
-    : (images.find((l) => (primary && isDark(primary.hex) ? l.negative : !l.negative)) ?? images[0]);
+    : (images.find((l) => (primary ? allowedOnPrimary(l) && (isDark(primary.hex) ? l.negative : !l.negative) : !l.negative)) ??
+      (primary ? images.find(allowedOnPrimary) : undefined) ??
+      images[0]);
   const heroLogo = p.logos[0]?.image && p.logos[0].url ? p.logos[0] : undefined;
   const heroBg = heroLogo ? logoBackground(heroLogo, tones, p.colors, primary) : primary?.hex;
   const displayCss = display?.css;
   const hasTone = p.voice.keywords.length > 0 || !!p.voice.description || p.voice.dos.length > 0;
-  const showFiles = p.files.length > 0 || p.internal;
   // Más datos del manual en el tablero: números del logo, jerarquía, estilo y lo que no va.
   const specs = logoSpecs(p.logoNotes.rules);
   const notes = styleNotes(p.imagery);
-  const heads = [...notes.filter((n) => n.titled), ...notes.filter((n) => !n.titled && n.head)].map((n) => n.head).slice(0, 5);
   const sizes = headingSizes(p.fonts);
   const lead = p.summary.trim().split(/(?<=\.)\s/)[0] ?? "";
   // Color de acento para el bloque de estilo (si es casi blanco, queda neutro).
   const accent = p.colors.find((c) => c !== primary && /acent|accent|secundar/i.test(c.role ?? "")) ?? p.colors.find((c) => c !== primary);
   const accentHex = accent && contrast(accent.hex, WHITE) > 1.25 ? accent.hex : undefined;
-  const extras = [!!display && !!(p.hierarchy?.text || lead) && "jerarquia", heads.length >= 2 && "estilo"].filter(Boolean) as string[];
   // Aplicada: las piezas reales del PDF; sin ellas, piezas de muestra (con color principal).
-  // Las muestras de estilo (kind "estilo") van al panel Estilo visual, no a la mesa.
-  const realApps = p.applications.filter((a) => a.kind !== "estilo");
+  // Las muestras de estilo (kind "estilo") van al panel Estilo visual y los
+  // elementos gráficos sueltos (kind "recurso"), a Recursos; ninguno a la mesa.
+  const realApps = p.applications.filter((a) => a.kind !== "estilo" && a.kind !== "recurso");
   const styleShots = p.applications.filter((a) => a.kind === "estilo");
+  const resShots = p.applications.filter((a) => a.kind === "recurso");
+  // Un tema del estilo visual que tiene un recurso (Huella, Iconografía, Emojis…)
+  // sale entero de Estilo visual (pedido del usuario): su imagen va a Recursos y
+  // su pauta se ve ahí al filtrar esa categoría.
+  const allTopics = styleTopics(notes, [...styleShots, ...resShots]);
+  const isRes = (t: StyleTopic) => t.shots.some((x) => x.kind === "recurso");
+  const styleList = allTopics.filter((t) => !isRes(t));
+  const guides: ResourceGuide[] = allTopics.filter(isRes).flatMap((t) =>
+    t.notes.length ? [{ category: t.shots.find((x) => x.kind === "recurso")?.category ?? "graficos", title: t.title, text: t.notes.join(" ") }] : [],
+  );
+  const heads = styleList.map((t) => t.title).filter((t) => t !== "General").slice(0, 5);
+  const extras = [!!display && !!(p.hierarchy?.text || lead) && "jerarquia", heads.length >= 2 && "estilo"].filter(Boolean) as string[];
+  const showFiles = p.files.length > 0 || resShots.length > 0 || p.internal;
+  const fileCount = p.files.length + resShots.length;
   const hasExamples = realApps.length > 0 || !!primary || (p.internal && !!p.pdf);
   // Vista previa del bloque: hasta 5 piezas en abanico, alternando aplicaciones y
   // redes, las que entran enteras a lo ancho.
@@ -211,6 +241,12 @@ export function BrandBoard(props: BoardProps) {
     fanWidth += r;
   }
   const appsPending = useAutoApplications(p.internal && !!p.pdf && !p.appsSearched, p.clientSlug);
+  const recropping = useAutoRecrop(p.internal && p.appsSearched && p.recropPending ? p.pdf?.view : undefined, p.clientId, p.applications);
+  // Sacar o recortar de nuevo las piezas tarda uno o dos minutos en el navegador:
+  // sin aviso parecía que no pasaba nada y, al recargar, se cortaba.
+  const updating = (appsPending && realApps.length > 0) || recropping;
+  useAutoFetch("/api/marca/fondos", p.internal && !!p.pdf && p.backgroundsPending, p.clientSlug);
+  const examplesPending = useAutoFetch("/api/marca/tono", p.internal && !!p.pdf && p.voice.examples === undefined, p.clientSlug);
 
   const sections: PanelId[] = [
     "logo",
@@ -218,7 +254,7 @@ export function BrandBoard(props: BoardProps) {
     ...(p.fonts.length ? (["tipografia"] as const) : []),
     ...(extras.includes("jerarquia") ? (["jerarquia"] as const) : []),
     ...(hasTone ? (["tono"] as const) : []),
-    ...(notes.length ? (["estilo"] as const) : []),
+    ...(styleList.length ? (["estilo"] as const) : []),
     ...(hasExamples ? (["ejemplos"] as const) : []),
     ...(showFiles ? (["recursos"] as const) : []),
   ];
@@ -473,19 +509,29 @@ export function BrandBoard(props: BoardProps) {
             </span>
             <span className="bb-small-txt">
               <b>Recursos</b>
-              <small>{p.files.length ? `${p.files.length} ${p.files.length === 1 ? "archivo" : "archivos"}` : "Sin archivos"}</small>
+              <small>{fileCount ? `${fileCount} ${fileCount === 1 ? "archivo" : "archivos"}` : "Sin archivos"}</small>
             </span>
             <Icon name="chevron" size={16} className="bb-small-go" />
           </button>
         )}
       </div>
 
+      {updating && (
+        <div className="bb-updating" role="status">
+          <span className="bb-updating-dot" aria-hidden />
+          <span>
+            <b>Actualizando las piezas del manual…</b>
+            Tarda uno o dos minutos. No cierres ni recargues la página.
+          </span>
+        </div>
+      )}
+
       {panel && (
         <Sheet sections={sections} current={panel} onPick={setPanel} onClose={() => setPanel(null)}>
           {panel === "colores" && <ColorsPanel colors={p.colors} />}
           {panel === "tipografia" && <TypePanel key={fontIndex} fonts={p.fonts} initial={fontIndex} />}
           {panel === "logo" && <LogoPanel {...p} primary={primary} displayCss={displayCss} tones={tones} />}
-          {panel === "tono" && <TonePanel voice={p.voice} summary={p.summary} displayCss={displayCss} />}
+          {panel === "tono" && <TonePanel voice={p.voice} summary={p.summary} displayCss={displayCss} examplesPending={examplesPending} />}
           {panel === "jerarquia" && display && (
             <HierarchyPanel
               name={p.name}
@@ -497,12 +543,12 @@ export function BrandBoard(props: BoardProps) {
               saved={p.hierarchy}
               internal={p.internal}
               clientId={p.clientId}
+              primary={primary?.hex ?? null}
             />
           )}
           {panel === "estilo" && (
             <StylePanel
-              notes={notes}
-              shots={styleShots}
+              topics={styleList}
               pieces={realApps}
               accent={accentHex ?? primary?.hex}
               tint={primary?.hex}
@@ -518,7 +564,7 @@ export function BrandBoard(props: BoardProps) {
               {!realApps.length && primary && <ExamplesPanel {...p} primary={primary} display={display} body={body} logo={examplesLogo} />}
             </>
           )}
-          {panel === "recursos" && <FilesPanel clientId={p.clientId} files={p.files} internal={p.internal} />}
+          {panel === "recursos" && <FilesPanel clientId={p.clientId} files={p.files} extracted={resShots} guides={guides} internal={p.internal} />}
         </Sheet>
       )}
     </>
@@ -529,6 +575,58 @@ export function BrandBoard(props: BoardProps) {
 // solo al abrir el tablero (una vez por carga de página y cliente: `autoApps`
 // evita repetirla, también con el doble efecto de desarrollo). Devuelve si está corriendo.
 const autoApps = new Map<string, Promise<string | null>>();
+
+// Datos que se buscan solos en el manual la primera vez que el equipo abre el
+// tablero (los fondos permitidos de logos nuevos, los ejemplos de tono de un
+// manual leído antes): una vez por carga de página, cliente y ruta, y la
+// pantalla se refresca con el resultado. Devuelve si está corriendo.
+const autoFetched = new Set<string>();
+
+function useAutoFetch(endpoint: string, enabled: boolean, clientSlug: string) {
+  const router = useRouter();
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    const key = `${endpoint}:${clientSlug}`;
+    if (!enabled || autoFetched.has(key)) return;
+    autoFetched.add(key);
+    void fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client: clientSlug }),
+    })
+      .then((r) => r.json())
+      .then((r: { ok: boolean; error?: string }) => {
+        if (!r.ok) console.warn("[marca]", endpoint, r.error);
+        router.refresh();
+      })
+      .catch(() => {})
+      .finally(() => setDone(true));
+  }, [endpoint, enabled, clientSlug, router]);
+  return enabled && !done;
+}
+
+// Imágenes recortadas con una calidad anterior (CROP_VERSION): se vuelven a
+// recortar con las mismas cajas, sin pasar por Claude, una vez por carga de
+// página y cliente, y la pantalla se refresca con las nuevas.
+const autoRecrop = new Set<string>();
+
+function useAutoRecrop(pdfUrl: string | undefined, clientId: string, apps: BoardApp[]) {
+  const router = useRouter();
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!pdfUrl || autoRecrop.has(clientId)) return;
+    autoRecrop.add(clientId);
+    const boxes = apps.map(({ name, kind, category, path, page, x, y, w, h }) => ({ name, kind, category, path, page, x, y, w, h }));
+    void saveApplicationsFromPdf(clientId, pdfUrl, boxes, true)
+      .then((error) => {
+        if (error) console.warn("[marca] recortar de nuevo", error);
+        router.refresh();
+      })
+      .catch(() => {})
+      .finally(() => setDone(true));
+  }, [pdfUrl, clientId, apps, router]);
+  return !!pdfUrl && !done;
+}
 
 function useAutoApplications(enabled: boolean, clientSlug: string) {
   const router = useRouter();
@@ -821,7 +919,7 @@ const family = (name: string) =>
   name
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .split(/\s+/)[0];
 
 const isIso = (l: BoardFile) => family(l.name).startsWith("iso");
@@ -869,7 +967,7 @@ function LogoPanel({
   tones,
 }: BoardProps & { primary: BrandColor | undefined; displayCss: string | undefined; tones: Record<string, LogoTone | null> }) {
   // Mosaico bento (logoLayout): el principal (logos[0]) grande y las variantes
-  // alrededor, cada una sobre su fondo automático.
+  // alrededor, cada una sobre el fondo que le da el manual.
   const cells = logoLayout(logos);
 
   return (
@@ -904,13 +1002,6 @@ function LogoPanel({
                 {internal && (
                   <div className="bb-logo-tools">
                     {i > 0 && <MainLogoButton clientId={clientId} id={l.id} />}
-                    <LogoBackgroundPicker
-                      clientId={clientId}
-                      id={l.id}
-                      current={l.background}
-                      shown={bg}
-                      colors={[WHITE, INK, ...colors.map((c) => c.hex)]}
-                    />
                     <DeleteAssetButton clientId={clientId} id={l.id} name={l.name} />
                   </div>
                 )}
@@ -943,32 +1034,177 @@ function LogoPanel({
         </div>
       )}
 
-      {logoNotes.rules.length > 0 && (
-        <details className="bb-details">
-          <summary>Reglas de uso · {logoNotes.rules.length}</summary>
-          {logoNotes.description && <p>{logoNotes.description}</p>}
-          <ol>
-            {logoNotes.rules.map((r, i) => (
-              <li key={i}>{r}</li>
-            ))}
-          </ol>
-        </details>
-      )}
+      {(logoNotes.rules.length > 0 || !!logoNotes.description) && <LogoRules rules={logoNotes.rules} description={logoNotes.description} />}
     </>
+  );
+}
+
+// ---------- Reglas de uso del logo ----------
+
+// Las reglas del manual en un acordeón por tipo (elegido por el usuario entre
+// varias opciones; antes eran solapas y antes una lista plegada con mucho texto).
+// Se abre un tipo por vez y adentro van bullets cortos: medidas con sus números,
+// lo que no se hace sin el "No", fondos y otros usos con su título, y las
+// versiones (la descripción, de a una oración).
+type RuleGroup = "medidas" | "fondos" | "no" | "usos" | "versiones";
+const RULE_GROUPS: { id: RuleGroup; label: string }[] = [
+  { id: "medidas", label: "Medidas" },
+  { id: "no", label: "No hacer" },
+  { id: "fondos", label: "Fondos y color" },
+  { id: "usos", label: "Otros usos" },
+  { id: "versiones", label: "Versiones" },
+];
+
+const cleanRule = (t: string) => capital(t.trim().replace(/\.$/, ""));
+
+function ruleGroup(r: string): Exclude<RuleGroup, "versiones"> {
+  if (/^(no|nunca|evitar)\b/i.test(r.trim())) return "no";
+  if (/([áa]rea|zona|espacio) de (seguridad|protecci[óo]n|resguardo|respeto|reserva)|m[íi]nim|tama[ñn]o/i.test(r)) return "medidas";
+  if (/fondo|negativ|positiv|\bcolor|monocrom/i.test(r)) return "fondos";
+  return "usos";
+}
+
+// "Área de resguardo: dejar libre…" → título y texto; sin dos puntos, solo texto.
+function splitRule(r: string) {
+  const i = r.indexOf(":");
+  return i > 0 && i <= 60 ? { head: r.slice(0, i).trim(), text: cleanRule(r.slice(i + 1)) } : { head: "", text: cleanRule(r) };
+}
+
+// Los números de una medida ("1x", "3,5 cm", "220 px"), sin repetir.
+const measures = (r: string) =>
+  [...new Set([...r.matchAll(/\d+(?:[.,]\d+)?\s?(?:x|cm|mm|px|pt|%)(?![a-záéíóú])/gi)].map((m) => m[0].replace(/\s+/, " ")))].slice(0, 4);
+
+// "No estirar ni deformar el logo; no debe…" → "Estirar o deformar el logo".
+const forbidden = (r: string) =>
+  cleanRule(
+    r
+      .replace(/^(no|nunca|evitar)\s+/i, "")
+      .split(";")[0]
+      .replace(/\bni\b/gi, "o"),
+  );
+
+function RuleItem({ group, rule }: { group: RuleGroup; rule: string }) {
+  if (group === "no")
+    return (
+      <li className="no" title={rule}>
+        <Icon name="close" size={12} strokeWidth={2.6} />
+        <span>{forbidden(rule)}</span>
+      </li>
+    );
+  const { head, text } = splitRule(rule);
+  if (group === "medidas") {
+    const nums = measures(rule);
+    return (
+      <li title={rule}>
+        <Icon name="expand" size={12} strokeWidth={2.2} />
+        <span>
+          <b>{head || (/m[íi]nim|tama/i.test(rule) ? "Tamaño mínimo" : "Área de seguridad")}</b>
+          {nums.length ? (
+            <span className="bb-rule-nums">
+              {nums.map((n) => (
+                <em key={n}>{n}</em>
+              ))}
+            </span>
+          ) : (
+            <small>{text}</small>
+          )}
+        </span>
+      </li>
+    );
+  }
+  return (
+    <li>
+      <Icon name={group === "versiones" ? "image" : "check"} size={12} strokeWidth={2.4} />
+      <span>
+        {head && <b>{head}</b>}
+        {head ? <small>{text}</small> : text}
+      </span>
+    </li>
+  );
+}
+
+function LogoRules({ rules, description }: { rules: string[]; description: string | null }) {
+  const groups: Record<RuleGroup, string[]> = { medidas: [], fondos: [], no: [], usos: [], versiones: [] };
+  for (const r of rules) groups[ruleGroup(r)].push(r);
+  groups.versiones = (description ?? "")
+    .split(/(?<=\.)\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const shown = RULE_GROUPS.filter((g) => groups[g.id].length);
+  // Uno abierto por vez: arranca el primero; tocar el abierto lo cierra.
+  const [open, setOpen] = useState<RuleGroup | null>(shown[0]?.id ?? null);
+  // Al cambiar de tipo se cierra el de arriba y todo se corría (el panel "pegaba
+  // saltos"): se guarda dónde estaba el encabezado tocado y, ya dibujado, se
+  // corrige el scroll del panel para que quede en el mismo lugar.
+  const anchor = useRef<{ el: HTMLElement; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const a = anchor.current;
+    anchor.current = null;
+    if (!a) return;
+    const delta = a.el.getBoundingClientRect().top - a.top;
+    const scroller = a.el.closest(".bb-sheet-body");
+    if (delta && scroller) scroller.scrollTop += delta;
+  }, [open]);
+  if (!shown.length) return null;
+
+  return (
+    <section className="bb-rules">
+      <h4>Reglas de uso</h4>
+      <div className="bb-rules-acc">
+        {shown.map((g) => {
+          const isOpen = open === g.id;
+          const panelId = `bb-rules-${g.id}`;
+          return (
+            <div key={g.id} className={`bb-rules-row${isOpen ? " open" : ""}`}>
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                onClick={(e) => {
+                  anchor.current = { el: e.currentTarget, top: e.currentTarget.getBoundingClientRect().top };
+                  setOpen(isOpen ? null : g.id);
+                }}
+              >
+                <Icon name="chevron" size={14} strokeWidth={2.2} className="bb-rules-chev" />
+                <span>{g.label}</span>
+                <em>{groups[g.id].length}</em>
+              </button>
+              {isOpen && (
+                <ul id={panelId} className={`bb-rules-items${g.id === "no" ? " no" : ""}`}>
+                  {groups[g.id].map((r, i) => (
+                    <RuleItem key={i} group={g.id} rule={r} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
 // ---------- Tono ----------
 
+// Pedido del usuario: "mucho texto", con ejemplos de cómo hablar de la marca.
+// Arriba las palabras de la personalidad; después "Así habla" (una situación por
+// vez: la frase como la diría la marca y cómo no decirla) y el sí / no en
+// bullets cortos. La descripción queda como bajada chica.
 function TonePanel({
   voice,
   summary,
   displayCss,
+  examplesPending,
 }: {
   voice: BoardProps["voice"];
   summary: string;
   displayCss: string | undefined;
+  examplesPending: boolean;
 }) {
+  const examples = voice.examples ?? [];
+  const [pick, setPick] = useState(0);
+  const ex = examples[Math.min(pick, examples.length - 1)];
+
   return (
     <>
       {voice.keywords.length > 0 && (
@@ -978,25 +1214,72 @@ function TonePanel({
           ))}
         </div>
       )}
-      {(voice.description || summary) && <p className="bb-quote">{voice.description ?? summary}</p>}
+      {(voice.description || summary) && <p className="bb-tone-lead">{voice.description ?? summary}</p>}
+
+      {ex ? (
+        <section className="bb-voice">
+          <div className="bb-voice-head">
+            <h4>Así habla la marca</h4>
+            <div className="bb-voice-tabs" role="tablist" aria-label="Situaciones">
+              {examples.map((e, i) => (
+                <button key={i} type="button" role="tab" aria-selected={e === ex} className={e === ex ? "on" : ""} onClick={() => setPick(i)}>
+                  {e.context}
+                </button>
+              ))}
+            </div>
+          </div>
+          <figure key={pick} className="bb-voice-card">
+            <span className="bb-voice-badge">{ex.manual ? "Del manual" : "Sugerido según el tono"}</span>
+            <blockquote style={{ fontFamily: displayCss }}>{ex.good}</blockquote>
+            <div className="bb-voice-foot">
+              {ex.bad && (
+                <p className="bb-voice-bad">
+                  <Icon name="close" size={12} strokeWidth={2.6} />
+                  <span>
+                    <b>Así no:</b> {ex.bad}
+                  </span>
+                </p>
+              )}
+              <CopyText value={ex.good}>Copiar frase</CopyText>
+            </div>
+          </figure>
+        </section>
+      ) : (
+        examplesPending && <p className="bb-voice-wait">Armando ejemplos de cómo habla la marca…</p>
+      )}
+
       {(voice.dos.length > 0 || voice.donts.length > 0) && (
         <div className="bb-dodont">
-          <div>
-            <h3 className="ok">
-              <Icon name="check" size={15} strokeWidth={2.4} /> Sí
-            </h3>
-            {voice.dos.map((d, i) => (
-              <p key={i}>{d}</p>
-            ))}
-          </div>
-          <div>
-            <h3 className="no">
-              <Icon name="close" size={15} strokeWidth={2.4} /> No
-            </h3>
-            {voice.donts.map((d, i) => (
-              <p key={i}>{d}</p>
-            ))}
-          </div>
+          {voice.dos.length > 0 && (
+            <div>
+              <h3 className="ok">
+                <Icon name="check" size={15} strokeWidth={2.4} /> Sí
+              </h3>
+              <ul>
+                {voice.dos.map((d, i) => (
+                  <li key={i}>
+                    <Icon name="check" size={12} strokeWidth={2.6} />
+                    <span>{d}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {voice.donts.length > 0 && (
+            <div>
+              <h3 className="no">
+                <Icon name="close" size={15} strokeWidth={2.4} /> No
+              </h3>
+              <ul>
+                {voice.donts.map((d, i) => (
+                  <li key={i} className="no">
+                    <Icon name="close" size={12} strokeWidth={2.6} />
+                    <span>{d}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </>
@@ -1020,6 +1303,7 @@ function HierarchyPanel({
   saved,
   internal,
   clientId,
+  primary,
 }: {
   name: string;
   display: BoardFont;
@@ -1030,6 +1314,7 @@ function HierarchyPanel({
   saved: { titles: string[]; text: string | null } | null;
   internal: boolean;
   clientId: string;
+  primary: string | null;
 }) {
   const router = useRouter();
   const auto = [name, keywords.length ? capital(keywords.slice(0, 3).join(", ")) : name, keywords.length > 3 ? capital(keywords.slice(3, 6).join(", ")) : name, name];
@@ -1096,15 +1381,20 @@ function HierarchyPanel({
           {error && <p className="form-error">{error}</p>}
         </div>
       )}
-      <div className="bb-scale">
-        {steps.map((x, i) => (
-          <div key={x.tag} className="bb-scale-row">
-            <span className="bb-scale-meta">
-              <b>{x.tag}</b>
-              {x.exact && <span>{x.px} px</span>}
-              <span>{display.family}</span>
-            </span>
-            {editing ? (
+      {/* Se muestra solo la composición con todos los niveles juntos (pedido); la
+          escala nivel por nivel aparece solo para editar los textos. */}
+      {!editing && (
+        <HierarchyTogether levels={steps.map((x, i) => ({ ...x, text: titleAt(i) }))} bodyText={bodyText} display={display} body={body} primary={primary} />
+      )}
+      {editing && (
+        <div className="bb-scale">
+          {steps.map((x, i) => (
+            <div key={x.tag} className="bb-scale-row">
+              <span className="bb-scale-meta">
+                <b>{x.tag}</b>
+                {x.exact && <span>{x.px} px</span>}
+                <span>{display.family}</span>
+              </span>
               <textarea
                 className="bb-scale-sample bb-scale-input"
                 style={{ fontFamily: display.css, fontSize: x.px, fontWeight: 700 }}
@@ -1115,19 +1405,13 @@ function HierarchyPanel({
                 disabled={pending}
                 onChange={(e) => setDraft((d) => ({ ...d, titles: d.titles.map((t, j) => (j === i ? e.target.value : t)) }))}
               />
-            ) : (
-              <span className="bb-scale-sample" style={{ fontFamily: display.css, fontSize: x.px, fontWeight: 700 }}>
-                {titleAt(i)}
-              </span>
-            )}
-          </div>
-        ))}
-        <div className="bb-scale-row">
-          <span className="bb-scale-meta">
-            <b>Texto</b>
-            <span>{body.family}</span>
-          </span>
-          {editing ? (
+            </div>
+          ))}
+          <div className="bb-scale-row">
+            <span className="bb-scale-meta">
+              <b>Texto</b>
+              <span>{body.family}</span>
+            </span>
             <textarea
               className="bb-scale-sample text bb-scale-input"
               style={{ fontFamily: body.css }}
@@ -1138,13 +1422,9 @@ function HierarchyPanel({
               disabled={pending}
               onChange={(e) => setDraft((d) => ({ ...d, text: e.target.value }))}
             />
-          ) : (
-            <span className="bb-scale-sample text" style={{ fontFamily: body.css }}>
-              {bodyText}
-            </span>
-          )}
+          </div>
         </div>
-      </div>
+      )}
       {(display.usage || body.usage) && (
         <div className="bb-style-grid">
           {[display, ...(body !== display ? [body] : [])].map(
@@ -1162,6 +1442,82 @@ function HierarchyPanel({
   );
 }
 
+// Los niveles de la jerarquía juntos en una composición (pedido del usuario: ver
+// cómo conviven los tamaños). "Página" usa los tamaños reales; "Pieza" es la misma
+// composición sobre el color principal, achicada como en un posteo. Cada
+// elemento lleva su nivel al costado ("Marcar niveles").
+type Level = { tag: string; px: number; exact: boolean; text: string };
+
+function HierarchyTogether({
+  levels,
+  bodyText,
+  display,
+  body,
+  primary,
+}: {
+  levels: Level[];
+  bodyText: string;
+  display: BoardFont;
+  body: BoardFont;
+  primary: string | null;
+}) {
+  const [format, setFormat] = useState<"pagina" | "pieza">("pagina");
+  const [marks, setMarks] = useState(true);
+  const piece = format === "pieza" && !!primary;
+  const scale = piece ? 0.62 : 1;
+  const first = bodyText.split(/(?<=\.)\s/)[0] ?? bodyText;
+  // Con 4 niveles el más chico va arriba como volanta; el resto, en orden:
+  // título, bajada, texto, subtítulo de sección y texto.
+  const eyebrow = levels.length >= 4 ? levels[levels.length - 1] : null;
+  const main = eyebrow ? levels.slice(0, -1) : levels;
+  const blocks: ({ kind: "h"; level: Level } | { kind: "p"; text: string })[] = [
+    ...(eyebrow ? [{ kind: "h" as const, level: eyebrow }] : []),
+    ...(main[0] ? [{ kind: "h" as const, level: main[0] }] : []),
+    ...(main[1] ? [{ kind: "h" as const, level: main[1] }] : []),
+    { kind: "p", text: bodyText },
+    ...main.slice(2).flatMap((l) => [{ kind: "h" as const, level: l }, { kind: "p" as const, text: first }]),
+  ];
+  const fg = piece && primary ? (isDark(primary) ? WHITE : INK) : undefined;
+
+  return (
+    <section className="bb-together">
+      <div className="bb-together-head">
+        <div className="bb-voice-tabs" role="tablist" aria-label="Formato">
+          <button type="button" role="tab" aria-selected={format === "pagina"} className={format === "pagina" ? "on" : ""} onClick={() => setFormat("pagina")}>
+            Página
+          </button>
+          {primary && (
+            <button type="button" role="tab" aria-selected={format === "pieza"} className={format === "pieza" ? "on" : ""} onClick={() => setFormat("pieza")}>
+              Pieza
+            </button>
+          )}
+        </div>
+        <label className="bb-together-marks">
+          <input type="checkbox" checked={marks} onChange={(e) => setMarks(e.target.checked)} />
+          Marcar niveles
+        </label>
+      </div>
+      <div
+        key={format}
+        className={`bb-together-stage${piece ? " piece" : ""}${marks ? " marks" : ""}`}
+        style={piece && primary ? { background: primary, color: fg } : undefined}
+      >
+        {blocks.map((b, i) =>
+          b.kind === "h" ? (
+            <div key={i} className="bb-together-el" data-level={`${b.level.tag}${b.level.exact ? ` · ${b.level.px} px` : ""}`}>
+              <span style={{ fontFamily: display.css, fontSize: Math.round(b.level.px * scale), fontWeight: 700, lineHeight: 1.12 }}>{b.level.text}</span>
+            </div>
+          ) : (
+            <div key={i} className="bb-together-el" data-level="Texto">
+              <p style={{ fontFamily: body.css, fontSize: Math.round(15 * (piece ? 0.85 : 1)) }}>{b.text}</p>
+            </div>
+          ),
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ---------- Estilo visual ----------
 
 // Las pautas de imagen y gráficos del manual, una tarjeta por tema.
@@ -1170,6 +1526,8 @@ function HierarchyPanel({
 // título y las muestras reales del manual que le corresponden (recortes del PDF
 // con kind "estilo", emparejados por nombre). Una muestra sin tema arma el suyo.
 type StyleTopic = { title: string; notes: string[]; shots: BoardApp[] };
+// La pauta de un tema que se fue a Recursos, para mostrarla al filtrar su categoría.
+type ResourceGuide = { category: ResourceCategory; title: string; text: string };
 const STOP = new Set(["para", "como", "sobr", "entr", "desd", "esta", "este", "todo", "cada"]);
 const stems = (t: string) =>
   t
@@ -1181,6 +1539,14 @@ const stems = (t: string) =>
     .map((w) => w.slice(0, 4))
     .filter((w) => !STOP.has(w));
 
+const plain = (t: string) =>
+  t
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
 function styleTopics(notes: StyleNote[], shots: BoardApp[]): StyleTopic[] {
   const topics: StyleTopic[] = [];
   for (const n of notes) {
@@ -1188,6 +1554,14 @@ function styleTopics(notes: StyleNote[], shots: BoardApp[]): StyleTopic[] {
     else topics[topics.length - 1].notes.push(n.text);
   }
   for (const shot of shots) {
+    // Mismo nombre que un tema (sin mayúsculas ni tildes): va ahí. Hace falta
+    // porque los nombres cortos ("Kit UI") no dejan raíces de 4 letras y el tema
+    // salía repetido.
+    const same = topics.find((t) => plain(t.title) === plain(shot.name));
+    if (same) {
+      same.shots.push(shot);
+      continue;
+    }
     const name = stems(shot.name);
     let best: StyleTopic | null = null;
     let top = 0;
@@ -1213,8 +1587,7 @@ function styleTopics(notes: StyleNote[], shots: BoardApp[]): StyleTopic[] {
 // esas como ejemplo (pedido: "mostrar ejemplos en vez de la card naranja"),
 // distintas en cada tema y rotuladas como piezas, no como muestra del tema.
 function StylePanel({
-  notes,
-  shots,
+  topics,
   pieces,
   accent,
   tint,
@@ -1223,8 +1596,7 @@ function StylePanel({
   clientId,
   internal,
 }: {
-  notes: StyleNote[];
-  shots: BoardApp[];
+  topics: StyleTopic[];
   pieces: BoardApp[];
   accent: string | undefined;
   tint: string | undefined;
@@ -1236,7 +1608,7 @@ function StylePanel({
   const [at, setAt] = useState(0);
   const [pick, setPick] = useState(0);
   const [zoom, setZoom] = useState<{ list: BoardApp[]; index: number } | null>(null);
-  const topics = styleTopics(notes, shots);
+  const shots = topics.flatMap((t) => t.shots);
   const index = Math.min(at, topics.length - 1);
   const topic = topics[index];
   if (!topic) return null;
@@ -1902,13 +2274,89 @@ function fileKind(a: BoardFile): { kind: string; icon: IconName; label: string }
 }
 
 // Como la cuadrícula de Drive: las imágenes con su vista previa, el resto con el
-// ícono del tipo; tocar la tarjeta abre el archivo.
-function FilesPanel({ clientId, files, internal }: { clientId: string; files: BoardFile[]; internal: boolean }) {
+// ícono del tipo; tocar la tarjeta abre el archivo. Arriba, chips para filtrar
+// por categoría (iconografía, tramas…: pedido del usuario), solo las que tienen
+// algo; el equipo cambia la categoría de cada recurso desde su tarjeta.
+function FilesPanel({
+  clientId,
+  files,
+  extracted,
+  guides,
+  internal,
+}: {
+  clientId: string;
+  files: BoardFile[];
+  extracted: BoardApp[];
+  guides: ResourceGuide[];
+  internal: boolean;
+}) {
+  const [filter, setFilter] = useState<ResourceCategory | "todos">("todos");
+  const [zoom, setZoom] = useState<number | null>(null);
+  const catOf = (a: BoardApp) => a.category ?? "graficos";
+  const count = (id: ResourceCategory) => files.filter((f) => f.category === id).length + extracted.filter((a) => catOf(a) === id).length;
+  const cats = RESOURCE_CATEGORIES.map((c) => ({ ...c, n: count(c.id) })).filter((c) => c.n);
+  const active = filter !== "todos" && cats.some((c) => c.id === filter) ? filter : "todos";
+  const shown = active === "todos" ? files : files.filter((f) => f.category === active);
+  const fromPdf = active === "todos" ? extracted : extracted.filter((a) => catOf(a) === active);
+  const guide = active === "todos" ? [] : guides.filter((g) => g.category === active);
+
   return (
     <>
-      {files.length ? (
+      {cats.length > 1 && (
+        <div className="bb-voice-tabs bb-res-filter" role="tablist" aria-label="Filtrar recursos">
+          <button type="button" role="tab" aria-selected={active === "todos"} className={active === "todos" ? "on" : ""} onClick={() => setFilter("todos")}>
+            Todos <span>{files.length + extracted.length}</span>
+          </button>
+          {cats.map((c) => (
+            <button key={c.id} type="button" role="tab" aria-selected={active === c.id} className={active === c.id ? "on" : ""} onClick={() => setFilter(c.id)}>
+              {c.label} <span>{c.n}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {guide.length > 0 && (
+        <div className="bb-res-guide">
+          {guide.map((g) => (
+            <p key={g.title}>
+              <b>{g.title}</b>
+              {g.text}
+            </p>
+          ))}
+        </div>
+      )}
+      {shown.length || fromPdf.length ? (
         <div className="dv-files">
-          {files.map((a) => {
+          {fromPdf.map((a) => (
+            <div key={`pdf-${a.index}`} className="dv-card">
+              <button type="button" className="dv-card-main" onClick={() => setZoom(extracted.indexOf(a))}>
+                <span className="dv-thumb image bb-res-thumb">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada de Storage. */}
+                  <img src={a.url} alt="" loading="lazy" />
+                </span>
+                <span className="dv-card-name">
+                  <span className="dv-kind image" aria-hidden>
+                    <Icon name="image" size={15} strokeWidth={2} />
+                  </span>
+                  <span>{a.name}</span>
+                </span>
+              </button>
+              <div className="dv-card-foot">
+                <span>{RESOURCE_CATEGORIES.find((c) => c.id === catOf(a))?.label} · Del manual</span>
+                <span className="dv-card-acts">
+                  <a
+                    className="act-btn icon-only"
+                    href={`${a.url}${a.url.includes("?") ? "&" : "?"}download=${encodeURIComponent(`${a.name}.png`)}`}
+                    aria-label={`Descargar ${a.name}`}
+                    title="Descargar PNG"
+                  >
+                    <Icon name="download" size={14} strokeWidth={2} />
+                  </a>
+                  {internal && <DeleteApplicationButton clientId={clientId} index={a.index} name={a.name} />}
+                </span>
+              </div>
+            </div>
+          ))}
+          {shown.map((a) => {
             const k = fileKind(a);
             const inner = (
               <>
@@ -1940,9 +2388,13 @@ function FilesPanel({ clientId, files, internal }: { clientId: string; files: Bo
                   <span className="dv-card-main">{inner}</span>
                 )}
                 <div className="dv-card-foot">
-                  <span>
-                    {k.label} · {a.size}
-                  </span>
+                  {internal ? (
+                    <CategorySelect clientId={clientId} id={a.id} value={a.category} />
+                  ) : (
+                    <span>
+                      {RESOURCE_CATEGORIES.find((c) => c.id === a.category)?.label ?? k.label} · {a.size}
+                    </span>
+                  )}
                   <span className="dv-card-acts">
                     {a.download && (
                       <a className="act-btn icon-only" href={a.download} aria-label={`Descargar ${a.name}`} title="Descargar">
@@ -1959,6 +2411,14 @@ function FilesPanel({ clientId, files, internal }: { clientId: string; files: Bo
       ) : (
         <p className="bb-hint">Todavía no hay archivos.</p>
       )}
+      {zoom !== null && extracted[zoom] && (
+        <Lightbox
+          items={extracted.map((x) => ({ ...x, group: "Recursos" }))}
+          index={zoom}
+          onIndex={setZoom}
+          onClose={() => setZoom(null)}
+        />
+      )}
       {internal && (
         <div className="bb-actions">
           <AssetUploader clientId={clientId} kind="fuente" label="Subir tipografías" />
@@ -1966,5 +2426,34 @@ function FilesPanel({ clientId, files, internal }: { clientId: string; files: Bo
         </div>
       )}
     </>
+  );
+}
+
+// La categoría de un recurso, para el equipo: cambia al elegir otra.
+function CategorySelect({ clientId, id, value }: { clientId: string; id: string; value: ResourceCategory }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <label className="dv-cat" title={error ?? "Categoría"}>
+      <select
+        value={value}
+        disabled={pending}
+        aria-label="Categoría"
+        onChange={async (e) => {
+          setPending(true);
+          setError(null);
+          const r = await setResourceCategory(clientId, id, e.target.value);
+          setPending(false);
+          if (!r.ok) setError(r.error);
+        }}
+      >
+        {RESOURCE_CATEGORIES.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      <Icon name="chevron" size={11} strokeWidth={2.4} />
+    </label>
   );
 }

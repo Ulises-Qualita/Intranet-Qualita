@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon } from "@/components/icons";
-import { EmptyState, NoAccess, Pill } from "@/components/ui";
+import { NoAccess, Pill } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
+import { getBrainMeetings } from "@/lib/brain-meetings";
+import { getBrainSkill } from "@/lib/brain-skills";
+import { criterionKey } from "@/lib/brain-skills-shared";
 import { BRAIN_AREAS, brainArea } from "@/lib/brains";
 import { getClient } from "@/lib/data";
+import { BrainKnowledge } from "./brain-knowledge";
+import { BrainSkillCard } from "./brain-skill";
 import { BrainUploader } from "./brain-uploader";
 
 // Un cerebro de área (Redes, SEO…): lo que sabe, cargar más información, y lo que
-// viene (reuniones y skills). Solo interfaz por ahora: no hay fuentes guardadas.
+// viene (carga automática de reuniones), y la skill descargable del área. Las reuniones ya se guardan
+// (lib/brain-meetings.ts); documentos y notas siguen siendo solo interfaz.
 export default async function BrainAreaPage({ params }: { params: Promise<{ id: string; area: string }> }) {
   const { id, area: key } = await params;
   const [session, client] = await Promise.all([getAreaSession("clientes"), getClient(id)]);
@@ -16,6 +22,10 @@ export default async function BrainAreaPage({ params }: { params: Promise<{ id: 
   const area = brainArea(key);
   if (!client?.internal || !area) notFound();
 
+  const [loaded, skill] = await Promise.all([getBrainMeetings(area.key), getBrainSkill(area.key)]);
+  const meetings = loaded ?? [];
+  // Archivos todavía no se guardan (brain-uploader.tsx): cuentan 0 reales hasta que se conecten.
+  const files = 0;
   const base = `/clientes/${client.slug}/cerebros`;
   const others = BRAIN_AREAS.filter((a) => a.key !== area.key);
 
@@ -52,37 +62,23 @@ export default async function BrainAreaPage({ params }: { params: Promise<{ id: 
         <dl className="brain-hero-stats">
           <div>
             <dt>Fuentes</dt>
-            <dd>0</dd>
+            <dd>{meetings.length + files}</dd>
           </div>
           <div>
             <dt>Reuniones</dt>
-            <dd>0</dd>
+            <dd>{meetings.length}</dd>
           </div>
           <div>
-            <dt>Skills</dt>
-            <dd>0</dd>
+            <dt>Archivos</dt>
+            <dd>{files}</dd>
           </div>
         </dl>
       </header>
 
       <div className="brain-grid">
-        <div className="card brain-knowledge">
-          <div className="brain-upload-head">
-            <h3>Lo que sabe</h3>
-            <div className="brain-seg" aria-hidden>
-              <span className="on">Todo</span>
-              <span>Documentos</span>
-              <span>Notas</span>
-              <span>Reuniones</span>
-            </div>
-          </div>
-          <EmptyState label="Vacío">
-            Todavía no tiene información cargada. Sumá documentos o notas con el criterio de {area.name.toLowerCase()} para
-            que empiece a aprender.
-          </EmptyState>
-        </div>
+        <BrainKnowledge meetings={meetings} areaName={area.name} missing={loaded === null} />
 
-        <BrainUploader areaName={area.name.toLowerCase()} />
+        <BrainUploader area={area.key} areaName={area.name} />
       </div>
 
       <div className="brain-next">
@@ -92,22 +88,18 @@ export default async function BrainAreaPage({ params }: { params: Promise<{ id: 
           </span>
           <div>
             <h3>
-              Reuniones <Pill variant="pendiente">Por definir</Pill>
+              Reuniones automáticas <Pill variant="pendiente">Próximamente</Pill>
             </h3>
-            <p>Grabaciones de Meet o de una herramienta como Read.ai, transcriptas y sumadas al cerebro.</p>
+            <p>Que las reuniones se carguen solas según su nombre o quiénes participan. Por ahora se cargan a mano desde “Reunión”.</p>
           </div>
         </div>
-        <div className="card brain-next-card">
-          <span className="brain-next-ico">
-            <Icon name="sparkles" size={18} />
-          </span>
-          <div>
-            <h3>
-              Skills <Pill variant="pendiente">Próximamente</Pill>
-            </h3>
-            <p>Con el contexto y el criterio que se cargue acá se van a generar las skills de {area.name.toLowerCase()}.</p>
-          </div>
-        </div>
+        <BrainSkillCard
+          area={area.key}
+          areaName={area.name}
+          skill={skill ?? null}
+          keys={meetings.flatMap((m) => m.insights.learnings.map(criterionKey))}
+          missing={skill === undefined}
+        />
       </div>
     </section>
   );

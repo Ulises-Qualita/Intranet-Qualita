@@ -4,6 +4,8 @@ import { Card, EmptyState } from "@/components/ui";
 import { brandApplicationMedia, brandPdfUrl, getBrandAssets, getBrandBook } from "@/lib/brand";
 import {
   APPS_VERSION,
+  CROP_VERSION,
+  guessCategory,
   type AssetKind,
   type BrandAsset,
   type BrandBook,
@@ -110,7 +112,8 @@ export async function BrandView({ c, internal }: { c: Client; internal: boolean 
     download: a.url ? downloadUrl(a.url, a.fileName) : null,
     image: isImage(a),
     negative: isNegative(a),
-    background: a.kind === "logo" ? (data.logo.backgrounds?.[a.id] ?? null) : null,
+    backgrounds: a.kind === "logo" ? (data.logo.allowed?.[a.id] ?? []) : [],
+    category: data.resources?.[a.id] ?? guessCategory(a.fileName, a.kind),
     size: fileSize(a.size),
     kind: a.kind,
   });
@@ -156,6 +159,8 @@ export async function BrandView({ c, internal }: { c: Client; internal: boolean 
           hierarchy={data.hierarchy ?? null}
           applications={media.apps}
           appsSearched={data.applications !== undefined && data.applicationsVersion === APPS_VERSION}
+          backgroundsPending={logos.some((l) => !data.logo.allowed?.[l.id])}
+          recropPending={data.applicationsVersion === APPS_VERSION && data.applicationsCrop !== CROP_VERSION && !!data.applications?.some((a) => a.path)}
           name={c.name}
           internal={internal}
           summary={data.summary}

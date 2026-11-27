@@ -25,7 +25,6 @@ import {
   deleteBrandAsset,
   deleteBrandBook,
   saveBrandData,
-  setLogoBackground,
   setMainLogo,
 } from "./actions";
 
@@ -596,81 +595,6 @@ function BrandEditor({ clientId, data, onClose }: { clientId: string; data: Bran
 }
 
 // Marca el logo elegido como principal (el que muestra el tablero).
-// Fondo de un logo elegido a mano (pedido del usuario: el automático a veces
-// pone sobre blanco un logo pensado para fondo negro). Va en un popover (capa
-// superior) porque las celdas chicas del mosaico lo recortarían.
-export function LogoBackgroundPicker({
-  clientId,
-  id,
-  current,
-  shown,
-  colors,
-}: {
-  clientId: string;
-  id: string;
-  current: string | null;
-  shown: string;
-  colors: string[];
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [custom, setCustom] = useState(normalizeHex(shown) ?? "#000000");
-  const popoverId = `logo-bg-${id}`;
-  const options = [...new Set(colors.map((c) => normalizeHex(c)).filter((c): c is string => !!c))];
-
-  const choose = (color: string | null) =>
-    startTransition(async () => {
-      setError(null);
-      const result = await setLogoBackground(clientId, id, color);
-      if (!result.ok) return setError(result.error);
-      ref.current?.hidePopover();
-    });
-
-  return (
-    <>
-      <button type="button" className="act-btn" popoverTarget={popoverId} disabled={pending}>
-        <span className="logo-bg-dot" style={{ background: shown }} aria-hidden />
-        {pending ? "Guardando…" : "Fondo"}
-      </button>
-      <div ref={ref} id={popoverId} popover="auto" className="logo-bg-pop">
-        <div className="logo-bg-head">
-          <b>Fondo del logo</b>
-          <button type="button" className="logo-bg-close" popoverTarget={popoverId} popoverTargetAction="hide" aria-label="Cerrar">
-            <Icon name="close" size={16} />
-          </button>
-        </div>
-        <div className="logo-bg-swatches">
-          {options.map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={`logo-bg-swatch${current === c ? " on" : ""}`}
-              style={{ background: c }}
-              title={c}
-              aria-label={`Fondo ${c}`}
-              aria-pressed={current === c}
-              disabled={pending}
-              onClick={() => choose(c)}
-            />
-          ))}
-        </div>
-        <div className="logo-bg-custom">
-          <input type="color" value={custom} onChange={(e) => setCustom(e.target.value)} aria-label="Otro color" disabled={pending} />
-          <span>{custom.toUpperCase()}</span>
-          <ActionButton icon="check" disabled={pending} onClick={() => choose(custom)}>
-            Usar este
-          </ActionButton>
-        </div>
-        <ActionButton icon="refresh" disabled={pending || !current} onClick={() => choose(null)}>
-          Automático
-        </ActionButton>
-        {error && <p className="form-error">{error}</p>}
-      </div>
-    </>
-  );
-}
-
 export function MainLogoButton({ clientId, id }: { clientId: string; id: string }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);

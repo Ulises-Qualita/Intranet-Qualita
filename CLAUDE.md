@@ -139,6 +139,14 @@ No hay framework de tests configurado todavía.
   `ClientTabGate` (`components/tab-gate.tsx`) para que no se pueda entrar por URL.
   Una solapa nueva del cliente tiene que sumarse a `CLIENT_TABS` (y a `CLIENT_NAV` del
   layout del cliente) y llevar ese layout.
+- Solapas padre en el panel del equipo (2026-11-26, pedido: "tengo muchas solapas"):
+  `TAB_GROUPS` en `lib/client-nav.ts` junta Tracking (META, GADS, CRM, Reportes), Web
+  (WEB, SEO), Archivos (Repositorio, Guías) y Proyecto (Reuniones, Calendario, Tareas,
+  Equipo); Vista general y Manual de marca van sueltas. El padre lleva a su primera
+  hija y, dentro de un grupo, `ClientTabsBar` muestra una segunda fila con las hermanas
+  (`.client-subtabs`). Un grupo con una sola hija visible se muestra como esa solapa.
+  El orden de `CLIENT_NAV` sigue los grupos. Una solapa nueva se suma a un grupo ahí.
+  La cuenta del cliente (`/mi-empresa`, sidebar) no cambió.
 - Panel del cliente (equipo): el encabezado (nombre, solapas, período) es de
   `app/(app)/clientes/[id]/layout.tsx` y no se desmonta al navegar; solo cambia lo de
   abajo. Reglas para no romperlo: ninguna página bajo `clientes/[id]` dibuja `Topbar`
@@ -162,6 +170,12 @@ No hay framework de tests configurado todavía.
 - Acciones de fila (Editar, Borrar, Abrir…): `ActionButton` de `components/actions.tsx`
   (ícono + texto, con borde; `danger` para borrar), nunca links de texto. Confirmar
   con `ConfirmDialog` del mismo archivo, nunca `window.confirm` (pedido del usuario).
+- Modales: todo lo que scrollea dentro de un `<dialog class="modal">` lleva la barra
+  de scroll con el estilo de Qualita (fina, colores de la intranet, sin carril), por
+  regla general en globals.css (`.modal *::-webkit-scrollbar`, junto a la del manual
+  de marca). Pedido del usuario: "siempre que mostremos un modal". Un modal nuevo
+  la toma solo si usa la clase `modal`. Fuera de un modal, una lista con scroll propio
+  usa la clase `q-scroll` para la misma barra.
 - Estilos: clases del mockup en `app/globals.css` (`@layer components`); tema oscuro =
   clase `.dark` en `<html>` + `localStorage("theme")`. Ojo con nombres de clase que
   choquen con utilidades de Tailwind (p. ej. `mb-16`).

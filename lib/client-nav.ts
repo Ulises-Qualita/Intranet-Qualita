@@ -19,24 +19,37 @@ const CLIENT_NAV = (
     // Google Ads: misma área que META (publicidad). Solo en el panel del equipo.
     { suffix: "/gads", label: "GADS", area: "meta", tab: "gads" },
     { suffix: "/crm", label: "CRM", area: "crm", tab: "crm" },
+    // Solo en el panel del equipo: la cuenta del cliente no la tiene.
+    { suffix: "/reportes", label: "Reportes", area: "clientes", tab: "reportes" },
     // Sin área propia: analítica del sitio, para quien ya ve el panel del cliente.
     { suffix: "/web", label: "WEB", area: "clientes", tab: "web" },
     // Posiciones en buscadores (SE Ranking). Solo en el panel del equipo.
     { suffix: "/seo", label: "SEO", area: "clientes", tab: "seo" },
-    { suffix: "/reuniones", label: "Reuniones", area: "clientes", tab: "reuniones" },
+    // Brandbook del cliente. Para la cuenta del cliente arranca apagada.
+    { suffix: "/marca", label: "Manual de marca", area: "clientes", tab: "marca" },
     // Sin área propia, como WEB: los archivos del cliente.
     { suffix: "/drive", label: "Repositorio", area: "clientes", tab: "drive" },
     // Videos tutoriales de las plataformas del cliente: una carpeta dentro de su Drive.
     { suffix: "/guias", label: "Guías", area: "clientes", tab: "guias" },
-    // Solo en el panel del equipo: la cuenta del cliente no la tiene.
-    { suffix: "/reportes", label: "Reportes", area: "clientes", tab: "reportes" },
-    { suffix: "/tareas", label: "Tareas", area: "tareas", tab: "tareas" },
+    { suffix: "/reuniones", label: "Reuniones", area: "clientes", tab: "reuniones" },
     { suffix: "/portal", label: "Calendario", area: "clientes", tab: "portal" },
+    { suffix: "/tareas", label: "Tareas", area: "tareas", tab: "tareas" },
     { suffix: "/equipo", label: "Equipo", area: "clientes", tab: "equipo" },
-    // Brandbook del cliente. Para la cuenta del cliente arranca apagada.
-    { suffix: "/marca", label: "Manual de marca", area: "clientes", tab: "marca" },
   ] satisfies ClientNavItem[]
 ).filter((item) => SHOW_TASKS || item.suffix !== "/tareas");
+
+// Solapas padre (pedido: "tengo muchas solapas en los clientes"; el usuario eligió
+// 6 padres con Marca aparte y una segunda fila de sub-solapas). El orden de
+// CLIENT_NAV ya sigue estos grupos; la barra (components/client-tabs-bar.tsx) junta
+// las de cada grupo en un padre. Un grupo con una sola solapa visible se muestra
+// como esa solapa, sin padre. Lo que no está en un grupo va suelto (Vista general,
+// Manual de marca, Redes, Cerebros).
+export const TAB_GROUPS: { key: string; label: string; suffixes: string[] }[] = [
+  { key: "tracking", label: "Tracking", suffixes: ["/meta", "/gads", "/crm", "/reportes"] },
+  { key: "web", label: "Web", suffixes: ["/web", "/seo"] },
+  { key: "archivos", label: "Archivos", suffixes: ["/drive", "/guias"] },
+  { key: "proyecto", label: "Proyecto", suffixes: ["/reuniones", "/portal", "/tareas", "/equipo"] },
+];
 
 // Panel interno de Qualita (client.internal): no tiene Vista general ni estas
 // solapas (pedido del usuario), y suma dos propias que todavía están en

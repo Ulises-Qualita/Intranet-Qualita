@@ -66,14 +66,19 @@ paths:
   imagen (canvas, `crossOrigin`; Storage manda CORS) y `bestBackground` elige el
   primero donde se lee (contraste 3+ del 85% del logo) en este orden: blanco, color
   principal, los otros de la marca, casi negro. Una imagen con fondo propio (JPG)
-  va sobre ese color. **El equipo puede elegir el fondo a mano** (2026-11-16,
-  pedido: el automático ponía sobre blanco logos pensados para fondo negro; antes
-  se había sacado). Botón "Fondo" en cada logo del panel (`LogoBackgroundPicker`
-  en brand-ui, popover con blanco, negro, los colores de la marca, otro color y
-  "Automático"); se guarda en `data.logo.backgrounds` (id del recurso → hex,
-  `setLogoBackground`) y gana sobre el automático en `logoBackground`. Volver a
-  leer el manual y el editor conservan `backgrounds` y `main`. Los ejemplos
-  aplicados usan el logo que mejor se lee sobre el color principal.
+  va sobre ese color. **Los fondos no se eligen a mano** (2026-11-26, pedido: "en
+  el manual ya están establecidos los permitidos para cada logo"; se sacó el
+  botón "Fondo" / `LogoBackgroundPicker` / `setLogoBackground` que había del
+  2026-11-16). `locateLogoBackgrounds` (lib/brand.ts, `POST /api/marca/fondos`,
+  esfuerzo bajo) le pasa a Claude los logos subidos (id + nombre) y guarda los
+  fondos que el manual permite para cada uno en `data.logo.allowed` (id → HEX en
+  orden; `[]` = el manual no lo define y va el automático). El tablero del equipo
+  lo llama solo (`useAutoFetch`, una vez por carga) cuando hay logos sin
+  entrada (`backgroundsPending`): cubre manuales leídos antes y logos subidos
+  después. `logoBackground` usa el permitido (si hay varios, el primero donde se
+  lee). Volver a leer el manual y el editor conservan `allowed` y `main`. Los
+  ejemplos aplicados usan, entre los logos permitidos sobre el color principal,
+  el que mejor se lee ahí.
 - Panel del logo: **mosaico bento asimétrico** (`logoLayout`, tamaños por cantidad):
   principal 7×4, a la derecha 5×2 y debajo 3 + 2, el resto de a dos (6×2). Las
   variantes de una misma familia (primera palabra, p. ej. los dos monocromos) se
@@ -81,7 +86,7 @@ paths:
   isotipo) va más chico en su bloque (clase `small`). Se probaron y no gustaron:
   uno simétrico (familias en la columna derecha) y otro según la forma de cada
   logo (compactos al costado). La imagen ocupa el bloque con
-  `object-fit: contain` (con `max-height` en % se cortaba), cada una sobre su fondo automático,
+  `object-fit: contain` (con `max-height` en % se cortaba), cada una sobre su fondo del manual,
   nombre abajo, descarga redonda y (equipo) "Marcar como principal" / "Borrar" al
   pasar el mouse. Se probaron y no gustaron: tira de miniaturas, lista al costado,
   lámina, pastillas con nombres y carrusel.
@@ -134,6 +139,7 @@ paths:
   nitidez solo con un PDF exportado con mejores imágenes. El nombre de cada pieza
   va en blanco sobre un degradado oscuro: `--navy` es claro en el tema oscuro y
   con texto blanco no se leía.
+- Calidad de las imágenes (2026-11-26, "se ven en muy mala calidad"): **reemplaza lo de `imageDensity`** del punto anterior (se borró). Recortar a la resolución de la foto dejaba textos y vectores borrosos. Ahora `withSmoothing` (logo-from-pdf.tsx) intercepta mientras pdf.js dibuja el `imageSmoothingEnabled = false` del prototipo de `CanvasRenderingContext2D` (lo fuerza a true, calidad high) y lo restaura al terminar; con eso se recorta todo a 2400 px de lado largo (`APP_LONG_SIDE`, hasta 8×; logos 2000 px) y las fotos chicas se agrandan suaves, no pixeladas. JPG 0,93. `CROP_VERSION` (2) en brand-shared y `data.applicationsCrop`: las aplicaciones guardadas con un recorte anterior las vuelve a recortar solo el tablero del equipo (`useAutoRecrop` → `saveApplicationsFromPdf(…, recrop = true)`), con las mismas cajas, sin Claude; si una falla queda la imagen vieja. Los logos ya subidos no se rehacen solos (se pueden volver a sacar del PDF). **Límite real: la resolución de las fotos dentro del PDF.** Los 3 manuales cargados (2026-11-26) traen todas las fotos a 1 px/pt (72 ppp; un posteo de Follow: 243×324 px), así que se ven borrosas igual; la solución es subir el manual exportado en alta (200–300 ppp, sin reducir imágenes). El usuario descartó mejorarlas con IA (super resolución). `brandPdfUploaded` borra `applicationsCrop` al reemplazar el PDF, así las imágenes ya recortadas se rehacen solas desde el PDF nuevo con las mismas cajas (sirve si es el mismo manual reexportado). Ojo con el tope de 40 MB del PDF.
 - Más datos en el tablero (2026-11-13, "le falta info", pedido: sin que parezca
   mucho texto; el usuario lo quiere probar y puede pedir volver atrás: el estado
   anterior quedó en el stash "base manual de marca"). Todo sale de lo ya extraído,
@@ -166,11 +172,18 @@ paths:
   el color de acento queda solo si el manual no tiene piezas. Las muestras son recortes del PDF con `kind: "estilo"` en
   `data.applications` (fotos de ejemplo, íconos, kit UI; `name` = el tema), que
   salen en la misma llamada que las aplicaciones (`APPS_VERSION` 4; hasta 28 en
-  total) y se emparejan con su tema por nombre (`stems`); una sin tema arma el
+  total) y se emparejan con su tema por nombre (primero nombre igual al tema, `plain`; si no, `stems`: un nombre corto como "Kit UI" no deja raíces de 4 letras y armaba un tema repetido); una sin tema arma el
   suyo. El tablero las separa: `realApps` (mesa, abanico) no las incluye. El
   equipo puede quitar una muestra mal recortada desde el panel.
+- Reglas de uso del logo (2026-11-26, pedido: "mucho texto", bullets y segmentado): `LogoRules` en el panel del logo, ya no plegadas. **Acordeón por tipo** (elegido entre opciones: dos columnas sí / no, fichas con solo títulos, medidas arriba + chips; antes se probaron solapas y "quedó medio raro"). Tipos por palabras (`ruleGroup`): Medidas (título + números en pastillas), No hacer (sin el "No", ✕ roja; la regla entera en el `title`), Fondos y color, Otros usos y Versiones (la descripción, una oración por bullet). Uno abierto por vez, arranca el primero; solo aparecen los tipos con algo. Para que el panel no salte al cambiar de tipo, `LogoRules` corrige el scroll de `.bb-sheet-body` y deja el encabezado tocado donde estaba (`useLayoutEffect`), y el cuerpo del panel tiene `scrollbar-gutter: stable` (la barra que aparece o desaparece corría todo).
+- Jerarquía, **"Todos juntos"** (2026-11-26, pedido: ver cómo conviven los tamaños con un ejemplo): es **lo único que muestra el panel** (pedido: "mostremos directamente todos juntos", sin "nivel por nivel" ni título): la escala nivel por nivel aparece solo al tocar "Editar textos", con los campos. `HierarchyTogether` arma una composición con los mismos textos (con 4 niveles el más chico va de volanta; después título, bajada, texto y los demás como subtítulos de sección con su párrafo). Formato **Página** (tamaños reales) o **Pieza** (sobre el color principal, a 0,62; alto según el contenido: con 4:5 quedaba mucho vacío arriba) y "Marcar niveles" (el nivel y sus px al costado; en la pieza, encima con borde punteado). No se muestra mientras se editan los textos.
+- Panel Tono (2026-11-26, pedido: "mucho texto", con ejemplos de cómo hablar de la marca): palabras grandes, la descripción como bajada chica, **"Así habla la marca"** (chips con situaciones; por cada una la frase en la tipografía de títulos, "Así no:" y Copiar frase; rótulo "Del manual" o "Sugerido según el tono") y el sí / no en bullets. Los ejemplos son `data.voice.examples` (`VoiceExample`: context, good, bad, manual): salen en la lectura del manual (`VOICE_EXAMPLES`; es lo único donde Claude puede escribir frases propias, marcadas `manual: false`) o, en manuales leídos antes, solos al abrir el tablero del equipo (`useAutoFetch` → `POST /api/marca/tono`, `locateVoiceExamples`, esfuerzo bajo; `[]` si no salió nada). El editor los conserva. `useAutoFetch` es el mismo hook que busca los fondos de los logos.
+- Recursos por categoría (2026-11-26, pedido: "filtrarse por iconografía, tramas, etc"): `RESOURCE_CATEGORIES` en brand-shared (Iconografía, Tramas y texturas, Recursos gráficos, Ilustraciones, Fotografía, Mockups, Plantillas, Tipografías, Otros). Sin elegir, `guessCategory` la saca del nombre del archivo (las fuentes, Tipografías); el equipo la cambia con el selector de cada tarjeta (`CategorySelect` → `setResourceCategory`, se guarda en `data.resources`, id → categoría; sin migración). El panel Recursos (`FilesPanel`) abre con chips Todos / cada categoría con su cantidad (solo las que tienen algo, y solo si hay más de una). Volver a leer el manual y el editor conservan `resources`.
+- Recursos sacados del PDF (2026-11-26, pedido: "en estilo visual hay muchas cosas que deberían estar en recursos", p. ej. en Follow Huella, Gradientes/tags, Iconografía, Emojis; eligió "sale entero, pauta en Recursos"). `APPS_VERSION` 5: en la misma llamada de aplicaciones Claude marca los elementos gráficos sueltos con kind **"recurso"** y `category` (iconos, tramas, graficos, ilustraciones; "ninguna" en el resto). Se recortan como el logo (`cropLogo`: PNG al borde, fondo liso transparente) y viven en `data.applications` (no son filas de `intranet_brand_assets`). En el tablero, `styleTopics` arma los temas con las muestras y los recursos: un tema con un recurso sale de Estilo visual (`styleList`) y su pauta pasa a Recursos (`ResourceGuide`), que se muestra arriba al filtrar esa categoría. `FilesPanel` muestra esos recursos primero (fondo a cuadros, clic = Lightbox, descarga PNG, el equipo los borra con `DeleteApplicationButton`) y los cuenta en los chips.
+- Sacar las piezas solo tarda (2026-11-26): Claude ~45 s y después el navegador recorta ~30 imágenes (1–2 min). Sin aviso el usuario recargaba, se cortaba y cada recarga volvía a llamar a Claude (6 lecturas de 78k tokens en 4 min, ninguna guardada). Ahora `locateBrandApplications` guarda lo de Claude en `data.applicationsDraft` ({ version, items }) y, si hay uno de la versión actual, lo devuelve sin llamarlo (salvo `fresh`, que manda el botón "Volver a sacar del PDF"); `saveBrandApplications` lo borra. Mientras corre (`appsPending` con piezas ya en pantalla, o `useAutoRecrop`) el tablero muestra el aviso fijo `.bb-updating`: "Actualizando las piezas del manual… No cierres ni recargues la página".
+- Sets de recursos separados (2026-11-26, "no se cargaron por separado, sino todo junto"): `cropResourcePieces` (logo-from-pdf.tsx) dibuja la zona y `splitPieces` la corta en cruz por franjas de un solo color (filas, después columnas, recursivo; hueco mínimo `minGap` = 2,5% del lado corto, así no parte un mismo ícono), saca el texto pegado debajo de cada ícono (`dropLabel`) y los textos sueltos. **Solo separa si es un set**: 4 o más piezas y el 80% de tamaño parecido; una lámina mezclada (la de la Huella, con tarjetas y títulos) o pocas piezas (los tags) van enteras. Cada pieza se guarda como un recurso propio (`Nombre 1`, `Nombre 2`…, con su caja con aire en la página, así recortarla de nuevo da esa pieza sola), PNG con fondo transparente. Probado con los íconos de Follow (15 + 15, sin textos) y los emojis (30). `CROP_VERSION` 3 hace que lo ya guardado se rehaga solo. Tope de `applicationSources` subido a 200.
 - Logo principal: `data.logo.main` (id del recurso, `setMainLogo`, botón "Marcar
   como principal"); sin elegir, el que se llama "Principal" (Claude pone primero
   el principal, el de la portada, y lo nombra así) o el primero subido. El bloque
-  del tablero muestra siempre el principal, sobre su fondo automático.
+  del tablero muestra siempre el principal, sobre su fondo del manual.
 - Pendiente / ideas: logo vectorial (SVG) desde el PDF, miniaturas de las páginas del PDF, y que el agente o los reportes usen la marca.
