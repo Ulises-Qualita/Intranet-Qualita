@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Icon } from "@/components/icons";
-import { refreshSeRanking } from "../../actions";
+import { refreshSearchConsole } from "../../actions";
 
-// Lo de SE Ranking se guarda una hora: esto lo vuelve a leer ahora.
-export function RefreshSeRanking() {
+// Lo de Search Console se guarda unas horas: esto lo vuelve a leer ahora.
+export function RefreshSearchConsole() {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -21,7 +21,7 @@ export function RefreshSeRanking() {
         onClick={() =>
           startTransition(async () => {
             setError(null);
-            const result = await refreshSeRanking();
+            const result = await refreshSearchConsole();
             if (result.ok) router.refresh();
             else setError(result.error);
           })

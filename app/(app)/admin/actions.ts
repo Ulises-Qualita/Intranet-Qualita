@@ -185,6 +185,8 @@ export async function saveNotionConfig(config: NotionConfig): Promise<ActionResu
     hiddenStatuses: config.hiddenStatuses ?? [],
     // Portal del cliente: checkbox de Tickets. Vacío = detección automática.
     portalProp: config.portalProp ?? "",
+    // Cerebros: database de Reuniones. Vacío = detección automática.
+    meetingsDataSourceId: config.meetingsDataSourceId ?? "",
   };
 
   const supabase = await createClient();

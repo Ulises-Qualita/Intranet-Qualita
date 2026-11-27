@@ -234,3 +234,60 @@ export const getProjects = unstable_cache(
   ["notion-projects"],
   { revalidate: 300, tags: [NOTION_TICKETS_TAG] },
 );
+
+// ---------- Lecturas sueltas (Cerebros) ----------
+
+// Una consulta acotada a un data source, sin cache: la usan pantallas que leen
+// pocas páginas a pedido (las reuniones de los cerebros).
+export async function queryDataSource(dataSourceId: string, body: Record<string, unknown>, maxPages = 2): Promise<NotionPage[]> {
+  const pages: NotionPage[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < maxPages; i++) {
+    const page: Paginated<NotionPage> = await notionFetch(`/data_sources/${dataSourceId}/query`, {
+      method: "POST",
+      body: { page_size: 100, ...body, ...(cursor ? { start_cursor: cursor } : {}) },
+    });
+    pages.push(...page.results);
+    if (!page.has_more || !page.next_cursor) break;
+    cursor = page.next_cursor;
+  }
+  return pages;
+}
+
+// Bloque crudo de la API, con lo justo para sacar su texto.
+export type NotionRawBlock = {
+  id: string;
+  type: string;
+  has_children: boolean;
+  [key: string]: unknown;
+};
+
+export async function getBlock(blockId: string): Promise<NotionRawBlock> {
+  return notionFetch<NotionRawBlock>(`/blocks/${blockId}`);
+}
+
+// Los hijos directos de un bloque o una página, todas las páginas. El tope (50
+// vueltas = 5.000 bloques) alcanza para la transcripción de varias horas.
+export async function getBlockChildren(blockId: string): Promise<NotionRawBlock[]> {
+  const out: NotionRawBlock[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < 50; i++) {
+    const page: Paginated<NotionRawBlock> = await notionFetch(
+      `/blocks/${blockId}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ""}`,
+    );
+    out.push(...page.results);
+    if (!page.has_more || !page.next_cursor) break;
+    cursor = page.next_cursor;
+  }
+  return out;
+}
+
+// Página con su padre, para validar de qué database viene.
+export type NotionPageWithParent = NotionPage & {
+  created_time: string;
+  parent?: { type: string; data_source_id?: string; database_id?: string };
+};
+
+export async function getPage(pageId: string): Promise<NotionPageWithParent> {
+  return notionFetch<NotionPageWithParent>(`/pages/${pageId}`);
+}

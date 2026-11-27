@@ -23,7 +23,7 @@ const CLIENT_NAV = (
     { suffix: "/reportes", label: "Reportes", area: "clientes", tab: "reportes" },
     // Sin área propia: analítica del sitio, para quien ya ve el panel del cliente.
     { suffix: "/web", label: "WEB", area: "clientes", tab: "web" },
-    // Posiciones en buscadores (SE Ranking). Solo en el panel del equipo.
+    // Búsquedas en Google (Search Console). Solo en el panel del equipo.
     { suffix: "/seo", label: "SEO", area: "clientes", tab: "seo" },
     // Brandbook del cliente. Para la cuenta del cliente arranca apagada.
     { suffix: "/marca", label: "Manual de marca", area: "clientes", tab: "marca" },

@@ -46,5 +46,8 @@ paths:
     último que arrancó y no terminó. La fórmula "Pilar actual" viene vacía en todos
     (2026-10-29); si la completan, gana ella. `getProjects` cachea 5 min con el mismo
     tag que los tickets; `getClientProjects` (`lib/data.ts`) nunca tira.
+  - Cerebros también lee Notion: la database de Reuniones (`meetingsDataSourceId`
+    en la misma config, con `queryDataSource`, `getPage` y `getBlockChildren` de
+    `lib/notion.ts`, sin cache). Ver `.claude/rules/cerebros.md`.
   - Si Notion falla, `getTasks()` nunca tira: devuelve las tareas de Supabase y el motivo
     en `notionError`, que la vista de Tareas muestra como aviso.

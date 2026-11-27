@@ -3,35 +3,38 @@ import { notFound } from "next/navigation";
 import { Card, NoAccess } from "@/components/ui";
 import { getAreaSession } from "@/lib/auth";
 import { getClient } from "@/lib/data";
-import { listSites, seRankingConfigured, seRankingErrorMessage, type SeRankingSite } from "@/lib/seranking";
-import { DisconnectSeRankingButton, SitePicker } from "./site-picker";
+import {
+  type GscSite,
+  listGscSites,
+  searchConsoleConfigured,
+  searchConsoleErrorMessage,
+  siteHost,
+  siteLabel,
+} from "@/lib/search-console";
+import { DisconnectSearchConsoleButton, SitePicker } from "./site-picker";
 
-export default async function ConectarSeRankingPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ConectarSearchConsolePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [session, client] = await Promise.all([getAreaSession("clientes"), getClient(id)]);
-  if (!session) {
-    return (
-      <>
-        <NoAccess />
-      </>
-    );
-  }
+  if (!session) return <NoAccess />;
   if (!client) notFound();
 
-  let sites: SeRankingSite[] | null = null;
+  let sites: GscSite[] | null = null;
   let loadError: string | null = null;
-  if (seRankingConfigured()) {
+  if (searchConsoleConfigured()) {
     try {
-      sites = await listSites();
+      sites = await listGscSites();
     } catch (e) {
-      console.error("[seranking] listSites", e);
-      loadError = seRankingErrorMessage(e);
+      console.error("[search-console] listGscSites", e);
+      loadError = searchConsoleErrorMessage(e);
     }
   }
 
-  const state = client.integrations.seranking;
+  const state = client.integrations.search_console;
   const current = state.connected ? state.accountRef : null;
-  const currentName = sites?.find((s) => s.id === current)?.title;
+  // La propiedad con el mismo dominio que la web del cliente va primero y elegida.
+  const website = client.website ? siteHost(client.website) : null;
+  const suggested = website ? (sites?.find((s) => siteHost(s.siteUrl) === website)?.siteUrl ?? null) : null;
 
   return (
     <section className="view">
@@ -40,16 +43,16 @@ export default async function ConectarSeRankingPage({ params }: { params: Promis
       </p>
 
       <Card
-        title={`Proyecto de SE Ranking · ${client.name}`}
-        hint={state.connected ? `Vinculado: ${currentName ?? state.accountRef}` : undefined}
-        action={state.connected ? <DisconnectSeRankingButton clientId={client.id} /> : undefined}
+        title={`Propiedad de Search Console · ${client.name}`}
+        hint={current ? `Vinculada: ${siteLabel(current)}` : undefined}
+        action={current ? <DisconnectSearchConsoleButton clientId={client.id} /> : undefined}
         className="notion-connect"
       >
-        {!seRankingConfigured() ? (
+        {!searchConsoleConfigured() ? (
           <div className="connect-state">
             <p>
-              Falta la clave de API de SE Ranking. Creala en SE Ranking (menú API → crear clave de tipo Project) y cargala
-              como <code>SERANKING_API_KEY</code> en las variables de entorno.
+              Falta la cuenta de servicio de Google: cargá <code>GOOGLE_SERVICE_ACCOUNT_EMAIL</code> y{" "}
+              <code>GOOGLE_SERVICE_ACCOUNT_KEY</code> en las variables de entorno.
             </p>
           </div>
         ) : loadError ? (
@@ -57,14 +60,23 @@ export default async function ConectarSeRankingPage({ params }: { params: Promis
         ) : sites && sites.length > 0 ? (
           <>
             <p className="modal-lead">
-              Elegí el proyecto de SE Ranking del sitio de <b>{client.name}</b>. Sus posiciones se van a ver en la solapa
-              SEO, solo para el equipo.
+              Elegí la propiedad de Search Console del sitio de <b>{client.name}</b>. Sus clics, búsquedas y páginas se van a
+              ver en la solapa SEO, solo para el equipo.
             </p>
-            <SitePicker clientId={client.id} clientSlug={client.slug} sites={sites} currentSiteId={current} />
+            <SitePicker
+              clientId={client.id}
+              clientSlug={client.slug}
+              sites={sites}
+              currentSite={current ?? suggested}
+              suggested={suggested}
+            />
           </>
         ) : (
           <div className="connect-state">
-            <p>La cuenta de SE Ranking no tiene proyectos. Creá el del cliente en SE Ranking y volvé acá.</p>
+            <p>
+              La cuenta de Search Console no tiene propiedades verificadas. Sumá la del cliente en Search Console y volvé
+              acá.
+            </p>
           </div>
         )}
       </Card>

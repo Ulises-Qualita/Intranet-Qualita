@@ -53,6 +53,8 @@ export function NotionSetup({
   // Portal del cliente: qué checkbox de Tickets manda un ticket al portal. Vacío =
   // el que tenga "portal" en el nombre (portalPropOf en lib/notion-map.ts).
   const [portalProp, setPortalProp] = useState(config?.portalProp ?? "");
+  // Cerebros: database de Reuniones. Vacío = detección automática (lib/brain-notion.ts).
+  const [meetingsId, setMeetingsId] = useState(config?.meetingsDataSourceId ?? "");
 
   const [properties, setProperties] = useState<NotionProperty[]>(initialProperties);
   const [loadingProps, setLoadingProps] = useState(false);
@@ -122,6 +124,7 @@ export function NotionSetup({
         hiddenStatuses: hiddenStatuses.filter((s) => statusOptions.includes(s)),
         // Si el elegido ya no existe en Tickets, vuelve a la detección automática.
         portalProp: checkboxProps.some((p) => p.name === portalProp) ? portalProp : "",
+        meetingsDataSourceId: sources.some((s) => s.id === meetingsId) ? meetingsId : "",
       });
       if (result.ok) setSaved(true);
       else setError(result.error);
@@ -266,6 +269,24 @@ export function NotionSetup({
       <p className="muted">
         Checkbox de <b>Tickets</b> que marca qué tickets se muestran en el portal de cada cliente (en su calendario y en
         la lista de etapas). Los que no lo tienen tildado no aparecen.
+      </p>
+
+      <hr className="form-sep" />
+
+      <label>
+        <span>Database de Reuniones (Cerebros)</span>
+        <select value={meetingsId} onChange={(e) => setMeetingsId(e.target.value)} disabled={pending}>
+          <option value="">Automático (la que diga “Reuniones” y tenga fecha)</option>
+          {sources.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="muted">
+        De dónde se cargan reuniones a los cerebros (Cargar información → Reunión → De Notion): páginas con notas de
+        reunión de Notion AI (resumen, notas y transcripción).
       </p>
 
       {error && <p className="form-error">{error}</p>}

@@ -1,7 +1,7 @@
 // Reuniones de los cerebros de área: tipos y límites que comparten el server y
 // la pantalla. Sin imports de server.
 
-export type MeetingSource = "calendario" | "archivo" | "texto";
+export type MeetingSource = "calendario" | "archivo" | "texto" | "notion";
 
 // Lo que Claude saca de una reunión para el cerebro de un área: solo los
 // criterios y aprendizajes de esa área (pedido del usuario).
@@ -44,6 +44,32 @@ export type RecordedMeeting = {
   loaded: boolean;
 };
 
+// Una reunión de la database de Reuniones de Notion (notas de reunión de Notion
+// AI: resumen, notas y transcripción dentro de la página).
+export type NotionMeeting = {
+  id: string;
+  title: string;
+  // YYYY-MM-DD o fecha con hora; null si la página no la tiene.
+  date: string | null;
+  participants: string[];
+  category: string | null;
+  loaded: boolean;
+};
+
+// Las partes de la página (se manda la transcripción; sin ella, el resto).
+export type NotionPartKey = "resumen" | "notas" | "transcripcion" | "pagina";
+export const NOTION_PART_KEYS: NotionPartKey[] = ["resumen", "notas", "transcripcion", "pagina"];
+export const NOTION_PART_LABEL: Record<NotionPartKey, string> = {
+  resumen: "Resumen",
+  notas: "Notas",
+  transcripcion: "Transcripción",
+  pagina: "Texto de la página",
+};
+
+// drive_ids guarda también las páginas de Notion, con este prefijo, para marcar
+// las "Ya cargadas" sin otra columna.
+export const notionRef = (pageId: string) => `notion:${pageId.replace(/-/g, "").toLowerCase()}`;
+
 // Archivos que se pueden subir: el texto se saca en el navegador.
 export const MEETING_ACCEPT = ".md,.txt,.vtt,.srt,.docx,.pdf";
 export const MAX_MEETING_FILE = 20 * 1024 * 1024;
@@ -56,6 +82,7 @@ export const SOURCE_LABEL: Record<MeetingSource, string> = {
   calendario: "Meet",
   archivo: "Archivo",
   texto: "Texto pegado",
+  notion: "Notion",
 };
 
 export const RELEVANCE_LABEL: Record<MeetingInsights["relevance"], string> = {

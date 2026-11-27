@@ -27,6 +27,9 @@ export type NotionConfig = {
   // se muestran en el portal (calendario y etapas). Vacío = se busca un checkbox
   // con "portal" en el nombre (portalPropOf).
   portalProp: string;
+  // Cerebros: database de Reuniones (notas de reunión de Notion AI) de donde se
+  // cargan reuniones. Vacío = la primera con "reuni" en el nombre y una fecha.
+  meetingsDataSourceId: string;
 };
 
 export const EMPTY_NOTION_CONFIG: NotionConfig = {
@@ -37,6 +40,7 @@ export const EMPTY_NOTION_CONFIG: NotionConfig = {
   priorityMap: {},
   hiddenStatuses: [],
   portalProp: "",
+  meetingsDataSourceId: "",
 };
 
 // Configurada = alcanza para leer tickets y saber a qué proyecto pertenecen.

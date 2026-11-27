@@ -59,6 +59,46 @@ paths:
   primeras reuniones guardaron cada criterio como texto suelto: `parseInsights`
   los lee como `detail` sin título.
   `drive_ids` marca en el calendario las "Ya cargadas".
+- **De Notion** (2026-11-27, pedido: "tengo en notion una base de datos que es
+  reuniones… en esas páginas están las transcripciones"; antes se descartó
+  transcribir videos con Deepgram/AssemblyAI por ahora). Cuarta forma en
+  `meeting-loader.tsx` (`NotionMode`, con buscador). La database es "Reuniones -
+  Operaciones" (la otra "Reuniones" está vacía y sin fecha): se elige en
+  `/admin/notion` (`NotionConfig.meetingsDataSourceId`) o, vacío, la primera con
+  "reuni" en el nombre y una propiedad de fecha. Cada página es una nota de
+  reunión de Notion AI: un bloque `meeting_notes` cuyo `children` trae
+  `summary_block_id`, `notes_block_id` y `transcript_block_id` (cada uno un
+  párrafo vacío con el texto en sus hijos; la transcripción no dice quién habla).
+  `lib/brain-notion.ts`: lista los últimos 60 días por `created_time` (hasta 200);
+  el título sale sin la mención de fecha que Notion AI le pega, la fecha de la
+  propiedad Fecha o esa mención o `created_time`, participantes de las
+  propiedades people, categoría del select. `POST /api/cerebros/interpretar` con
+  `source: "notion"` y `pageId` lee el texto en el server **validando que la
+  página sea de esa database** (el token ve todo el workspace).
+- **Se elige la reunión entera, no sus partes** (2026-11-27, pedido: "se tendría
+  que poder elegir la reunión en general, para calendario que elija solo 1 y
+  para notion que elija la transcripción"; antes había checkboxes por documento
+  / parte). Notion: solo la transcripción; si la página no tiene, resumen + notas
+  + texto de la página (`readNotionMeeting`). Calendario: un documento,
+  transcripción > notas de Gemini > el primero (`bestDoc` en `meeting-loader.tsx`;
+  la ruta corta a uno). La fila dice qué documento se va a leer.
+- UI de la carga de reuniones (mismo pedido: "mejorar la card, las scrollbars, un
+  loader lindo, la search bar es horrible"): la fuente se elige con cuatro fichas
+  con ícono (`.brain-sources`: Archivo, Pegar texto, Calendario, Notion).
+  Calendario y Notion comparten `MeetingPicker`: buscador propio (`.brain-search`:
+  lupa, contador de reuniones, borrar con ✕ o Escape, foco con anillo magenta) y
+  lista `.brain-picks` con `q-scroll`, que llena el alto de la card (240–440 px):
+  cada fila con la fecha en un cuadradito (día + mes), título, día de la semana /
+  documento / participantes ("✓ Ya cargada" en verde al principio de esa línea) y
+  el botón **Cargar** (pedido: "no sé si la palabra sería interpretar sino
+  cargar al cerebro"; "Recargar", gris, si ya está), siempre visible y en su
+  lugar: antes aparecía flotando al pasar el mouse y tapaba el texto. Mientras carga: `.brain-spinner` (anillo
+  con el degradado que gira), puntos que laten y filas esqueleto con brillo
+  (`brain-shimmer`); el spinner también en "Claude está interpretando" y al leer
+  un archivo. Se guarda en `drive_ids` como
+  `notion:<id>` (`notionRef`). Hace falta
+  `docs/sql/2026-11-27-cerebros-reuniones-notion.sql` (suma `notion` al check
+  de `source`).
 - Áreas: `BRAIN_AREAS` en `lib/brains.ts` (clave, nombre, descripción, ícono,
   qué material le sirve). Sumar un área = una entrada ahí; el mapa reparte las
   tarjetas en dos columnas para cualquier cantidad.

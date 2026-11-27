@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { getAreaSession } from "@/lib/auth";
 import { BrainMeetingsError, getRecordedMeetings } from "@/lib/brain-meetings";
-import { type MeetingInsights, type RecordedMeeting, parseInsights } from "@/lib/brain-meetings-shared";
+import {
+  type MeetingInsights,
+  type NotionMeeting,
+  type RecordedMeeting,
+  parseInsights,
+} from "@/lib/brain-meetings-shared";
+import { BrainNotionError, listNotionMeetings } from "@/lib/brain-notion";
+import { notionErrorMessage } from "@/lib/notion";
 import { brainArea } from "@/lib/brains";
 import { getInternalClient } from "@/lib/data";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -39,6 +46,26 @@ export async function listRecordedMeetings(
   } catch (e) {
     if (!(e instanceof BrainMeetingsError)) console.error("[cerebros] calendario", e);
     return { ok: false, error: e instanceof Error ? e.message : "No se pudo leer el calendario." };
+  }
+}
+
+// Mensaje para mostrar ante un error de Notion (los propios ya vienen claros).
+function notionMessage(e: unknown) {
+  if (e instanceof BrainNotionError) return e.message;
+  console.error("[cerebros] notion", e);
+  return notionErrorMessage(e);
+}
+
+// Reuniones de la database de Reuniones de Notion, para elegir cuál cargar.
+export async function listNotionMeetingsAction(
+  area: string,
+): Promise<{ ok: true; meetings: NotionMeeting[] } | { ok: false; error: string }> {
+  if (!(await requireTeam())) return NO_ACCESS;
+  if (!brainArea(area)) return { ok: false, error: "Área no encontrada." };
+  try {
+    return { ok: true, meetings: await listNotionMeetings(area) };
+  } catch (e) {
+    return { ok: false, error: notionMessage(e) };
   }
 }
 

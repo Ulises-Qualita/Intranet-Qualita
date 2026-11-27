@@ -25,7 +25,7 @@ import {
   parsePortal,
 } from "@/lib/portal";
 import { MEETINGS_TAG } from "@/lib/calendar";
-import { listSites, SERANKING_TAG, seRankingErrorMessage } from "@/lib/seranking";
+import { GSC_TAG, listGscSites, searchConsoleErrorMessage } from "@/lib/search-console";
 import { BILLING_GOAL_MAX, parseBillingGoals } from "@/lib/billing-goals";
 import { KommoError, kommoAccount, normalizeKommoUrl } from "@/lib/kommo";
 import { normalizeOdooUrl, odooLogin } from "@/lib/odoo";
@@ -427,24 +427,24 @@ export async function connectDriveFolder(clientId: string, folderId: string): Pr
   return result;
 }
 
-// Vincula el cliente con su proyecto de SE Ranking (solapa SEO). Se valida que el
-// proyecto esté en la cuenta del estudio antes de guardarlo.
-export async function connectSeRankingSite(clientId: string, siteId: string): Promise<FormState> {
+// Vincula el cliente con su propiedad de Search Console (solapa SEO). Se valida
+// que la propiedad esté en la cuenta del estudio antes de guardarla.
+export async function connectSearchConsoleSite(clientId: string, siteUrl: string): Promise<FormState> {
   if (!(await canManageClient(clientId))) return NO_ACCESS;
-  if (!/^\d+$/.test(siteId)) return { ok: false, error: "Elegí un proyecto de SE Ranking." };
+  if (!siteUrl || siteUrl.length > 300) return { ok: false, error: "Elegí una propiedad de Search Console." };
 
   try {
-    revalidateTag(SERANKING_TAG, { expire: 0 });
-    if (!(await listSites()).some((s) => s.id === siteId))
-      return { ok: false, error: "Ese proyecto no está en la cuenta de SE Ranking del estudio." };
+    revalidateTag(GSC_TAG, { expire: 0 });
+    if (!(await listGscSites()).some((s) => s.siteUrl === siteUrl))
+      return { ok: false, error: "Esa propiedad no está en la cuenta de Search Console del estudio." };
   } catch (e) {
-    return { ok: false, error: seRankingErrorMessage(e) };
+    return { ok: false, error: searchConsoleErrorMessage(e) };
   }
 
   const now = new Date().toISOString();
-  return writeIntegration(clientId, "seranking", {
+  return writeIntegration(clientId, "search_console", {
     connected: true,
-    account_ref: siteId,
+    account_ref: siteUrl,
     connected_at: now,
     updated_at: now,
   });
@@ -875,10 +875,10 @@ export async function removeBanner(clientId: string): Promise<FormState> {
 
 // Fuerza una lectura fresca de lo que el portal trae de afuera: los tickets de
 // Notion y las reuniones de Google Calendar.
-// Descarta la hora de caché de SE Ranking y la vuelve a leer (solapa SEO).
-export async function refreshSeRanking(): Promise<FormState> {
+// Descarta lo guardado de Search Console y lo vuelve a leer (solapa SEO).
+export async function refreshSearchConsole(): Promise<FormState> {
   if (!(await getAreaSession("clientes"))) return NO_ACCESS;
-  revalidateTag(SERANKING_TAG, { expire: 0 });
+  revalidateTag(GSC_TAG, { expire: 0 });
   revalidatePath("/", "layout");
   return { ok: true, error: null };
 }

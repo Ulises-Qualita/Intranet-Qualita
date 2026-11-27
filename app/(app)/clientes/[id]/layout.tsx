@@ -13,7 +13,7 @@ import { RefreshPortalButton } from "./portal/refresh-button";
 // cambio de período volvería a vaciar la pantalla. Por lo mismo Vista general vive
 // en el grupo (general)/ y no directo en [id]/, donde la tomaría el loading.tsx de
 // las solapas.
-const PERIOD_TABS = ["", "/meta", "/gads", "/crm"];
+const PERIOD_TABS = ["", "/meta", "/gads", "/crm", "/seo"];
 
 // Panel de un cliente para el equipo. El encabezado (nombre, solapas y período) es
 // de este layout, que no se vuelve a renderizar al navegar entre solapas: solo
@@ -53,8 +53,8 @@ export default async function ClienteLayout({
       ? { href: `${base}/crm/conectar`, label: "Configurar CRM" }
       : suffix === "/drive" && client.conn.drive
         ? { href: `${base}/drive/conectar`, label: "Cambiar carpeta de Drive" }
-        : suffix === "/seo" && client.conn.seranking
-          ? { href: `${base}/seo/conectar`, label: "Cambiar proyecto de SE Ranking" }
+        : suffix === "/seo" && client.conn.search_console
+          ? { href: `${base}/seo/conectar`, label: "Cambiar propiedad de Search Console" }
           : suffix === "/guias" && client.conn.drive && client.guidesFolder
           ? { href: `${base}/guias/conectar`, label: "Cambiar carpeta de guías" }
           : undefined;

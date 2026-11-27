@@ -318,6 +318,10 @@ export async function interpretMeeting(input: InterpretInput, userId: string): P
     .single<Row>();
   if (error || !data) {
     if (error?.code === "PGRST205") throw new BrainMeetingsError("Falta correr docs/sql/2026-11-26-cerebros-reuniones.sql en Supabase.");
+    // La fuente "notion" se sumó después al check de la columna source.
+    if (error?.code === "23514" && input.source === "notion") {
+      throw new BrainMeetingsError("Falta correr docs/sql/2026-11-27-cerebros-reuniones-notion.sql en Supabase.");
+    }
     console.error("[cerebros] guardar borrador", error);
     throw new BrainMeetingsError("No se pudo guardar la reunión.");
   }

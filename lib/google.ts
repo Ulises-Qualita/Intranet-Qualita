@@ -3,7 +3,8 @@
 // La cuenta actúa como un usuario del estudio (`sub`) con un scope puntual. Un
 // super admin autoriza su client ID y los scopes en admin.google.com → Seguridad
 // → Controles de API → Delegación de todo el dominio. Hoy: Calendar (lectura, en
-// lib/calendar.ts) y Drive (lectura y subida, en lib/drive.ts). Los scopes de esa
+// lib/calendar.ts), Drive (lectura y subida, en lib/drive.ts), Google Ads
+// (lib/google-ads.ts) y Search Console (lectura, lib/search-console.ts). Los scopes de esa
 // entrada se reemplazan al editarla: hay que dejar todos los que se usan.
 import { createSign } from "node:crypto";
 
@@ -28,8 +29,10 @@ const b64url = (value: string | Buffer) => Buffer.from(value).toString("base64ur
 // Por instancia del server: evita firmar y canjear un JWT en cada consulta.
 const tokens = new Map<string, { token: string; expires: number }>();
 
-export async function googleAccessToken(email: string, scope: string) {
-  const cacheKey = `${email}|${scope}`;
+// Sin `email`, la cuenta de servicio actúa como sí misma (sin delegación): sirve
+// donde se la puede sumar como usuaria, como las propiedades de Search Console.
+export async function googleAccessToken(email: string | null, scope: string) {
+  const cacheKey = `${email ?? ""}|${scope}`;
   const cached = tokens.get(cacheKey);
   if (cached && cached.expires > Date.now() + 60_000) return cached.token;
 
@@ -37,7 +40,7 @@ export async function googleAccessToken(email: string, scope: string) {
   const unsigned = `${b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${b64url(
     JSON.stringify({
       iss: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      sub: email,
+      ...(email ? { sub: email } : {}),
       scope,
       aud: TOKEN_URL,
       iat: now,

@@ -123,8 +123,9 @@ No hay framework de tests configurado todavía.
   `getClientTeam()` con service_role (la cuenta del cliente no ve asignaciones ni
   perfiles por RLS).
 - Cuenta de servicio de Google: `lib/google.ts` (token por usuario + scope) la
-  comparten Calendar y Drive. La delegación en admin.google.com tiene que tener los
-  dos scopes: `calendar.events.readonly` y `drive` (al editarla se reemplaza la lista).
+  comparten Calendar, Drive, Google Ads y Search Console. La delegación en
+  admin.google.com tiene que tener todos los scopes: `calendar.events.readonly`,
+  `drive`, `adwords` y `webmasters.readonly` (al editarla se reemplaza la lista).
   También da la foto de perfil cuando el login de Google no la trajo (a alejo@ no se
   la manda aunque la tenga): `lib/google-photo.ts` pide `drive/v3/about` como ese
   usuario, cacheado un día; lo usan `getSession()` y `getTeam()`.
